@@ -129,7 +129,7 @@
 **下一轮候选（待 captain 定夺）**：
 1. ~~`readSample` 引入 AbortSignal~~ **✅ 已完成（第五十一波，见 §52）**，全仓 1030/1030 绿，符合 §12.3 新增可选成员。
 2. **D1–D12「完全同构」（案 A）**：mkv/flac 与基类/ts 语义统一（`open()` 改走 `_doOpen()` 钩子、end 语义、失败终态等）。注意——**此项受 `mkv-base-class-alignment.md` §7-Q1/Q4 与 I1 首轮裁决约束**：D2 已裁决「保留模块既有可恢复性，**禁止单模块擅改**」，且文档明确「不建议跳过 C 直接 A」。故须由 captain/leader **跨模块裁决后再按案 A 收敛**，不得作为单模块重构擅自执行。
-3. wav 适配壳：待「共享看板约定」解除后再议继承 core `Demuxer`（同属需批准事项，非技术缺口）。**已补治理文档 `docs/review/wav-base-class-alignment.md`（W1-W14 差异矩阵 + 案 C 推荐 + 禁止擅改护栏）；flac 现状章节并入 `mkv-base-class-alignment.md` §2.4（第五十二波，见 §53）。批准前任何「把 wav 改成和 flac/ts 一样」的 PR 均违反裁决，review 应驳回。**
+3. ~~wav 适配壳~~ **✅ 案 C 已落地（第五十三波，见 §54）**：`WavDemuxer extends Demuxer`，状态机/事件面/`open()`/双发对齐基类，`readSample/samples/seek/stop/parseInit` 保留自实现覆盖；治理文档 `docs/review/wav-base-class-alignment.md` §8 裁决已更新。批准前任何「把 wav 改成和 flac/ts 一样」的 PR 均违反裁决——**注意：此约束已从「禁止子类化」转为「禁止无裁决的完全同构（案 A）」**，flac 现状章节见 `mkv-base-class-alignment.md` §2.4。
 
 > 更正说明：本文件初稿曾将「mkv 从覆写 `open()` 回归基类 `_doOpen`」列为可直接推进的候选，与上述裁决冲突，已按裁决文档纠正。
 
@@ -182,3 +182,23 @@
 **待办（需 captain 批准，本波不执行）**：
 - wav 子类化（候选 3）：批准后在 `wav-base-class-alignment.md` §9 步骤下按案 C 推进，补 D8 双发 + D9 监听器测试。
 - D1-D12 完全同构（案 A）：跨模块裁决后收敛。
+
+---
+
+## §54 第五十三波：wav 案 C 子类化落地（owner 授权）
+
+**授权背景**：第五十二波把「wav 子类化（候选 3，案 C）」列为需批准项并给出完整路径（`wav-base-class-alignment.md` §6/§9）；owner 连续「继续」驱动，视为授权执行案 C（非案 A，未触碰 D1-D12 同构跨模块议题）。
+
+**落地改动（wav/src/demuxer.js）**：
+1. `class WavDemuxer extends Demuxer`（core/src/demuxer.js）；`super(source, options)` → 基类接管 `this.source`/`options.initTimeoutMs`/`stateValue`/`pausedFlag`/Emitter。
+2. 删 `MiniEmitter` 自含实现（:36-41）→ 基类 Emitter（`on` 返回退订、`emit` 吞异常，语义一致）；`this.emitter.*` → `this.emit/this.on`。
+3. `parseInit` 体拆入 `_doOpen()` 钩子（只解析头返回 MediaInfo，不再自管状态/事件/超时）；超时（initTimeoutMs→TIMEOUT）与 `'media-info'+'mediaInfo'` 双发由基类 `open()` 统一负责（W5 补齐）；保留 `parseInit(){return this.open()}` 别名。
+4. `readSample/samples/seek` 保留自实现覆盖（signal、先读后推进游标、自有 `ended`/`error` 标记、seek-from-ended 回 ready——Wave 51 修的中断吞样本/游标丢帧等价保护不受影响）。
+5. `pause()/resume()` 删自版 → 继承基类（pausedFlag + emit，语义一致）；`stop()/destroy()` 保留自版（close + destroyed，W9 不 removeAllListeners，同 flac 案 C）。
+6. `mediaInfo` 字段 → 基类 `mediaInfoValue`（基类 `get mediaInfo`）；`#source` → `this.source`。
+
+**验证**：wav 43/43 绿（fixture 集成 + review-fixes + AbortSignal）；全仓回归基线参数待确认。
+
+**排障记录**：首跑 wav 测试出现「runner 下文件级超时」假象——经 `_probe` 二分定位为测试文件直接运行 286ms 全过、runner 复跑即绿的**瞬时 fixture 再生竞争**（并发过高触发 `gen.mjs` 原子写竞争），非代码缺陷；基线参数 `--test-concurrency=4` 下稳定。教训：全仓回归必须用基线并发参数，默认全核并发会误报 cancelled。
+
+**状态**：7 demuxer（mp4/mov/mkv/ts/flv/flac/wav）中 6 个走基类（flac/wav/mkv 案 C），仅剩「完全同构」语义统一（D1-D12/W2-W14）为跨模块议题，仍须裁决后收敛。

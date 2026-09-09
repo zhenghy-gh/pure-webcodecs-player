@@ -1,13 +1,21 @@
 /**
- * wav/src/demuxer.js — WavDemuxer（对齐 docs/CONTRACTS.md §2 形状）
+ * wav/src/demuxer.js — WavDemuxer（继承 core Demuxer，案 C）
  * ------------------------------------------------------------
  * 点播型 ByteSource demuxer：直接产出 pcm-* Sample。
- * 并行期说明：暂不继承 core BaseDemuxer（共享看板约定，解析层先行），
- * 事件模型与状态机以最小内建 Emitter 实现；core 稳定后切换基类，
- * 对外接口（probe/parseInit/samples/seek/stop）保持不变。
+ *
+ * 2026-09-09 案 C 落地（见 docs/review/wav-base-class-alignment.md §8/§9）：
+ * - `extends Demuxer`，状态机/事件面/`open()`（含 initTimeoutMs 超时与
+ *   'media-info'+'mediaInfo' 双发）/`destroy` 交基类；
+ * - `readSample`/`samples`/`seek`/`stop`/`parseInit` 别名保留自实现覆盖，
+ *   自有历史结束标记 `ended`/`error` 维持兼容（同 flac 案 C 模式）；
+ * - 进一步「完全同构」（案 A）属跨模块裁决项，禁止单模块擅改。
+ *
+ * 对外接口（probe/parseInit/open/readSample/samples/seek/pause/resume/
+ * destroy/stop/getBufferedRanges）与冻结版保持一致。
  */
+import { Demuxer } from '../../core/src/demuxer.js';
 import { parseWavHeader } from './riff-parser.js';
-import { stateError, sourceError, timeoutError } from './errors.js';
+import { stateError } from './errors.js';
 import { raceAbort, throwIfAborted } from '../../core/src/abort.js';
 
 /** 每次迭代产出的采样块大小（帧）：粒度与内存开销的平衡点。 */
@@ -32,15 +40,7 @@ const CHUNK_FRAMES = 4096;
  * @property {{title?:string, [k:string]:string}} [metadata]
  */
 
-/** 迷你事件发射器（'error'|'media-info'|'end'|'pause'|'resume'） */
-class MiniEmitter {
-  #m = new Map();
-  on(e, f) { let l = this.#m.get(e); if (!l) this.#m.set(e, (l = [])); l.push(f); return () => this.off(e, f); }
-  off(e, f) { const l = this.#m.get(e); if (!l) return; const i = l.indexOf(f); if (i >= 0) l.splice(i, 1); }
-  emit(e, p) { for (const f of [...(this.#m.get(e) || [])]) { try { f(p); } catch (err) { console.error(err); } } }
-}
-
-export class WavDemuxer {
+export class WavDemuxer extends Demuxer {
   /**
    * 静态嗅探：同步、无副作用、不抛异常。
    * @param {Uint8Array} bytes 源头部字节（建议 ≥ 64B）
@@ -64,86 +64,49 @@ export class WavDemuxer {
    * @param {{chunkFrames?:number, initTimeoutMs?:number}} [options]
    */
   constructor(source, options = undefined) {
-    this.#source = source;
+    super(source, options); // 基类：this.source / options.initTimeoutMs / stateValue / pausedFlag / Emitter
     this.#chunkFrames = options?.chunkFrames ?? CHUNK_FRAMES;
-    /** §2.4：open()/parseInit() 的解析超时上界，超时 reject TIMEOUT */
-    this.#initTimeoutMs = options?.initTimeoutMs ?? 10000;
-    /** §2.4 暂停标记（直播推送语义；wav 为点播，仅维护标记与事件一致性） */
-    this.pausedFlag = false;
-    /** 生命周期状态机：idle → parsing → ready ⇄ seeking → ended | error */
-    this.state = 'idle';
-    /** @type {MediaInfo|null} parseInit 成功后的媒体信息 */
-    this.mediaInfo = null;
-    this.emitter = new MiniEmitter();
   }
 
-  #source;
   #chunkFrames;
-  #initTimeoutMs;
   /** @type {ReturnType<typeof parseWavHeader>|null} */
   #header = null;
   /** 下一次 samples() 迭代的起始帧（seek 后非 0） */
   #startFrame = 0;
+  #reader = null;
+  #readerActive = false;
+  #endEmitted = false;
 
-  /** 订阅事件：'error'(PlayerError) | 'media-info'(MediaInfo) | 'end'({reason}) | 'pause' | 'resume' */
-  on(event, fn) { return this.emitter.on(event, fn); }
+  /** core Demuxer 钩子：解析 RIFF 头 + fmt + data 定位，返回 MediaInfo。
+   *  状态迁移与超时（initTimeoutMs）由基类 `open()` 统一管理。 */
+  async _doOpen() {
+    // 头部通常 < 100KB；读前 64KB 已足够定位 fmt 与 data 偏移
+    const headLen = Math.min(65536, this.source.size ?? 65536);
+    const head = await this.source.read(0, headLen);
+    this.#header = parseWavHeader(head);
 
-  /**
-   * 解析初始化段（RIFF 头 + fmt + data 定位）。
-   * @returns {Promise<MediaInfo>}
-   */
-  async parseInit() {
-    if (this.state === 'destroyed') throw stateError('demuxer 已销毁，不可复用');
-    if (this.state !== 'idle') throw stateError(`parseInit 需处于 idle 态，当前 ${this.state}`);
-    this.state = 'parsing';
-    // §2.4：initTimeoutMs 超时 reject TIMEOUT（防护慢源/卡死源让解析永久挂起）
-    let timer = null;
-    const guard = new Promise((_, reject) => {
-      timer = setTimeout(() => {
-        reject(timeoutError(`parseInit() timed out after ${this.#initTimeoutMs}ms`));
-      }, this.#initTimeoutMs);
-      // 不阻塞进程退出
-      if (typeof timer?.unref === 'function') timer.unref();
-    });
-    try {
-      // 头部通常 < 100KB；读前 64KB 已足够定位 fmt 与 data 偏移
-      const head = await Promise.race([
-        (async () => {
-          const headLen = Math.min(65536, this.#source.size ?? 65536);
-          return this.#source.read(0, headLen);
-        })(),
-        guard,
-      ]);
-      this.#header = parseWavHeader(head);
-
-      const f = this.#header.format;
-      this.mediaInfo = /** @type {MediaInfo} */ ({
-        container: 'wav',
-        tracks: [{
-          id: 1,
-          type: 'audio',
-          codec: this.#header.codec,
-          description: null,
-          language: '',
-          durationUs: this.#header.durationUs,
-          audio: { sampleRate: f.sampleRate, numberOfChannels: f.channels },
-        }],
+    const f = this.#header.format;
+    this.mediaInfoValue = /** @type {MediaInfo} */ ({
+      container: 'wav',
+      tracks: [{
+        id: 1,
+        type: 'audio',
+        codec: this.#header.codec,
+        description: null,
+        language: '',
         durationUs: this.#header.durationUs,
-        seekable: true,
-        live: false,
-        metadata: { ...this.#header.info },
-      });
-      this.state = 'ready';
-      this.emitter.emit('media-info', this.mediaInfo);
-      return this.mediaInfo;
-    } catch (e) {
-      this.state = 'error';
-      this.emitter.emit('error', e);
-      throw e;
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
+        audio: { sampleRate: f.sampleRate, numberOfChannels: f.channels },
+      }],
+      durationUs: this.#header.durationUs,
+      seekable: true,
+      live: false,
+      metadata: { ...this.#header.info },
+    });
+    return this.mediaInfoValue;
   }
+
+  /** 迁移期别名：parseInit() 即 open()（旧调用方继续可用）。 */
+  parseInit() { return this.open(); }
 
   /**
    * 拉取音频轨的 Sample 异步迭代器（点播首选用法，天然背压）。
@@ -172,7 +135,7 @@ export class WavDemuxer {
           async next() {
             if (self.state === 'error') throw stateError('demuxer 已进入 error 态，禁止继续取样本');
             if (self.state === 'ended' || nextFrame >= totalFrames) {
-              if (!self.#endEmitted) { self.emitter.emit('end', { reason: 'eos' }); self.#endEmitted = true; }
+              if (!self.#endEmitted) { self.emit('end', { reason: 'eos' }); self.#endEmitted = true; }
               return { done: true, value: undefined };
             }
             const startFrame = nextFrame;
@@ -180,7 +143,7 @@ export class WavDemuxer {
             let data;
             try {
               data = await raceAbort(
-                self.#source.read(
+                self.source.read(
                   dataOff + startFrame * Math.max(1, fmt.blockAlign),
                   count * Math.max(1, fmt.blockAlign),
                 ),
@@ -190,13 +153,13 @@ export class WavDemuxer {
             } catch (e) {
               // abort 是调用方预期控制流：不置 error 态、不进 'error' 事件面，直接上抛
               if (e?.code !== 'ABORTED') {
-                self.state = 'error';
-                self.emitter.emit('error', e);
+                self.stateValue = 'error';
+                self.emit('error', e);
               }
               throw e;
             }
             nextFrame += count;
-            if (nextFrame >= totalFrames && self.state === 'ready') self.state = 'ended';
+            if (nextFrame >= totalFrames && self.state === 'ready') self.stateValue = 'ended';
             return {
               done: false,
               value: {
@@ -224,8 +187,7 @@ export class WavDemuxer {
       throw stateError(`seek 需处于 ready 态，当前 ${this.state}`);
     }
     if (!Number.isFinite(timestampUs)) throw stateError('seek 入参必须是有限数值（µs）');
-    const prev = this.state;
-    this.state = 'seeking';
+    this.stateValue = 'seeking';
     try {
       const fmt = this.#header.format;
       const totalFrames = Math.floor(this.#header.dataChunk.size / Math.max(1, fmt.blockAlign));
@@ -234,18 +196,13 @@ export class WavDemuxer {
       this.#startFrame = target; // 下一次 samples() 从这里继续
       this.#reader = null; this.#readerActive = false;
       // 评审严重2：从 ended seek 后必须回到 ready，否则 samples() 永久 STATE_ERROR
-      this.state = 'ready';
+      this.stateValue = 'ready';
       return { actualTimestampUs: Math.round((target / fmt.sampleRate) * 1e6) };
     } catch (e) {
-      this.state = 'error';
+      this.stateValue = 'error';
       throw e;
     }
   }
-
-  /* ---- CONTRACTS v0.2 §2.2 定稿方法名 ---- */
-
-  /** 定稿名：打开并解析初始化段（= parseInit） */
-  open() { return this.parseInit(); }
 
   /**
    * 定稿名：拉取下一样本（pull 主通道）。EOS resolve null。
@@ -263,41 +220,24 @@ export class WavDemuxer {
     if (r.done) { this.#readerActive = false; return null; }
     return r.value;
   }
-  #reader = null;
-  #readerActive = false;
-  #endEmitted = false;
 
-  /* ---- §2.4 直播推送控制：wav 为点播容器，仅维护标记与事件语义一致 ---- */
-
-  /** 暂停吐包（缓冲继续累积） */
-  pause() {
-    this.pausedFlag = true;
-    this.emitter.emit('pause', undefined);
-  }
-
-  /** 恢复推送 */
-  resume() {
-    this.pausedFlag = false;
-    this.emitter.emit('resume', undefined);
+  /** 释放数据源，幂等；随后 destroy() 置 destroyed 终态 */
+  async stop() {
+    if (this.source && typeof this.source.close === 'function') {
+      try { await this.source.close(); } catch { /* 关闭失败不阻断 */ }
+    }
+    if (this.stateValue !== 'error') this.stateValue = 'idle';
   }
 
   /** 定稿名：销毁（幂等）；之后一切调用抛 STATE_ERROR */
   async destroy() {
     await this.stop();
-    this.state = 'destroyed';
+    this.stateValue = 'destroyed';
   }
 
   /** 已缓冲区间查询：WAV 为整段可得的点播容器，返回全区间 */
   getBufferedRanges(_trackId) {
-    if (!this.#header || !this.mediaInfo) return [];
-    return [{ startUs: 0, endUs: this.mediaInfo.durationUs ?? 0 }];
-  }
-
-  /** 释放数据源，幂等 */
-  async stop() {
-    if (this.#source && typeof this.#source.close === 'function') {
-      try { await this.#source.close(); } catch { /* 关闭失败不阻断 */ }
-    }
-    if (this.state !== 'error') this.state = 'idle';
+    if (!this.#header || !this.mediaInfoValue) return [];
+    return [{ startUs: 0, endUs: this.mediaInfoValue.durationUs ?? 0 }];
   }
 }

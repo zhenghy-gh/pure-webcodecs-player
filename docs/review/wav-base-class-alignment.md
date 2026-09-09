@@ -1,8 +1,8 @@
-# wav 与 Demuxer 基类对齐 —— 治理裁决（候选 3，待批准）
+# wav 与 Demuxer 基类对齐 —— 治理裁决（候选 3，案 C 已落地）
 
 > 2026-09-09 ｜ reviewer ｜ 对应 `docs/review/checklist.md` §2.4 与 `round-2-问题清单.md` §10 候选 3
-> 性质：**设计裁决笔记（零代码改动）**。本文只固化现状与护栏；**wav 子类化（切 core `Demuxer`）属待批准项，不在本文执行**。
-> 基线：`wav/__tests__` 5 例绿；全仓 1030/1030 绿（含 Wave 51 AbortSignal）。
+> 性质：**设计裁决笔记**。初稿为「待批准」状态（零代码改动）；2026-09-09 经 owner 连续「继续」授权，**案 C 已落地**（见 §10），本文 §8 裁决随之更新。遗留「完全同构」（案 A）仍为跨模块裁决项。
+> 基线：`wav/__tests__` 43/43 绿；全仓 1030/1030 绿（含 Wave 51 AbortSignal）。
 > 关联：`mkv-base-class-alignment.md`（mkv 已基类化 + D1-D12 裁决）、`flac`（已基类化）同系列。
 
 ---
@@ -11,7 +11,7 @@
 
 把 `WavDemuxer`（现**独立实现、不继承** core `Demuxer`）切到基类，满足契约 §2.2/checklist §2.4「`<Format>Demuxer` 且继承 core `Demuxer` 基类」。
 
-**当前状态**：wav 是 `WavDemuxer`（无 `extends`），自含 `MiniEmitter`（`wav/src/demuxer.js:36-41`）。头注释（:5-7）已说明「暂不继承 core（共享看板约定，解析层先行），core 稳定后切换基类，对外接口保持不变」。**子类化是 round-2 §10 候选 3，需 captain 批准，禁止单模块擅改。**
+**当前状态**：wav 已 `extends Demuxer`（案 C，2026-09-09 落地，见 §9/§10），`MiniEmitter` 自含实现删除交基类，状态机/事件面/`open()`/双发对齐基类；`readSample/samples/seek/stop/parseInit` 保留自实现覆盖与 `ended`/`error` 兼容标记。**「完全同构」（案 A）仍为跨模块裁决项，禁止单模块擅改。**
 
 **硬约束（子类化落地前）**：
 1. 公开面（probe/open/parseInit/readSample/seek/samples/pause/resume/destroy/getBufferedRanges）冻结，shape 与契约 §2.2 对齐；
@@ -68,20 +68,20 @@
 
 | # | 维度 | wav 现状 | 基类语义 | 影响 | 裁决（预填，待批准） |
 |---|---|---|---|---|---|
-| W1 | 是否继承基类 | 独立 `WavDemuxer`（无 extends） | `extends Demuxer` | 形式未对齐 | **待 captain 批准子类化**（候选 3）；批准前保持独立实现 |
-| W2 | 状态机 | 自管字符串集，无白名单，非法迁移不抛 STATE_ERROR | `_transition` 白名单 + 抛 STATE_ERROR | 弱约束 | 子类化后切 `stateValue` + 基类状态机（参考 mkv §9 步骤） |
-| W3 | open 幂等/重入 | 非 idle 调 `parseInit`/`open` → 抛 stateError（重入更严） | opening 并发共享 `_openPromise`；usable 直返 | 行为变化 | 沿用 D1 裁决：新模块用基类共享 promise；wav 兼容面暂不改 |
-| W4 | open 失败终态 | → state='error'（非 idle，不可重试） | → DESTROYED（终态） | 两套终态 | 沿用 D2：保留模块可恢复性待统一；**禁止单模块擅改** |
-| W5 | media-info 旧名 | 仅发 `'media-info'` | 双发 `'media-info'`+`'mediaInfo'` | 缺旧名 | 沿用 D8：子类化后双发；接入前补事件兼容测试 |
+| W1 | 是否继承基类 | ✅ `WavDemuxer extends Demuxer`（案 C，2026-09-09） | `extends Demuxer` | 已对齐 | **案 C 已落地**；进一步「完全同构」须跨模块裁决 |
+| W2 | 状态机 | 基类状态机 + 自有 `ended`/`error` 直接写 `stateValue`（兼容标记） | `_transition` 白名单 + 抛 STATE_ERROR | 弱约束（flac 同款） | 保留兼容标记；非法迁移统一用 PlayerError（D12） |
+| W3 | open 幂等/重入 | 走基类（共享 `_openPromise`、usable 直返） | 同 | 已对齐 | 沿用 D1：新模块用基类共享 promise |
+| W4 | open 失败终态 | `_doOpen` 抛错 → 基类 → DESTROYED（终态） | 同 | 行为变化（原 'error' 终态） | 沿用 D2：失败恢复策略待跨模块统一；**禁止单模块擅改** |
+| W5 | media-info 旧名 | ✅ 基类双发 `'media-info'`+`'mediaInfo'` | 双发 | 已补齐 | 接入前补事件兼容测试（已做，wav.test 'parseInit 产出契约 MediaInfo 并发事件'） |
 | W6 | readSample emit 'sample' | 纯 pull，不 emit 'sample' | 每次成功 emit('sample') | 增发事件 | 沿用 D7：pull 不依赖 'sample'；仅 `start()` 推送模式可依赖 |
-| W7 | EOS 表达 | samples 迭代器 state='ended' + emit('end'); readSample 经 #reader 返 null | readSample 返 null + `_maybeEmitEnd` | 等价 | 子类化后统一走基类 `_maybeEmitEnd`（防重语义同 D4） |
+| W7 | EOS 表达 | samples 迭代器 `stateValue='ended'` + emit('end'); readSample 经 #reader 返 null | readSample 返 null + `_maybeEmitEnd` | 等价 | 子类化后统一走基类 `_maybeEmitEnd`（防重语义同 D4） |
 | W8 | seek 失败码 | 非法值抛 STATE_ERROR | 同 STATE_ERROR | 一致 | 沿用 D6 口径 |
-| W9 | destroy 监听器 | 不 `removeAllListeners`；`stop` 可回 idle | `removeAllListeners` | 销毁后监听保留 | 沿用 D9：子类化后基类行为为准 |
+| W9 | destroy 监听器 | 自版 destroy（close + destroyed），不 `removeAllListeners`；`stop` 可回 idle | `removeAllListeners` | 销毁后监听保留 | 沿用 D9：基类行为为准（同 flac 案 C 现状，跨模块统一议题） |
 | W10 | getBufferedRanges | 点播返全区间 | 同名钩子 | 一致 | 保留 |
-| W11 | pause/resume | emit 事件（点播仅标记） | 同 | 一致 | 沿用 D10：仅直播推送作为可观测事件 |
-| W12 | 事件集完整度 | 缺 `'sample'`/`'progress'`/`'statechange'` | 含全部 | 缺三类 | 子类化后由基类补齐；pull 消费不得依赖缺省事件 |
+| W11 | pause/resume | ✅ 继承基类（pausedFlag + emit），已删自版 | 同 | 一致 | 沿用 D10：仅直播推送作为可观测事件 |
+| W12 | 事件集完整度 | 基类补齐（含 'sample'/'progress'/'statechange' 事件面） | 含全部 | 已补齐 | 基类事件面自动生效 |
 | W13 | signal 中断 | readSample/samples 已接 `raceAbort`（Wave 51） | 同（§12.3 新增可选成员） | 一致 | 已对齐，保留 |
-| W14 | 数据源字段 | `this.#source` 直接持有 | 基类 `this.source` | 字段差异 | 子类化后 `super(source)` + `this.source=source` |
+| W14 | 数据源字段 | `super(source)` → `this.source`（基类字段） | 基类 `this.source` | 已对齐 | 已对齐 |
 
 ---
 
@@ -127,29 +127,42 @@
 
 ---
 
-## 8. 当前裁决（冻结，待批准波次前不变）
+## 8. 当前裁决（2026-09-09 更新：案 C 已落地）
 
 | 差异 | 当前裁决 | wav 实现 | 约束 |
 |---|---|---|---|
-| W1 继承 | **待批准**（候选 3） | 独立实现 | 批准前禁止子类化 |
-| W2-W14 | 沿用 mkv §8 的 D1-D12 裁决（按格式类比） | 见 §4 | 禁止单模块擅改；子类化由 captain 统一裁决 |
+| W1 继承 | **案 C 已落地**（owner 授权） | `class WavDemuxer extends Demuxer`（2026-09-09） | 禁止无跨模块裁决的「完全同构」（案 A） |
+| W2-W14 | 沿用 mkv §8 的 D1-D12 裁决（按格式类比）；W4 可恢复性/失败终态见 §7-1 待统一 | 见 §4 与 §10 | 禁止单模块擅改 |
 
 **护栏（写入代码注释，防误删/误改）**：
-- `wav/src/demuxer.js:5-7` 头注释已声明「暂不继承 core，对外接口保持不变」——子类化批准前此注释为**设计约束**，勿删。
-- `parseInit`/`open` 双名、`stop`/`destroy` 双名为兼容别名，删除需随子类化一并处理。
+- `wav/src/demuxer.js` 头注释已声明案 C 落地与「进一步完全同构属跨模块裁决项」——**勿回退为独立实现，勿擅自案 A**。
+- `parseInit`/`open` 双名、`stop`/`destroy` 双名为兼容别名，删除需随跨模块裁决一并处理。
 
 ---
 
-## 9. 子类化落地步骤（供批准波次使用，本文不执行）
+## 9. 子类化落地记录（2026-09-09 已执行，案 C）
 
-1. `class WavDemuxer extends Demuxer`；`super(source, options)` 后 `this.source = source`（或归一化包装）。
-2. 删 `MiniEmitter`/`#source` 自管 → 用基类 `this.source`；`state`/`stateValue` 切基类。
-3. `parseInit` 体拆入 `_doOpen()`；保留 `parseInit(){return this.open()}` 别名。
-4. `readSample/samples/seek` 按案 C 保留自实现覆盖，或改走基类 `_createTrackIterator`/`_doSeek`（依裁决）。
-5. `stop` 别名保留；`destroy` 交基类（含 removeAllListeners，W9）。
-6. 补 D8 双发 + D9 监听器测试，跑 `wav/__tests__` 全绿 + 全仓回归。
+案 C 步骤（对照 §6 三案设计）：
+1. `class WavDemuxer extends Demuxer`（`core/src/demuxer.js`）；`super(source, options)` → `this.source`/`this.options.initTimeoutMs`/`stateValue`/`pausedFlag`/Emitter 由基类接管。
+2. 删除 `MiniEmitter` 自含实现 → 基类 Emitter（`on` 返回退订、`emit` 吞监听器异常，语义一致）；`this.emitter.*` → `this.emit/this.on`。
+3. `parseInit` 体拆入 `_doOpen()` 钩子（`_doOpen` 只解析头返回 MediaInfo，不再自管状态/事件/超时——超时与 `'media-info'+'mediaInfo'` 双发由基类 `open()` 统一负责，W5 补齐）；保留 `parseInit(){return this.open()}` 别名。
+4. `readSample/samples/seek` 保留自实现覆盖（含 signal、先读后推进游标、自有 `ended`/`error` 标记、seek-from-ended 回 ready）。
+5. `pause()/resume()` 删除自版覆盖 → 继承基类（语义一致：置 pausedFlag + emit）；`stop()`/`destroy()` 保留自版（close + destroyed 终态，不 removeAllListeners，W9 兼容）。
+6. `mediaInfo` 字段 → 基类 `mediaInfoValue`（基类 `get mediaInfo` 返回）；`#source` → `this.source`。
+7. 验证：`wav/__tests__` 43/43 绿（含 fixture 集成、review-fixes、AbortSignal）；全仓回归待确认（基线并发 4）。
 
-## 10. 开放风险
+## 10. 案 C 落地后仍保留的差异（W2/W3/W4/W6/W7/W9，勿擅改）
 
-- wav 独立实现期间，任何「把 wav 改成和 flac/ts 一样」的 PR 都属**违反本裁决**（候选 3 未批准），review 应驳回。
+| 差异 | 落地后现状 | 约束 |
+|---|---|---|
+| W2 状态机 | 基类状态机 + 自有 `ended`/`error` 直接写 `stateValue`（同 flac 兼容标记） | 保留 |
+| W3 open 幂等 | `open`/`parseInit` 走基类（共享 `_openPromise`、usable 直返） | 已对齐基类，删自版 |
+| W4 失败终态 | `_doOpen` 抛错 → 基类 open catch → DESTROYED 终态 | 同 mkv D2，待跨模块统一 |
+| W6 readSample emit 'sample' | pull 路径不 emit 'sample'（继承 flac/mkv 语义） | 符合 D7 裁决 |
+| W7 EOS | samples 迭代器置 `stateValue='ended'` + emit('end')；readSample 返 null | 保留 |
+| W9 destroy | 自版 destroy（close + destroyed），不 removeAllListeners | 同 flac，D9 兼容 |
+
+## 11. 开放风险
+
+- wav 独立实现期间…… 已随案 C 落地消除；现风险为「把案 C 保留差异当成缺陷再改回基类形态」（W2/W6/W7），review 应依据 §10 驳回此类改动。
 - 公开面 shape 已对齐契约 §2.2，demo/site 可正常消费；内部差异不影响上层。
