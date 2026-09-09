@@ -127,9 +127,9 @@
 **第二轮（集成与全量一致性，I 系列）全部收口，无遗留开放项。** I1 core API 比对、I2 播放管线语义（含 WebCodecs/MSE 双路线真机端到端）、I3 demo 可用性（16/16 真机）、I3 遗留 transmux 真机兼容、I4 README 一致性、I5 安全项、I6 site 汇总页、§2.4 契约对齐（结构层+运行时）八个工作面全部闭环；`docs/review/checklist.md` 全量检查项已无未勾选项。
 
 **下一轮候选（待 captain 定夺）**：
-1. `readSample` 引入 AbortSignal（新增能力，与既有裁决无冲突）。
+1. ~~`readSample` 引入 AbortSignal~~ **✅ 已完成（第五十一波，见 §52）**，全仓 1030/1030 绿，符合 §12.3 新增可选成员。
 2. **D1–D12「完全同构」（案 A）**：mkv/flac 与基类/ts 语义统一（`open()` 改走 `_doOpen()` 钩子、end 语义、失败终态等）。注意——**此项受 `mkv-base-class-alignment.md` §7-Q1/Q4 与 I1 首轮裁决约束**：D2 已裁决「保留模块既有可恢复性，**禁止单模块擅改**」，且文档明确「不建议跳过 C 直接 A」。故须由 captain/leader **跨模块裁决后再按案 A 收敛**，不得作为单模块重构擅自执行。
-3. wav 适配壳：待「共享看板约定」解除后再议继承 core `Demuxer`（同属需批准事项，非技术缺口）。
+3. wav 适配壳：待「共享看板约定」解除后再议继承 core `Demuxer`（同属需批准事项，非技术缺口）。**已补治理文档 `docs/review/wav-base-class-alignment.md`（W1-W14 差异矩阵 + 案 C 推荐 + 禁止擅改护栏）；flac 现状章节并入 `mkv-base-class-alignment.md` §2.4（第五十二波，见 §53）。批准前任何「把 wav 改成和 flac/ts 一样」的 PR 均违反裁决，review 应驳回。**
 
 > 更正说明：本文件初稿曾将「mkv 从覆写 `open()` 回归基类 `_doOpen`」列为可直接推进的候选，与上述裁决冲突，已按裁决文档纠正。
 
@@ -164,3 +164,21 @@
 **全仓 1030/1030，fail=0、cancelled=0**（基线 1015，净增 15）。
 
 **基建沉淀**：`core/src/abort.js`（可复用于后续 seek/open 等长耗时调用的可选中断）。
+
+---
+
+## §53 第五十二波：demuxer 基类对齐治理文档化（零代码改动）
+
+**动机（治理缺口，非技术缺陷）**：第五十一波收口后进入裁决空窗——可自主推进的硬工作（§2.4 契约对齐 / 播放管线 I2 / 真机 I3 / Wave 51）已全部闭环；仅剩 D1-D12 同构、wav 适配壳两项**受裁决约束「禁止单模块擅改 / 需批准」**。复盘发现：除 `mkv` 有 `mkv-base-class-alignment.md` 裁决文档外，`wav`/`flac` 缺书面裁决——这正是「误把已裁决保留的差异当缺陷去重构」风险的直接来源（Wave 51 之前 mkv 已差点犯）。
+
+**本波纯文档产出（零代码改动、零测试影响、不触碰任何需批准重构）**：
+1. **新增 `docs/review/wav-base-class-alignment.md`**：wav 独立实现现状（`WavDemuxer` 无 extends、自含 `MiniEmitter`、状态机自管、`stop/parseInit` 而非 `destroy/open`）；W1-W14 差异矩阵（逐项标注影响 + 预填裁决，沿用 mkv §8 的 D1-D12 按格式类比）；案 A/B/C 三案（推荐先 C 后 A，与 mkv/flac 一致）；子类化落地步骤（本文不执行）；**禁止擅改护栏**（头注释 :5-7 为设计约束勿删、双名别名随子类化处理）。
+2. **扩展 `docs/review/mkv-base-class-alignment.md` §2.4**：补 flac 现状（已基类化案 C）——固化 flac 故意保留的覆盖（`readSample/samples/seek` 自实现、自有 `ended`/`error` 标记、先读后推进游标、全量扫描建索引、media-info 双发、stop 置 idle），review 不得当成缺陷"修正"。
+
+**结论**：
+- 当前 7 个 demuxer（mp4/mov/mkv/ts/flv + flac + wav）的基类对齐语义**全部有据可查**：flac/mkv 已基类化（案 C，差异并入 mkv §8 D1-D12），wav 独立实现（差异入 wav §4 W1-W14，待批准）。
+- 后续任意「统一 demuxer 形态」的重构，必须先引用对应裁决文档；单模块擅改 W2-W14 / D1-D12 视为违反冻结裁决。
+
+**待办（需 captain 批准，本波不执行）**：
+- wav 子类化（候选 3）：批准后在 `wav-base-class-alignment.md` §9 步骤下按案 C 推进，补 D8 双发 + D9 监听器测试。
+- D1-D12 完全同构（案 A）：跨模块裁决后收敛。

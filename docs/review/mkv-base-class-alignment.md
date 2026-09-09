@@ -52,6 +52,21 @@
 
 - `class TsDemuxer extends Demuxer`（:42），`_doOpen` 内自循环等待参数集捕获（:300）；test 明确 **未 open 的 samples() 是懒生成器**（ts-demuxer.test.js:187-190 注释「异常在首次 next() 时抛出」）。
 
+### 2.4 flac 现状（已基类化，案 C；2026-09-09 复核）
+
+`flac/src/demuxer.js` 已是 `class FlacDemuxer extends Demuxer`（:19），`super(source, options)`（:38），`_doOpen` 钩子（:241-244）内调 `_parseInit` 返回 MediaInfo；`parseInit(){return this.open()}` 迁移期别名（:247）。**但以下为 flac 故意保留的覆盖，review 不得当成缺陷"修正"**：
+
+- **覆盖 `readSample`/`samples`/`seek`**（:113/:161/:257）：自实现，不走基类 `_createTrackIterator` / `readSample` 主通道 / 基类 `seek→_doSeek` 框架。
+  - `samples()` 自定义 async iterator，`#nextFrameIdx` 游标，**「先读后推进游标」**（`data = await raceAbort(...)` 在前、`cursor += 1` 在后，:133-138）——等价保护中断吞帧（Wave 51 修），与基类 `pendingResult` 缓存机制**不同实现路径、同一目标**，勿"统一"成基类那套。
+  - `readSample` 包 `#reader` 迭代器（与 samples 游标一致，EOS 后自动释放重建，:55-57/:260-266），不 emit `'sample'`（符合 D7 pull 不依赖事件）。
+- **维持自有 `ended`/`error` 兼容标记**（stateValue='ended'/'error'）：`samples` 迭代器到 EOS 置 `stateValue='ended'`（:139）；`seek` 从 ended 回 ready（:190，同 wav#2 修复）；`seek` catch 置 `stateValue='error'`（:193）。这些是 flac 的兼容标记，**勿"修正"为只读基类 READY/SEEKING/DESTROYED**。
+- **`buildFrameIndex` 全量扫描**（:207-236）：一次性建帧索引，`maxScanBytes` 防护（I5）；**流式增量扫描为 M3 整合项**，当前点播场景足够。
+- **`stop()` 置 idle（除非 error）**（:276-281）+ `destroy = stop()+stateValue='destroyed'`（:270-273）：与 wav 同款；不 `removeAllListeners`（D9 兼容）。
+- **media-info 双发**：flac 走基类 `open()` → `_doOpen`，基类双发 `'media-info'`+`'mediaInfo'` 生效（:152-153）——故 flac 是双发的，而 wav（独立实现）仅单发（W5），子类化 wav 时需对齐。
+- `metadata` getter 返回 `flacMetadata` 专属旧视图（:250，D3 兼容层更严）。
+
+> 结论：flac 是「形式继承 + 核心自实现保留」（案 C），与 mkv 同层级。其覆盖 readSample/samples/seek、自有 ended/error 标记、先读后推进游标，均为**已裁决保留语义**（呼应 §8 D1-D12），单模块擅改会导致 74+46 例固化的行为退化。flac 独立差异矩阵已并入 §8 裁决表，无需另立。
+
 ---
 
 ## 3. 同构性（好消息）
