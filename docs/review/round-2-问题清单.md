@@ -126,4 +126,9 @@
 
 **第二轮（集成与全量一致性，I 系列）全部收口，无遗留开放项。** I1 core API 比对、I2 播放管线语义（含 WebCodecs/MSE 双路线真机端到端）、I3 demo 可用性（16/16 真机）、I3 遗留 transmux 真机兼容、I4 README 一致性、I5 安全项、I6 site 汇总页、§2.4 契约对齐（结构层+运行时）八个工作面全部闭环；`docs/review/checklist.md` 全量检查项已无未勾选项。
 
-**下一轮候选（待 captain 定夺）**：`readSample` 引入 AbortSignal；mkv 从"覆写 open()"回归基类 `_doOpen` 编排（需评估基类编排与 mkv 自编排的语义差）；wav 适配壳在共享看板约定解除后继承 core `Demuxer`。
+**下一轮候选（待 captain 定夺）**：
+1. `readSample` 引入 AbortSignal（新增能力，与既有裁决无冲突）。
+2. **D1–D12「完全同构」（案 A）**：mkv/flac 与基类/ts 语义统一（`open()` 改走 `_doOpen()` 钩子、end 语义、失败终态等）。注意——**此项受 `mkv-base-class-alignment.md` §7-Q1/Q4 与 I1 首轮裁决约束**：D2 已裁决「保留模块既有可恢复性，**禁止单模块擅改**」，且文档明确「不建议跳过 C 直接 A」。故须由 captain/leader **跨模块裁决后再按案 A 收敛**，不得作为单模块重构擅自执行。
+3. wav 适配壳：待「共享看板约定」解除后再议继承 core `Demuxer`（同属需批准事项，非技术缺口）。
+
+> 更正说明：本文件初稿曾将「mkv 从覆写 `open()` 回归基类 `_doOpen`」列为可直接推进的候选，与上述裁决冲突，已按裁决文档纠正。

@@ -11,11 +11,19 @@
  * 说明：
  *   - 叶子件复用 core（PlayerError 十码 / Emitter / codec-string 构造器），
  *     遵守 §3「禁止自行拼串」；
- *   - 继承 core Demuxer 基类的切换归第二轮 I1（docs/review/checklist.md，
- *     M3 末触发）待办——media-dev open/readSample 基类波次（E-8）已完成
- *     （ts 模块 TsDemuxer extends Demuxer 为样板，见 ts/src/ts-demuxer.js:42），
- *     mkv 当前仍为自含同形实现（公开形状已冻结对齐，功能面 open/readSample/
- *     samples/seek(µs)/destroy 齐全，仅未复用基类状态机）。
+ *   - 继承 core Demuxer 已完成（第二轮 I1 §29）：按《docs/review/mkv-base-class-alignment.md》
+ *     **案 C** 落地 `extends Demuxer` + 状态机切 `stateValue`（ts 模块
+ *     `TsDemuxer extends Demuxer` 为样板，见 ts/src/ts-demuxer.js:42）；
+ *     `readSample/samples/seek` 与守卫、end 判定保留自实现（D3/D4 语义分歧）。
+ *     与基类「完全同构」（案 A）属 D1–D12 跨模块统一议题，须 captain 裁决后
+ *     收敛——文档明确「不建议跳过 C 直接 A」，禁止单模块擅改。
+ *   - `open()` 仍覆写而非走 `_doOpen()` 钩子，系 **D2 裁决「保留模块既有可恢复性」**：
+ *     失败回 `idle` 以保留 attach 换源重试路径（基类为 destroyed 终态，会令该路径失效），
+ *     且 opening 重入抛 STATE_ERROR 而非共享 promise（D1）。
+ *     基类自带的 initTimeoutMs 超时与 `'media-info'`+`'mediaInfo'` 双发已在此等价补齐
+ *     （第五十波）。**勿因"看似与基类重复"而删**——删则超时保护与事件面双双回退。
+ *   - 轨道排序由本模块自管（`#buildMediaInfo` 内 `TYPE_SORT_ORDER`，:387），与基类
+ *     `sortTracks` 等价，非缺失。
  *
  * 解析内核（不变）：EBML 惰性头部扫描 → Segment(Info/Tracks/Cues/Cluster)
  *   → SimpleBlock/BlockGroup → 样本流；未知长度容器边界探测；Cues 定位，
