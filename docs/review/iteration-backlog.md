@@ -86,6 +86,7 @@
 | 63 | withTimeout 死代码转正（owner「继续」授权） | 裁决=**导出**而非删除：`index.js` 导出 `withTimeout`（增量合规 §12.3）；`loader.js` 删自写 `raceTimeout` 改用 `withTimeout`（超时错误原被循环内 `catch{}` 吞掉，替换为零可观察差异，实为消费者转正）；新增 2 例超时分支回归（永不 settle 的 CDN 模块按 timeoutMs 放弃返回 null、超时后回退下一源）；全仓 1144/1144 | `8e89068` |
 | 64 | README 效果演示 + 使用方式（owner 指出缺口） | 新增「效果演示」：playwright 驱动真实 Chrome 播放实拍——WebCodecs 主路线动图（bbb480_30s.ts + 15 步断言日志）+ MP4/MSE 实拍 + 演示站全景（`docs/demo/` 三件约 660KB）；新增「使用方式」四级（demo 体验 / createPlayer 集成 / 底层 Demuxer API / 真机 e2e）；修 mp4/demo 环境日志陈旧字段 `.available`→`.supported`（截图暴露） | `4d90c61` |
 | 65 | README localhost 框架修正（owner 反馈） | §使用方式 1 补 clone→run→open 完整流程，localhost 改代码体并注明「本机地址非外网链接」；§e2e 如实注明素材不入库需自备；覆盖率计数 1142→1144 | `b44b219` |
+| 66 | GitHub Pages 在线演示上线（owner 指令「自己弄」） | 通道：OAuth device flow（curl 全程走本机 VPN 代理 127.0.0.1:7897，绕开沙箱代理对 github.com 的封锁）→ token → API 开通 Pages（201）→ 构建 built → 站点 200。根 `index.html` 重定向演示站 + `.nojekyll`（`9d37879`）；README 顶部与使用方式 1 均加在线链接（`2ad56e2`）。在线地址：https://zhenghy-gh.github.io/pure-webcodecs-player/ | `2ad56e2` |
 
 ---
 
