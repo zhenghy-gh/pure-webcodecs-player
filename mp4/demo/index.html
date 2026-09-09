@@ -44,7 +44,7 @@ const video = document.getElementById('video');
 const stats = new Stats();
 
 detectCapabilities({}).then((cap) => {
-  log(`环境能力：WebCodecs=${cap.webcodecs.available} MSE=${cap.mse.available} AudioWorklet=${cap.audioWorklet}`);
+  log(`环境能力：WebCodecs=${cap.webcodecs?.supported} MSE=${cap.mse?.supported} AudioWorklet=${cap.audioWorklet}`);
 });
 
 let mse = null;
