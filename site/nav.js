@@ -14,22 +14,22 @@
 /** 仓库根相对路径下的模块清单（站点首页与导航共用同一份事实源）。
  *  @type {Array<{name:string, title:string, desc:string, href:string, status:'ok'|'wip'|'na'}>} */
 export const MODULES = [
-  { name: 'core',      title: 'Core',     desc: '公共数据源、Demuxer、能力探测与渲染基座', href: 'core/demo/index.html',       status: 'wip' },
-  { name: 'mp4',       title: 'MP4',      desc: 'ISO-BMFF 解析 → WebCodecs / MSE',        href: 'mp4/demo/index.html',       status: 'wip' },
-  { name: 'mov',       title: 'MOV',      desc: 'QuickTime 容器解析 → WebCodecs',          href: 'mov/demo/index.html',       status: 'wip' },
-  { name: 'mkv',       title: 'MKV/WebM', desc: 'EBML 解析 → WebCodecs',                   href: 'mkv/demo/index.html',       status: 'wip' },
-  { name: 'webtorrent',title: 'WebTorrent',desc: 'P2P 边下边播 torrent → piece → mp4',     href: 'webtorrent/demo/index.html',status: 'wip' },
-  { name: 'ts',        title: 'TS',       desc: 'PAT/PMT/PES → H264/AAC → WebCodecs',     href: 'ts/demo/index.html',        status: 'wip' },
-  { name: 'flv',       title: 'FLV',      desc: 'FLV Tag 解析 → MSE（HTTP-FLV）',         href: 'flv/demo/index.html',       status: 'wip' },
-  { name: 'hls',       title: 'HLS',      desc: 'm3u8 清单 + 分片 → MSE',                 href: 'hls/demo/index.html',       status: 'wip' },
-  { name: 'cmaf',      title: 'CMAF',     desc: 'CMAF Chunk → ISO-BMFF（低延迟方向）',    href: 'cmaf/demo/index.html',      status: 'wip' },
+  { name: 'core',      title: 'Core',     desc: '公共数据源、Demuxer、能力探测与渲染基座', href: 'core/demo/index.html',       status: 'ok' },
+  { name: 'mp4',       title: 'MP4',      desc: 'ISO-BMFF 解析 → WebCodecs / MSE',        href: 'mp4/demo/index.html',       status: 'ok' },
+  { name: 'mov',       title: 'MOV',      desc: 'QuickTime 容器解析 → WebCodecs',          href: 'mov/demo/index.html',       status: 'ok' },
+  { name: 'mkv',       title: 'MKV/WebM', desc: 'EBML 解析 → WebCodecs',                   href: 'mkv/demo/index.html',       status: 'ok' },
+  { name: 'webtorrent',title: 'WebTorrent',desc: 'P2P 边下边播 torrent → piece → mp4',     href: 'webtorrent/demo/index.html',status: 'ok' },
+  { name: 'ts',        title: 'TS',       desc: 'PAT/PMT/PES → H264/AAC → WebCodecs',     href: 'ts/demo/index.html',        status: 'ok' },
+  { name: 'flv',       title: 'FLV',      desc: 'FLV Tag 解析 → MSE（HTTP-FLV）',         href: 'flv/demo/index.html',       status: 'ok' },
+  { name: 'hls',       title: 'HLS',      desc: 'm3u8 清单 + 分片 → MSE',                 href: 'hls/demo/index.html',       status: 'ok' },
+  { name: 'cmaf',      title: 'CMAF',     desc: 'CMAF Chunk → ISO-BMFF（低延迟方向）',    href: 'cmaf/demo/index.html',      status: 'ok' },
   { name: 'wav',       title: 'WAV',      desc: 'RIFF 解析 + AudioWorklet 播放与波形',    href: 'wav/demo/index.html',       status: 'ok' },
   { name: 'flac',      title: 'FLAC',     desc: '无损音频解码 JS 参考实现',                href: 'flac/demo/index.html',      status: 'ok' },
   { name: 'ape',       title: 'APE',      desc: 'MAC 头 / APE TAG 解析与元数据展示',      href: 'ape/demo/index.html',       status: 'ok' },
   { name: 'subtitle',  title: '字幕',     desc: 'SRT / WebVTT / ASS 解析与 Canvas 渲染',  href: 'subtitle/demo/index.html',  status: 'ok' },
-  { name: 'webrtc',    title: 'WebRTC',   desc: 'webrtc:// 信令 → RTCPeerConnection',     href: 'webrtc/demo/index.html',    status: 'wip' },
-  { name: 'rtsp',      title: 'RTSP',     desc: 'WebSocket 中继桥接形态',                  href: 'rtsp/demo/index.html',      status: 'na' },
-  { name: 'rtmp',      title: 'RTMP',     desc: 'WebSocket-FLV 网关桥接形态',              href: 'rtmp/demo/index.html',      status: 'na' },
+  { name: 'webrtc',    title: 'WebRTC',   desc: 'webrtc:// 信令 → RTCPeerConnection',     href: 'webrtc/demo/index.html',    status: 'ok' },
+  { name: 'rtsp',      title: 'RTSP',     desc: 'WebSocket 中继桥接形态',                  href: 'rtsp/demo/index.html',      status: 'ok' },
+  { name: 'rtmp',      title: 'RTMP',     desc: 'WebSocket-FLV 网关桥接形态',              href: 'rtmp/demo/index.html',      status: 'ok' },
 ];
 
 const STATUS_TEXT = { ok: '可用', wip: '建设中', na: '规划中' };
