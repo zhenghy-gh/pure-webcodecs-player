@@ -40,6 +40,11 @@ jobs:
         # 导致大量用例被误报 cancelled（实测 62 例），非代码缺陷。
         run: npm test
 
+      - name: Coverage gate (layered)
+        # 分层门禁：env 层（依赖 WebCodecs/MSE/Canvas 的 player/renderer）豁免，
+        # core 逻辑层 ≥85%、parser 层 ≥80%。避免用统一阈值把「环境限制」当质量缺陷。
+        run: node scripts/audit/coverage-gate.mjs
+
       - name: Contract audit (structure, §2.4)
         run: node scripts/audit/contract-2-4-audit.mjs
 
