@@ -6,6 +6,8 @@
 
 ## 效果演示
 
+**🌐 在线演示（免克隆直接玩）：<https://zhenghy-gh.github.io/pure-webcodecs-player/>**
+
 真实 Chrome 无头驱动本仓库代码的实拍（非效果图）——**WebCodecs 主路线**：TS 流 → 解复用 →
 `VideoDecoder` 真实解码 → Canvas 渲染，下方日志为 15 步端到端自断言全部 PASS：
 
@@ -35,13 +37,17 @@ npm run gateway  # 本地 WS 测试网关（rtmp/rtsp 桥接联调用）
 
 ### 1. 浏览器直接体验（推荐先跑这个）
 
+**无需克隆，在线直接玩**：**[https://zhenghy-gh.github.io/pure-webcodecs-player/](https://zhenghy-gh.github.io/pure-webcodecs-player/)**（GitHub Pages，随 main 分支自动更新；演示站、mp4/mse、音频、字幕、HLS 等 demo 全部可用，本地文件拖进页面，数据不离开浏览器）。
+
+想在本地跑也一样简单：
+
 ```bash
 git clone https://github.com/zhenghy-gh/pure-webcodecs-player.git
 cd pure-webcodecs-player
 npm run demo        # 启动零依赖静态服务器（支持中文路径 / HTTP Range / 目录列表）
 ```
 
-> `npm run demo` 启动的是**你本机**的服务器，下面出现的 `localhost` 地址只在你自己的浏览器里有效——它不是外网演示链接，别人无法直接访问你的机器。
+> `npm run demo` 启动的是**你本机**的服务器，下面出现的 `localhost` 地址只在你自己的浏览器里有效。不想折腾就直接用上面的在线链接。
 
 然后在**本机浏览器**打开：
 
