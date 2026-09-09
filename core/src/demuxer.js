@@ -32,6 +32,7 @@ import {
   seekUnsupported,
 } from './errors.js';
 import { sortTracks } from './types.js';
+import { raceAbort, throwIfAborted } from './abort.js';
 
 /** @typedef {'idle'|'opening'|'ready'|'seeking'|'destroyed'} DemuxerState */
 
@@ -188,20 +189,43 @@ export class Demuxer extends Emitter {
 
   /**
    * 拉取指定轨下一个样本（pull 主通道，天然背压）。EOS resolve null。
+   *
+   * @param {number} trackId
+   * @param {{signal?:AbortSignal|null}} [options] 可选中断信号（§12.3「新增可选成员」演进项）。
+   *   传入后可在样本读取挂起时主动取消，reject PlayerError('ABORTED')；
+   *   **不传时行为与冻结版完全一致**。abort 不推进 `done`、不 emit('error')，
+   *   中断后仍可继续 readSample 续读。
    */
-  async readSample(trackId) {
+  async readSample(trackId, options = undefined) {
     this._requireUsable('readSample');
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal, `readSample(${trackId}) aborted`);
     let entry = this._trackIterators.get(trackId);
     if (!entry) {
-      entry = { gen: this._createTrackIterator(trackId), done: false };
+      entry = { gen: this._createTrackIterator(trackId), done: false, pendingResult: null };
       this._trackIterators.set(trackId, entry);
     }
     if (entry.done) return null;
     let sample;
     try {
-      ({ value: sample, done: entry.done } = await entry.gen.next());
+      let result;
+      if (entry.pendingResult) {
+        // 上次被中断、但迟到落地的样本：优先吐出，避免中断吞样本
+        result = entry.pendingResult;
+        entry.pendingResult = null;
+      } else {
+        const nextP = entry.gen.next();
+        if (signal) {
+          // 中断竞速期间已落地的样本不丢弃，缓存供下次续读（生成器 yield 一旦
+          // 落地就无法回退，不缓存即永久丢帧；flac/wav 走「先读后推进游标」同理）
+          nextP.then((r) => { if (r && !r.done) entry.pendingResult = r; }, () => {});
+        }
+        result = await raceAbort(nextP, signal, `readSample(${trackId}) aborted`);
+      }
+      ({ value: sample, done: entry.done } = result);
     } catch (err) {
-      this.emit('error', err);
+      // abort 属调用方预期控制流，不进 'error' 事件面（见 core/src/abort.js 设计取舍）
+      if (err?.code !== 'ABORTED') this.emit('error', err);
       throw err;
     }
     if (entry.done || !sample) {
@@ -221,15 +245,16 @@ export class Demuxer extends Emitter {
   /**
    * 异步迭代器糖层（等价循环 readSample）。
    * @param {number} [trackId] 缺省时按轨序串行消费全部轨
+   * @param {{signal?:AbortSignal|null}} [options] 透传给 readSample 的可选中断信号
    */
-  samples(trackId = undefined) {
+  samples(trackId = undefined, options = undefined) {
     const self = this;
     async function* iterate() {
       self._requireUsable('samples');
       const ids = trackId !== undefined ? [trackId] : self.trackIds();
       for (const id of ids) {
         for (;;) {
-          const s = await self.readSample(id);
+          const s = await self.readSample(id, options);
           if (s === null) break;
           yield s;
         }

@@ -423,3 +423,34 @@ describe('computePeaks/drawWaveform', () => {
     assert.equal(ctx.calls.length, 1);
   });
 });
+
+/* ============================================================
+ * §12.3 新增可选成员：readSample/samples 的 options.signal
+ * ============================================================ */
+describe('AbortSignal 中断（§12.3 新增可选成员）', () => {
+  test('已中断 signal：readSample 前置快速失败，且不吞首帧', async () => {
+    const dem = new WavDemuxer(memorySource(buildWav({ channels: 2, sampleRate: 48000, frames: 100 })));
+    await dem.open();
+    const ac = new AbortController();
+    ac.abort();
+    await assert.rejects(() => dem.readSample(1, { signal: ac.signal }), (e) => e?.code === 'ABORTED');
+    const s = await dem.readSample(1);
+    assert.ok(s && s.data.byteLength > 0, '前置失败未推进游标，首帧仍完整可取');
+    await dem.destroy();
+  });
+
+  test('已中断 signal：samples 迭代抛 ABORTED，且不误置 error 态、不进 error 事件面', async () => {
+    const dem = new WavDemuxer(memorySource(buildWav({ frames: 100 })));
+    await dem.open();
+    const errs = [];
+    dem.on('error', (e) => errs.push(e));
+    const ac = new AbortController();
+    ac.abort();
+    await assert.rejects(async () => {
+      for await (const s of dem.samples(1, { signal: ac.signal })) void s;
+    }, (e) => e?.code === 'ABORTED');
+    assert.equal(errs.length, 0, 'abort 属预期控制流，不得 emit error');
+    assert.notEqual(dem.state, 'error', 'abort 不得误置 error 态');
+    await dem.destroy();
+  });
+});

@@ -32,6 +32,7 @@
 
 import { Demuxer } from '../../core/src/demuxer.js';
 import { PlayerError } from '../../core/src/errors.js';
+import { raceAbort, throwIfAborted } from '../../core/src/abort.js';
 import {
   readId, readSize, iterElements, decodeValueByType,
 } from './ebml.js';
@@ -163,6 +164,11 @@ export class MkvDemuxer extends Demuxer {
     this.#trackIterators = new Map();
     /** @type {Set<number>} 已 EOS 的轨道 */
     this.#eosedTracks = new Set();
+    /**
+     * @type {Map<number, {value:*, done:boolean}>} trackId → 被中断后迟到落地的样本
+     * 缓存（与 core 基类 pendingResult 同语义：中断不吞样本，下次续读优先吐出）
+     */
+    this.#pendingResults = new Map();
     /** 拉取参数（seek 会重置） */
     this.#pullOpts = {};
     /** 轨内样本序号计数 */
@@ -175,6 +181,7 @@ export class MkvDemuxer extends Demuxer {
 
   #trackIterators;
   #eosedTracks;
+  #pendingResults;
   #pullOpts;
   #sampleIndexByTrack;
   #endEmitted;
@@ -663,10 +670,15 @@ export class MkvDemuxer extends Demuxer {
   /**
    * 拉取指定轨下一个样本；EOS 返回 null。
    * @param {number} trackId
+   * @param {{signal?:AbortSignal|null}} [options] 可选中断信号（§12.3 新增可选成员）；
+   *   abort 时 reject PlayerError('ABORTED')，不推进 EOS 标记、不 emit('error')，
+   *   中断后仍可续读。不传时行为与冻结版一致。
    * @returns {Promise<Sample|null>}
    */
-  async readSample(trackId) {
+  async readSample(trackId, options = undefined) {
     this.#assertReady(`readSample(${trackId})`);
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal, `readSample(${trackId}) aborted`);
     const track = this.getTrackById(trackId);
     if (!track) {
       throw new PlayerError('PARSE_ERROR', `未知轨道号 ${trackId}`);
@@ -678,7 +690,20 @@ export class MkvDemuxer extends Demuxer {
       this.#trackIterators.set(trackId, this.#iterateTrack(trackId));
     }
     const it = this.#trackIterators.get(trackId);
-    const { value, done } = await it.next();
+    let result;
+    if (this.#pendingResults.has(trackId)) {
+      // 上次被中断、但迟到落地的样本：优先吐出，避免中断吞样本
+      result = this.#pendingResults.get(trackId);
+      this.#pendingResults.delete(trackId);
+    } else {
+      const nextP = it.next();
+      if (signal) {
+        // 与 core 基类 pendingResult 同款：竞速期间已落地的样本缓存续读
+        nextP.then((r) => { if (r && !r.done) this.#pendingResults.set(trackId, r); }, () => {});
+      }
+      result = await raceAbort(nextP, signal, `readSample(${trackId}) aborted`);
+    }
+    const { value, done } = result;
     if (done) {
       this.#eosedTracks.add(trackId);
       this.#maybeEmitEnd();
@@ -688,13 +713,13 @@ export class MkvDemuxer extends Demuxer {
   }
 
   /** 异步迭代器糖层（等价循环 readSample） */
-  samples(trackId) {
+  samples(trackId, options = undefined) {
     // 同步快速失败语义与 readSample 一致
     this.#assertReady(`samples(${trackId})`);
     const self = this;
     return (async function* gen() {
       for (;;) {
-        const s = await self.readSample(trackId);
+        const s = await self.readSample(trackId, options);
         if (s === null) return;
         yield s;
       }
@@ -757,8 +782,9 @@ export class MkvDemuxer extends Demuxer {
     const off = await this.locate(timestampUs);
     if (off < 0) throw new PlayerError('SEEK_UNSUPPORTED', '无法定位目标时间');
 
-    // 清空各轨缓冲并设置新拉取窗口
+    // 清空各轨缓冲并设置新拉取窗口（含中断迟到缓存：旧落点样本不得跨越 seek 生效）
     this.#trackIterators.clear();
+    this.#pendingResults.clear();
     this.#eosedTracks.clear();
     this.#sampleIndexByTrack.clear();
     this.#endEmitted = false;
@@ -853,6 +879,7 @@ export class MkvDemuxer extends Demuxer {
     if (this.stateValue === 'destroyed') return; // 幂等
     this.stateValue = 'destroyed';
     this.#trackIterators.clear();
+    this.#pendingResults.clear();
     this.#eosedTracks.clear();
     try { this.dataSource.close?.(); } catch { /* 关闭失败不影响销毁 */ }
     this.emit('end', { reason: 'aborted' });

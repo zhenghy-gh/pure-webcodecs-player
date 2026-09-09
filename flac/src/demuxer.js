@@ -14,6 +14,7 @@ import { parseMetadata } from './metadata.js';
 import { findSync } from './frame-header.js';
 import { FlacDecoder } from './decoder.js';
 import { stateError } from './errors.js';
+import { raceAbort, throwIfAborted } from '../../core/src/abort.js';
 
 export class FlacDemuxer extends Demuxer {
   /**
@@ -107,25 +108,34 @@ export class FlacDemuxer extends Demuxer {
    * 拉取音频轨 Sample 迭代器：每个 Sample 为一整个 FLAC 帧。
    * seek 之后再次调用，将从 seek 落点帧继续产出。
    * @param {number} trackId 仅支持 1
+   * @param {{signal?:AbortSignal|null}} [options] 可选中断信号（§12.3 新增可选成员）
    */
-  samples(trackId) {
+  samples(trackId, options = undefined) {
     if (this.stateValue !== 'ready') throw stateError('必须先 parseInit 成功再取 samples');
     if (trackId !== 1) throw stateError(`FLAC 只有轨道 1，收到 ${trackId}`);
     const self = this;
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal, `samples(${trackId}) aborted`);
     let cursor = this.#nextFrameIdx;
 
     return {
       [Symbol.asyncIterator]() {
         return {
           async next() {
-            if (!self.frameIndex) await self.buildFrameIndex();
+            if (!self.frameIndex) await raceAbort(self.buildFrameIndex(), signal, `samples(${trackId}) aborted`);
             if (self.stateValue === 'ended' || cursor >= self.frameIndex.length) {
               self.emit('end', { reason: 'eos' });
               return { done: true, value: undefined };
             }
-            const entry = self.frameIndex[cursor++];
+            const entry = self.frameIndex[cursor];
             const usPerSample = 1e6 / self.metadata.streamInfo.sampleRate;
-            const data = await self.#source.read(entry.offset, entry.size);
+            // 先读后推进游标：读取被中断时不吞帧，中断后仍可续读同一帧
+            const data = await raceAbort(
+              self.#source.read(entry.offset, entry.size),
+              signal,
+              `samples(${trackId}) aborted`,
+            );
+            cursor += 1;
             if (cursor >= self.frameIndex.length && self.stateValue === 'ready') self.stateValue = 'ended';
             return {
               done: false,
@@ -239,13 +249,19 @@ export class FlacDemuxer extends Demuxer {
   /** 兼容旧 API：返回 FLAC 专属解析元数据。 */
   get metadata() { return this.flacMetadata; }
 
-  /** 定稿名：拉取下一样本（pull 主通道）。EOS resolve null。 */
-  async readSample(trackId) {
+  /**
+   * 定稿名：拉取下一样本（pull 主通道）。EOS resolve null。
+   * @param {number} trackId
+   * @param {{signal?:AbortSignal|null}} [options] 可选中断信号（§12.3 新增可选成员）
+   */
+  async readSample(trackId, options = undefined) {
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal, `readSample(${trackId}) aborted`);
     if (!this.#reader || !this.#readerActive) {
-      this.#reader = this.samples(trackId)[Symbol.asyncIterator]();
+      this.#reader = this.samples(trackId, options)[Symbol.asyncIterator]();
       this.#readerActive = true;
     }
-    const r = await this.#reader.next();
+    const r = await raceAbort(this.#reader.next(), signal, `readSample(${trackId}) aborted`);
     if (r.done) { this.#readerActive = false; return null; }
     return r.value;
   }

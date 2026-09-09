@@ -323,3 +323,18 @@ test('三轨变体轨道排序：video > audio > text', async () => {
   assert.deepEqual(d.tracks.map((t) => t.type), ['video', 'text']);
 });
 
+test('§12.3 新增可选成员：readSample/samples 支持 options.signal（已中断前置快速失败且保留续读）', async () => {
+  const d = new MkvDemuxer(new BufferSource(makeMinimalWebm().bytes));
+  await d.open();
+  const ac = new AbortController();
+  ac.abort();
+  await assert.rejects(() => d.readSample(1, { signal: ac.signal }), (e) => e?.code === 'ABORTED');
+  await assert.rejects(async () => {
+    for await (const s of d.samples(1, { signal: ac.signal })) void s;
+  }, (e) => e?.code === 'ABORTED');
+  // 前置失败不触碰迭代器：首个样本仍完整可取
+  const s = await d.readSample(1);
+  assert.ok(s && s.size > 0, '前置失败未推进迭代器，首样本仍可取');
+  await d.destroy();
+});
+

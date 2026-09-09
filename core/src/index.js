@@ -11,6 +11,7 @@
  *  - 基础设施：emitter / errors
  */
 export * from './errors.js';
+export { raceAbort, throwIfAborted } from './abort.js';
 export { Emitter } from './emitter.js';
 export * from './types.js';
 export {

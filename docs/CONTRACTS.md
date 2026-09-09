@@ -144,11 +144,15 @@ export class Mp4Demuxer extends Demuxer {
   async open() {}
 
   /** 拉取指定轨下一个样本（pull 主通道，天然背压）。EOS resolve null。
-   *  未 open 先调 → throw PlayerError('STATE_ERROR')。 */
-  async readSample(trackId /* number */) {} /* Promise<Sample|null> */
+   *  未 open 先调 → throw PlayerError('STATE_ERROR')。
+   *  【v0.2 演进·§12.3 新增可选成员】options?: {signal?: AbortSignal} —— 传入后
+   *  可在读取挂起时主动取消，reject PlayerError('ABORTED')；**不传时行为与冻结版
+   *  完全一致**。中断不吞样本（落地样本缓存续读）、不 emit('error')、不置 error 态。 */
+  async readSample(trackId /* number */, options /* {signal?} */) {} /* Promise<Sample|null> */
 
-  /** 异步迭代器糖层（等价于循环 readSample）：for await (const s of d.samples(1)) */
-  samples(trackId) /* AsyncIterable<Sample> */ {}
+  /** 异步迭代器糖层（等价于循环 readSample）：for await (const s of d.samples(1))
+   *  【v0.2 演进·§12.3 新增可选成员】第二参数 options 同 readSample，透传 signal。 */
+  samples(trackId, options /* {signal?} */) /* AsyncIterable<Sample> */ {}
 
   /** seek（仅 seekable）：清空各轨缓冲，迭代起点对齐 ≤timestampUs 最近视频关键帧+对齐音频包，
    *  resolve 实际落点 {actualTimestampUs}。直播/无索引容器 reject PlayerError('SEEK_UNSUPPORTED')。 */
@@ -499,6 +503,16 @@ export class PlayerError extends Error { code; detail; }
 - **冻结期**：自本版发布起，至 **M2 评审完成**解除；解除后恢复 §12 一般治理流程。
 - **演进规则**：新增可选成员=允许（minor 版本）；§2.4 别名表只许扩充行、不许修改既有行语义；删除/改名/改语义=破坏性变更，须 **captain+leader 双签**批准并上板公告后方可进新版本。
 - **执行**：违反冻结的实现一律评审打回。背景：接口已三次成形（v1.0.0 的 parseInit/samples → v0.1 的 open/readSample），再翻一次全仓返工不可接受。
+- **演进记录**（新增可选成员，按演进规则免双签；既有签名与语义零变更）：
+  - **2026-09-09（第五十一波）**：`readSample(trackId, options?)` / `samples(trackId, options?)`
+    新增可选 `options.signal: AbortSignal`。传入后读取挂起时可主动取消，reject
+    `PlayerError('ABORTED')`；不传时零开销直通、行为与冻结版完全一致（全仓 1030/1030 回归坐实）。
+    实现落点 `core/src/abort.js`（`raceAbort` / `throwIfAborted`），已接入 core 基类与
+    mkv / flac / wav 三处自实现；mp4 / mov / ts / flv 走基类自动生效。
+    语义约定：**中断不吞样本**（落地样本缓存供续读，flac/wav 迭代改为「先读后推进游标」）、
+    **不 emit('error')、不置 error 态**（abort 属调用方预期控制流，非模块故障）。
+    注：本演进**不接管 destroy 的实时性** —— §41 的「标记 done + 清空映射」工程化缓解保持不变，
+    signal 仅服务调用方显式传入场景。
 
 ---
 

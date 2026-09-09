@@ -101,3 +101,19 @@ test('createDemuxer 工厂：DataSource → 已 ready；非 FLAC reject PROBE_FA
     (e) => { assert.equal(e.code, ErrorCode.PROBE_FAILED); return true; },
   );
 });
+
+test('§12.3 新增可选成员：readSample/samples 支持 options.signal（中断不吞帧）', async () => {
+  const bytes = await readFix('sample-basic.flac');
+  const d = new FlacDemuxer(mem(bytes));
+  await d.open();
+  const ac = new AbortController();
+  ac.abort();
+  await assert.rejects(() => d.readSample(1, { signal: ac.signal }), (e) => e?.code === 'ABORTED');
+  await assert.rejects(async () => {
+    for await (const s of d.samples(1, { signal: ac.signal })) void s;
+  }, (e) => e?.code === 'ABORTED');
+  // samples 迭代器内「先读后推进游标」：中断不吞帧，首帧仍完整可取
+  const s = await d.readSample(1);
+  assert.ok(s && s.data.byteLength > 0, '中断不得吞掉首帧');
+  await d.destroy();
+});

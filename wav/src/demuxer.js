@@ -8,6 +8,7 @@
  */
 import { parseWavHeader } from './riff-parser.js';
 import { stateError, sourceError, timeoutError } from './errors.js';
+import { raceAbort, throwIfAborted } from '../../core/src/abort.js';
 
 /** 每次迭代产出的采样块大小（帧）：粒度与内存开销的平衡点。 */
 const CHUNK_FRAMES = 4096;
@@ -148,8 +149,11 @@ export class WavDemuxer {
    * 拉取音频轨的 Sample 异步迭代器（点播首选用法，天然背压）。
    * seek 之后再次调用本方法，将从 seek 落点开始产出。
    * @param {number} trackId 仅支持 1（WAV 单轨）
+   * @param {{signal?:AbortSignal|null}} [options] 可选中断信号（§12.3 新增可选成员）
    */
-  samples(trackId) {
+  samples(trackId, options = undefined) {
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal, `samples(${trackId}) aborted`);
     if (this.state === 'destroyed') throw stateError('demuxer 已销毁，不可复用');
     if (this.state !== 'ready') throw stateError('必须先 parseInit 成功再取 samples');
     if (trackId !== 1) throw stateError(`WAV 只有轨道 1，收到 ${trackId}`);
@@ -175,13 +179,20 @@ export class WavDemuxer {
             const count = Math.min(self.#chunkFrames, totalFrames - startFrame);
             let data;
             try {
-              data = await self.#source.read(
-                dataOff + startFrame * Math.max(1, fmt.blockAlign),
-                count * Math.max(1, fmt.blockAlign),
+              data = await raceAbort(
+                self.#source.read(
+                  dataOff + startFrame * Math.max(1, fmt.blockAlign),
+                  count * Math.max(1, fmt.blockAlign),
+                ),
+                signal,
+                `samples(${trackId}) aborted`,
               );
             } catch (e) {
-              self.state = 'error';
-              self.emitter.emit('error', e);
+              // abort 是调用方预期控制流：不置 error 态、不进 'error' 事件面，直接上抛
+              if (e?.code !== 'ABORTED') {
+                self.state = 'error';
+                self.emitter.emit('error', e);
+              }
               throw e;
             }
             nextFrame += count;
@@ -236,13 +247,19 @@ export class WavDemuxer {
   /** 定稿名：打开并解析初始化段（= parseInit） */
   open() { return this.parseInit(); }
 
-  /** 定稿名：拉取下一样本（pull 主通道）。EOS resolve null。 */
-  async readSample(trackId) {
+  /**
+   * 定稿名：拉取下一样本（pull 主通道）。EOS resolve null。
+   * @param {number} trackId
+   * @param {{signal?:AbortSignal|null}} [options] 可选中断信号（§12.3 新增可选成员）
+   */
+  async readSample(trackId, options = undefined) {
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal, `readSample(${trackId}) aborted`);
     if (!this.#reader || !this.#readerActive) {
-      this.#reader = this.samples(trackId)[Symbol.asyncIterator]();
+      this.#reader = this.samples(trackId, options)[Symbol.asyncIterator]();
       this.#readerActive = true;
     }
-    const r = await this.#reader.next();
+    const r = await raceAbort(this.#reader.next(), signal, `readSample(${trackId}) aborted`);
     if (r.done) { this.#readerActive = false; return null; }
     return r.value;
   }

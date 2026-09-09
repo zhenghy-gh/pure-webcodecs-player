@@ -132,3 +132,35 @@
 3. wav 适配壳：待「共享看板约定」解除后再议继承 core `Demuxer`（同属需批准事项，非技术缺口）。
 
 > 更正说明：本文件初稿曾将「mkv 从覆写 `open()` 回归基类 `_doOpen`」列为可直接推进的候选，与上述裁决冲突，已按裁决文档纠正。
+
+---
+
+## §52 第五十一波：readSample 引入 AbortSignal（§12.3 新增可选成员）
+
+**背景与合规性**：§10 候选 1。动手前先核了三条约束，确认可自主推进：
+① `CONTRACTS.md` §12.3 演进规则「**新增可选成员 = 允许**（minor 版本）」，仅删除/改名/改语义才需 captain+leader 双签；
+② §41 的「不引入 AbortSignal」是**当波针对 destroy 挂起的范围决策**，非永久禁令，其 §41.3 已把本项列为「下一步」；
+③ 本演进**不接管 destroy 实时性**，§41 的工程化缓解保持不变。故保持「不传 signal 时行为与冻结版完全一致」即为合规演进。
+
+**实现**：
+- 新增 `core/src/abort.js`：`raceAbort(promise, signal, message)` 与 `throwIfAborted(signal, message)`，
+  基于既有 `abortedError`（`ABORTED` 码）。signal 为空时**零开销直通**（返回同一 promise 引用，不包层、不注册监听）。
+- 接入 4 处 `readSample`：core 基类（`demuxer.js`）、mkv、flac、wav；`samples()` 糖层同步透传 options。
+  mp4 / mov / ts / flv 走基类，自动生效。
+
+**过程中发现并修掉的真实缺陷（非本次新增，是既有隐患）**：
+1. **中断吞样本（core 基类 + mkv）**：异步生成器 `yield` 一旦落地就无法回退，中断后该样本永久丢失。
+   修：竞速期间落地的样本缓存到 `entry.pendingResult`（mkv 为 `#pendingResults`），下次 `readSample` 优先吐出；
+   seek/destroy 时随迭代器 `clear()` 一并失效（mkv 独立 Map 已补两处 `clear()`）。
+2. **flac 迭代游标先于读取推进**：`cursor++` 在 `await source.read()` 之前，中断即吞一帧。
+   修：改为「**先读后推进游标**」。
+3. **wav abort 被误判为故障**：`samples()` 内 `source.read` 的 catch 无条件 `state='error'` + `emit('error')`，
+   abort 落进去会污染状态与事件面。修：按设计排除 `ABORTED`。
+
+**语义约定（已写进 CONTRACTS §2.2 与 §12.3 演进记录）**：中断 `reject PlayerError('ABORTED')`；
+**不吞样本**、**不 emit('error')**、**不置 error 态**（abort 属调用方预期控制流，非模块故障）。
+
+**验证**：新增 15 例（core `abort.test.js` 11 例：原语直通/已中断即拒/运行中取消/异常透传 + 集成向后兼容/挂起取消/前置快速失败/续读/不丢帧至 EOS/糖层透传；mkv 1 例、flac 1 例、wav 2 例集成）。
+**全仓 1030/1030，fail=0、cancelled=0**（基线 1015，净增 15）。
+
+**基建沉淀**：`core/src/abort.js`（可复用于后续 seek/open 等长耗时调用的可选中断）。
