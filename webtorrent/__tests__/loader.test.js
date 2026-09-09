@@ -127,6 +127,25 @@ test('全部源都无构造器时返回 null（不抛错）', async () => {
   assert.equal(Ctor, null);
 });
 
+// ── 2.5 超时放弃（withTimeout 竞速） ─────────────────────
+
+test('CDN 模块永不 settle 时按 timeoutMs 超时放弃，返回 null 而非永久挂起', async () => {
+  // 顶层 await 永不完成 → import() promise 永不 settle → 只能靠超时竞速放弃
+  const hang = mockModule('await new Promise(() => {});\nexport const X = 1;\n');
+  const t0 = Date.now();
+  const Ctor = await loadWebTorrent({ cdnUrls: [hang], timeoutMs: 50 });
+  assert.equal(Ctor, null);
+  const elapsed = Date.now() - t0;
+  assert.ok(elapsed < 5000, `应在超时阈值附近返回（实际 ${elapsed}ms），而非永久挂起`);
+});
+
+test('超时的源之后仍能回退下一个源', async () => {
+  const hang = mockModule('await new Promise(() => {});\nexport const X = 1;\n');
+  const good = mockModule('export default function AfterTimeout(){}\n');
+  const Ctor = await loadWebTorrent({ cdnUrls: [hang, good], timeoutMs: 50 });
+  assert.equal(Ctor.name, 'AfterTimeout');
+});
+
 // ── 3. 安全：协议白名单（I5） ────────────────────────────
 
 test('data: 源被安全过滤，不会执行其中代码', async () => {

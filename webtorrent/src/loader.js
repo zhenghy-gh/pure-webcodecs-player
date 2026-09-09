@@ -10,6 +10,7 @@
  */
 
 import { assertSafeImportUrl } from '../../core/src/url-guard.js';
+import { withTimeout } from './utils.js';
 
 /** 默认 CDN 列表：webtorrent v2 起官方 dist 即 ESM */
 export const DEFAULT_CDN_URLS = Object.freeze([
@@ -41,22 +42,12 @@ export async function loadWebTorrent(opts = {}) {
       continue; // 非法协议：跳过该源，继续下一个
     }
     try {
-      const mod = await raceTimeout(import(/* @vite-ignore */ url), timeoutMs);
+      const mod = await withTimeout(import(/* @vite-ignore */ url), timeoutMs, 'WebTorrent CDN');
       const ctor = mod?.default ?? mod?.WebTorrent ?? null;
       if (typeof ctor === 'function') return ctor;
     } catch {
-      // 网络/CORS/离线：尝试下一个源
+      // 网络/CORS/离线/超时：尝试下一个源
     }
   }
   return null;
-}
-
-function raceTimeout(promise, ms) {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`加载超时(${ms}ms)`)), ms);
-    promise.then(
-      (v) => { clearTimeout(t); resolve(v); },
-      (e) => { clearTimeout(t); reject(e); },
-    );
-  });
 }

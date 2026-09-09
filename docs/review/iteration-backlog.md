@@ -83,6 +83,7 @@
 | 60 | core exp-golomb 分支补测 | `core/src/exp-golomb.js` 82.2%→达标（+7 例）：high profile scaling list 消费、chroma_format_idc=3(4:4:4)/0(mono) 的 CropUnitX/Y 分支、frame_mbs_only=0 高度翻倍、pic_order_cnt_type=1 循环、非 SPS PARSE_ERROR、stripEmulationPrevention、BitReader 复用 | 本波 |
 | 61 | core data-source 补测（逻辑层清零） | `core/src/data-source.js` 84.8%→达标（+8 例）：`MemoryDataSource`/`BlobDataSource`/`asDataSource` 三个导出此前**零直接测试**；含 ArrayBuffer 入参、File 名回退、尾部截断 vs 越界、无 Blob 环境降级、鸭子类型 TypeError | `9c577f9` |
 | 62 | README 工程化章节刷新 | 新增「质量门禁与工程化」章节（单仓库 monorepo / CI 五段 / 分层覆盖率门禁 / §2.4 双契约审计 / 迭代扫描器）+ 测试与覆盖率现状表（1142/1142 绿；core 96.3% / parser 95.3% / env 61.8% 豁免）；模块状态表脚注日期→2026-09-09 | `98e3af4` |
+| 63 | withTimeout 死代码转正（owner「继续」授权） | 裁决=**导出**而非删除：`index.js` 导出 `withTimeout`（增量合规 §12.3）；`loader.js` 删自写 `raceTimeout` 改用 `withTimeout`（超时错误原被循环内 `catch{}` 吞掉，替换为零可观察差异，实为消费者转正）；新增 2 例超时分支回归（永不 settle 的 CDN 模块按 timeoutMs 放弃返回 null、超时后回退下一源）；全仓 1144/1144 | 本波 |
 
 ---
 
@@ -101,9 +102,9 @@
 - [x] **P1** 补测 `core/src/exp-golomb.js` 82.2% → 达标出列（第六十波，+7 例）
 - [x] **P1** 补测 `core/src/data-source.js` 84.8% → 达标出列（第六十一波，+8 例）——**至此逻辑层（core+parser）未达标文件清零，`coverage-gate` exit 0**
 - [x] **P2** README 刷新：补「质量门禁与工程化」章节 + 覆盖率现状表，反映第 50-61 波成果（第六十二波，`98e3af4`）
+- [x] **P1** 死代码处置：`withTimeout` **导出**（owner「继续」授权，第六十三波）——`index.js` 增导出 + `loader.js` 删自写 `raceTimeout` 改用它（消费者转正，行为零差异）+ 2 例超时回归
 
 ### 待办（按优先级，下一波取 P1 第一条）
-- [ ] **P1** 死代码处置（**待 owner 定夺**）：`webtorrent/src/utils.js` 的 `withTimeout` 未从 `index.js` 导出、全仓零调用——删掉 or 导出，二选一（第五十七波发现，已补测证明可用）
 - [ ] **P2** 真机 e2e 回归脚本化：把 `docs/review/i3/` 的手工验证固化成可重跑脚本
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛

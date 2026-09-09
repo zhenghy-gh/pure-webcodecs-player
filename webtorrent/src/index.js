@@ -120,6 +120,6 @@ export { loadWebTorrent, DEFAULT_CDN_URLS } from './loader.js';
 export {
   parseMagnet, buildMagnet, base32Decode, base32Encode, hexToBase32, base32ToHex,
 } from './magnet.js';
-export { Emitter, formatBytes } from './utils.js';
+export { Emitter, formatBytes, withTimeout } from './utils.js';
 
 export const VERSION = '0.2.0';

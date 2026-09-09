@@ -120,7 +120,7 @@ cd webtorrent && python3 -m http.server 8091    # 或根目录 npm run demo
 | `WebTorrentPlayer/selectMediaFile` | 网络封装（可选依赖） |
 | `TorrentFileSource/createTorrentSource` | webtorrent File → DataSource |
 | `loadWebTorrent/DEFAULT_CDN_URLS` | 可选依赖加载器 |
-| `Emitter/formatBytes`、`PlayerError/ErrorCode`(复用 core) | 工具 |
+| `Emitter/formatBytes/withTimeout`、`PlayerError/ErrorCode`(复用 core) | 工具 |
 
 ### TorrentAssembler
 
