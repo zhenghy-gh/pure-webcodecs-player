@@ -114,3 +114,4 @@
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
 
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
+| 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
