@@ -21,25 +21,49 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 
-/** scope：demuxer=适用 §2.4 全文；probe-only=仅 probe+MediaInfo；source=只产 Source；base=基类自身 */
+/**
+ * scope 决定该模块是否适用 §2.4 契约的 demuxer 类级检查：
+ *   demuxer    = 适用 §2.4 全文（必须导出 <Format>Demuxer 且继承 core Demuxer）
+ *   probe-only = 仅 probe + MediaInfo（Phase 3 未落 demuxer）
+ *   source     = 只产 Source（传输层）
+ *   base       = 基类自身（不适用子类规则）
+ *   segment    = fMP4 分片解析（无契约 Demuxer 定位）
+ *   pipeline   = 播放链路（m3u8 + 分片加载 + transmux + MSE，非单一 demuxer）
+ *   parser     = 字幕/文本解析渲染（非音视轨 demuxer）
+ *
+ * ⚠️ 2026-09-09 修正：cmaf/hls/subtitle 原被误标为 demuxer，导致「index 未导出 demuxer 类」
+ *    被计为缺陷。三者本就无契约 Demuxer 定位（见各自 index.js 导出面），属 scope 误判。
+ */
 const MODULES = [
   { dir: 'mp4', scope: 'demuxer' },
   { dir: 'mov', scope: 'demuxer' },
-  { dir: 'cmaf', scope: 'demuxer' },
+  { dir: 'cmaf', scope: 'segment', note: 'fMP4 分片解析 + WebCodecs player（无契约 Demuxer 定位）' },
   { dir: 'mkv', scope: 'demuxer' },
   { dir: 'ts', scope: 'demuxer' },
   { dir: 'flv', scope: 'demuxer' },
-  { dir: 'hls', scope: 'demuxer' },
+  { dir: 'hls', scope: 'pipeline', note: 'm3u8 + 分片加载 + transmux + MSE（非单一 demuxer）' },
   { dir: 'wav', scope: 'demuxer' },
   { dir: 'flac', scope: 'demuxer' },
   { dir: 'ape', scope: 'probe-only', note: 'Phase 3 仅 probe+MediaInfo' },
-  { dir: 'subtitle', scope: 'demuxer' },
+  { dir: 'subtitle', scope: 'parser', note: 'SRT/VTT/ASS 解析渲染（非音视轨 demuxer）' },
   { dir: 'webtorrent', scope: 'source', note: '只产 Source' },
   { dir: 'webrtc', scope: 'source', note: '只产 Source' },
-  { dir: 'rtmp', scope: 'source', note: '只产 Source' },
+  { dir: 'rtmp', scope: 'source', note: '只产 Source；内 FlvDemuxer 为 push/flush 流式解析器，非契约 Demuxer' },
   { dir: 'rtsp', scope: 'source', note: '只产 Source' },
   { dir: 'core', scope: 'base', note: '基类自身' },
 ];
+
+/**
+ * 已裁决保留项：结构层与基类不一致，但经评审裁决明确保留的。
+ * 不计入 issues，输出为「○ 已裁决保留」提示，避免后人误当缺陷重构。
+ * 依据：docs/review/mkv-base-class-alignment.md §8（I1 首轮裁决）
+ */
+const DECIDED = {
+  mkv: {
+    ownDoOpen:
+      '案 C 保留自实现 open()（D1 重入抛 STATE_ERROR / D2 失败回 idle 可 attach 重试），见 mkv-base-class-alignment.md §8 裁决 D1/D2',
+  },
+};
 
 const REQUIRED = ['open', 'readSample', 'samples', 'seek', 'pause', 'resume', 'destroy'];
 const OPTIONAL_LIVE = ['start'];
@@ -203,23 +227,43 @@ for (const r of rows) {
     continue;
   }
   for (const c of r.classes) {
+    const shape = `  -- ${pad(c.name, 22)} extends=${c.extendsBase ? 'Y' : 'N'} ownProbe=${c.ownProbe ? 'Y' : 'N'} ownDoOpen=${c.ownDoOpen ? 'Y' : 'N'} probe{${c.probeSync === null ? '-' : c.probeSync ? 'sync' : 'ASYNC'}/${c.probeSafe === null ? '-' : c.probeSafe ? 'safe' : 'THROW'}/${c.probeNull === null ? '-' : c.probeNull ? 'null' : 'NOTNULL'}} start=${c.liveMissing.length ? 'N' : 'Y'} alias=[${c.aliases.join(',')}]`;
+
+    // 非 demuxer scope：不适用 §2.4 类级契约（基类自身 / 传输层 / 分片 / 播放链路 / 字幕解析）
+    // 仅作信息展示，不计入 issues——避免把「本就无契约 Demuxer 定位」的模块误判为缺陷。
+    if (r.scope !== 'demuxer') {
+      console.log(shape);
+      console.log(`       ○ scope=${r.scope}：不适用 §2.4 demuxer 类级检查，仅登记`);
+      continue;
+    }
+
     const flags = [];
+    const notes = [];
     if (!c.nameOk) flags.push(`类名不合 <Format>Demuxer（${c.name}）`);
     if (!c.extendsBase) flags.push('未继承 core Demuxer');
-    if (r.scope === 'demuxer') {
-      if (!c.ownProbe) flags.push('未自实现 static probe（仅继承基类恒 null）');
-      if (c.probeSync === false) flags.push('probe 非同步（返回 Promise）');
-      if (c.probeSafe === false) flags.push(`probe 抛异常：${c.probeErr}`);
-      if (c.probeNull === false) flags.push('probe 对垃圾输入未返回 null');
-      if (!c.ownDoOpen) flags.push('未实现 _doOpen（open 无法产出 MediaInfo）');
-      if (c.missing.length) flags.push(`缺方法：${c.missing.join('/')}`);
+
+    const checks = [
+      { k: 'ownProbe', bad: !c.ownProbe, msg: '未自实现 static probe（仅继承基类恒 null）' },
+      { k: 'probeSync', bad: c.probeSync === false, msg: 'probe 非同步（返回 Promise）' },
+      { k: 'probeSafe', bad: c.probeSafe === false, msg: `probe 抛异常：${c.probeErr}` },
+      { k: 'probeNull', bad: c.probeNull === false, msg: 'probe 对垃圾输入未返回 null' },
+      { k: 'ownDoOpen', bad: !c.ownDoOpen, msg: '未实现 _doOpen（open 无法产出 MediaInfo）' },
+      { k: 'methods', bad: c.missing.length > 0, msg: `缺方法：${c.missing.join('/')}` },
+    ];
+    for (const chk of checks) {
+      if (!chk.bad) continue;
+      const decided = DECIDED[r.dir]?.[chk.k];
+      if (decided) notes.push(`○ 已裁决保留 [${chk.k}]：${decided}`);
+      else flags.push(chk.msg);
     }
+
     const status = flags.length ? '!!' : 'OK';
-    if (flags.length) issues += flags.length;
+    issues += flags.length;
     console.log(
       `  ${status} ${pad(c.name, 22)} extends=${c.extendsBase ? 'Y' : 'N'} ownProbe=${c.ownProbe ? 'Y' : 'N'} ownDoOpen=${c.ownDoOpen ? 'Y' : 'N'} probe{${c.probeSync === null ? '-' : c.probeSync ? 'sync' : 'ASYNC'}/${c.probeSafe === null ? '-' : c.probeSafe ? 'safe' : 'THROW'}/${c.probeNull === null ? '-' : c.probeNull ? 'null' : 'NOTNULL'}} start=${c.liveMissing.length ? 'N' : 'Y'} alias=[${c.aliases.join(',')}]`
     );
     for (const f of flags) console.log(`       ↳ ${f}`);
+    for (const n of notes) console.log(`       ${n}`);
   }
 }
 

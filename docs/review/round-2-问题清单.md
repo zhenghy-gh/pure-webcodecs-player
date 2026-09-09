@@ -202,3 +202,36 @@
 **排障记录**：首跑 wav 测试出现「runner 下文件级超时」假象——经 `_probe` 二分定位为测试文件直接运行 286ms 全过、runner 复跑即绿的**瞬时 fixture 再生竞争**（并发过高触发 `gen.mjs` 原子写竞争），非代码缺陷；基线参数 `--test-concurrency=4` 下稳定。教训：全仓回归必须用基线并发参数，默认全核并发会误报 cancelled。
 
 **状态**：7 demuxer（mp4/mov/mkv/ts/flv/flac/wav）中 6 个走基类（flac/wav/mkv 案 C），仅剩「完全同构」语义统一（D1-D12/W2-W14）为跨模块议题，仍须裁决后收敛。
+
+---
+
+## §55 第五十四波：结构层审计误报清零 + CI 落地（零语义改动）
+
+**动机**：代码首推 GitHub 后现盘发现两个真实缺口——①`scripts/audit/contract-2-4-audit.mjs` 输出「合计结构层问题：7」；②仓库**无 `.github/`（未配 CI）**。逐一核实后确认 7 项**全部为脚本判定误报，无真实缺陷**，但持续输出 `!!` 会诱导后人误重构（与第五十二波同源风险）。
+
+**7 项逐条判定（先核实再动手，不凭输出改代码）**：
+
+| 项 | 原判定 | 核实结论 | 处置 |
+|---|---|---|---|
+| cmaf 未导出 demuxer 类 | !! | `cmaf/src/index.js` 全为 `probe`/isobmff 工具/`splitChunks`/`CmafWebCodecsPlayer`，**本就无契约 Demuxer 定位** | scope 改 `segment` |
+| hls 未导出 demuxer 类 | !! | 导出面为 m3u8 解析 + SegmentLoader + MseController + Fmp4Remuxer + HlsPlayer，**播放链路非单一 demuxer** | scope 改 `pipeline` |
+| subtitle 未导出 demuxer 类 | !! | 导出 `parseSrt/parseVtt/parseAss/probe/parseCues` 等，**字幕解析非音视轨 demuxer** | scope 改 `parser` |
+| rtmp FlvDemuxer 未继承基类 | !! | `rtmp/src/flv-demuxer.js:30` 为 `push()/flush()/destroy()` 的**流式 tag 解析器**（305 行），与 flv 模块 615 行契约 `FlvDemuxer` 是两份不同定位的实现，非重复缺陷 | scope=`source` 跳过类级检查 + note 注明 |
+| core 类名不合 `<Format>Demuxer` | !! | 基类自身（`scope=base`）被套子类规则 | 跳过 |
+| core 未继承 core Demuxer | !! | 同上 | 跳过 |
+| mkv 未实现 `_doOpen` | !! | **已裁决保留**：案 C 保留自实现 `open()`（D1 重入抛 STATE_ERROR / D2 失败回 idle 可 attach 重试） | 加 `DECIDED` 裁决白名单 |
+
+**改动**：
+1. `scripts/audit/contract-2-4-audit.mjs`：
+   - scope 表修正：新增 `segment`/`pipeline`/`parser` 三类定位；cmaf/hls/subtitle 归位；rtmp note 注明内部 FlvDemuxer 为流式解析器。
+   - **非 `demuxer` scope 一律跳过 §2.4 类级检查**（仅信息登记，不计 issues）——根除「基类/传输层/分片/链路/字幕」被套子类规则的误判。
+   - 新增 `DECIDED` 裁决白名单（首项：`mkv.ownDoOpen`），命中项输出 `○ 已裁决保留 [k]：依据…`，**不计入 issues**，把裁决依据固化进工具输出。
+   - 结果：**合计结构层问题 7 → 0**；7 个 demuxer scope 模块全 `OK`（mp4/mov/ts/flv/wav/flac/mkv），mkv 差异以「已裁决保留」呈现。
+2. `package.json`：`test`/`test:watch` 补 `--test-concurrency=4 --test-timeout=15000`，**固化第五十三波基线参数**——默认全核并发会触发 `fixtures/gen.mjs` 原子写竞争、误报 62 例 cancelled。
+3. **新增 `.github/workflows/ci.yml`**：push/PR 触发 + 同分支 `cancel-in-progress`；Node 22（engines>=22，零依赖无需 install）；5 步=lint → check → test（1030）→ 结构层审计 → 运行时审计；timeout 20min。
+
+**验证**：`npm run lint` ✓（1 换行警告）、`npm run check` ✓（959/565 例、16/16 模块）、`npm test` **1030/1030 pass，fail=0、cancelled=0**（11.2s）、结构层审计 **0 问题**、运行时审计 **全模块 PASS**、workflow YAML 语法校验通过（7 步）。
+
+**性质**：零语义改动、零测试断言改动、不触碰任何需裁决项。
+
+**仍待 owner 裁决（本波未执行）**：案 A「完全同构」剩余工作量已收敛为 **mkv 单项**——D1（open 重入抛错→共享 promise）、D2（失败回 idle→destroyed，**会退化 attach 换源重试能力**）、D3（getter 严格守卫→基类默认值）、D11（samples 未 open 同步抛→懒生成器）、D4（end 严格单次→基类可多次）。对应 §7 的 Q1-Q5，属「契约字面 vs 工程惯例」选边，且 D2 有功能退化风险，须 owner 拍板后执行。

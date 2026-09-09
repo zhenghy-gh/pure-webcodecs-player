@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 同一分支的新推送自动取消在跑的旧任务，省 CI 时长
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: lint · thresholds · tests · contract audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # 零依赖项目（package.json 无 dependencies），无需 npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Module thresholds
+        run: npm run check
+
+      - name: Unit tests (1030 cases)
+        # 基线并发参数：--test-concurrency=4 必需。
+        # 默认全核并发会让各模块 fixtures/gen.mjs 原子写相互竞争，
+        # 导致大量用例被误报 cancelled（实测 62 例），非代码缺陷。
+        run: npm test
+
+      - name: Contract audit (structure, §2.4)
+        run: node scripts/audit/contract-2-4-audit.mjs
+
+      - name: Contract audit (runtime, §2.4)
+        run: node scripts/audit/runtime-2-4-audit.mjs

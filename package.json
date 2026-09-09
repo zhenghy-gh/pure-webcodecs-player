@@ -8,8 +8,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test --test-timeout=10000 --test-force-exit \"**/__tests__/*.test.{js,mjs}\"",
-    "test:watch": "node --test --test-timeout=10000 --test-force-exit --watch \"**/__tests__/*.test.{js,mjs}\"",
+    "test": "node --test --test-concurrency=4 --test-timeout=15000 --test-force-exit \"**/__tests__/*.test.{js,mjs}\"",
+    "test:watch": "node --test --test-concurrency=4 --test-timeout=15000 --test-force-exit --watch \"**/__tests__/*.test.{js,mjs}\"",
     "test:hls": "node --test --test-timeout=10000 --test-force-exit \"hls/__tests__/*.test.{js,mjs}\"",
     "test:cmaf": "node --test --test-timeout=10000 --test-force-exit \"cmaf/__tests__/*.test.{js,mjs}\"",
     "test:webrtc": "node --test --test-timeout=10000 --test-force-exit \"webrtc/__tests__/*.test.{js,mjs}\"",
