@@ -106,10 +106,10 @@
 - [x] **P1** 补测 `core/src/data-source.js` 84.8% → 达标出列（第六十一波，+8 例）——**至此逻辑层（core+parser）未达标文件清零，`coverage-gate` exit 0**
 - [x] **P2** README 刷新：补「质量门禁与工程化」章节 + 覆盖率现状表，反映第 50-61 波成果（第六十二波，`98e3af4`）
 - [x] **P1** 死代码处置：`withTimeout` **导出**（owner「继续」授权，第六十三波）——`index.js` 增导出 + `loader.js` 删自写 `raceTimeout` 改用它（消费者转正，行为零差异）+ 2 例超时回归
+- [x] **P2** 总览页 MODULES.status 陈旧修复（第七十波 `e7ff2eb`）：nav.js 16 模块 status 全部对齐 ok（core/mp4/mov/mkv/webtorrent/ts/flv/hls/cmaf/webrtc wip→ok，rtsp/rtmp na→ok）；线上 hub 验证徽章唯一 ["可用"]
+- [x] **P2** 真机 e2e 回归脚本化（第七十一波）：新增 `scripts/e2e/demo-smoke.mjs`——playwright 驱动真实 Chrome 遍历 16 模块 demo 页 + hub，捕获 console error/pageerror + 资源 404（favicon/sourcemap 豁免良性），mp4/hls 用本地样本自动驱动播放并断言，全屏截图刷新 `docs/review/i3/*.png` 与 `docs/demo/demo-hub.png`；17/17 全 PASS、退出码 0。把 i3 手工验证固化成可重跑回归
 
 ### 待办（按优先级，下一波取 P1 第一条）
-- [ ] **P2** 演示站 hub 徽章陈旧（第六十四波截图发现）：`site/nav.js` MODULES 状态显示全部「建设中」，与实际（16 模块已完成）不符，误导访客；同步各模块卡片的真实状态与入口
-- [ ] **P2** 真机 e2e 回归脚本化：把 `docs/review/i3/` 的手工验证固化成可重跑脚本
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
 
@@ -118,3 +118,4 @@
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |
 | 69 | 根路径重定向 mp4/demo/（owner 选方向1） | index.html 重定向目标由 ./site/demo/index.html 改为 ./mp4/demo/，打开仓库主页即播放器；线上已生效验证（curl 返回 location.replace('./mp4/demo/')） | `2c66a19` |
 | 70 | 总览页 MODULES.status 陈旧修复（owner「继续优化」） | nav.js 16 模块 status 全部对齐 ok（core/mp4/mov/mkv/webtorrent/ts/flv/hls/cmaf/webrtc wip→ok，rtsp/rtmp na→ok）；线上 hub playwright 验证 16 卡片徽章取值唯一 ["可用"]；hub 截图已同步更新 | `e7ff2eb` |
+| 71 | 真机 e2e 回归脚本化（P2） | 新增 `scripts/e2e/demo-smoke.mjs`：playwright 驱动真实 Chrome 遍历 16 模块 demo 页 + hub，捕获 console error/pageerror + 资源 404（favicon/sourcemap 豁免），mp4/hls 用本地样本（sintel-trailer.mp4 / ts-hls/playlist.m3u8）自动驱动播放并断言（video playing / stats 分片），全屏截图刷新 `docs/review/i3/*.png` 与 `docs/demo/demo-hub.png`；17/17 全 PASS、退出码 0；backlog 划掉 hub 徽章 P2 + e2e P2 | 本波 |
