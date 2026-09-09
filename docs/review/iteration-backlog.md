@@ -30,7 +30,7 @@
 | 运行时契约审计 | `node scripts/audit/runtime-2-4-audit.mjs` | 7 demuxer 运行时矩阵 |
 | 风格检查 | `npm run lint` | 应为 0 警告 |
 | 模块门槛 | `npm run check` | 16/16 模块达标 |
-| 全仓测试 | `npm test` | 1079/1079，fail=0、cancelled=0（第五十六波基线） |
+| 全仓测试 | `npm test` | 1094/1094，fail=0、cancelled=0（第五十七波基线） |
 
 ---
 
@@ -63,7 +63,8 @@
 | 53 | wav 案 C 子类化 | `WavDemuxer extends Demuxer`，删 MiniEmitter、解析体入 `_doOpen` | `b73a6a4` |
 | 54 | 审计误报清零 + CI | 结构层问题 7→0（scope 修正 + DECIDED 白名单）；`npm test` 固化并发参数；`.github/workflows/ci.yml` | `7c9fc1b` |
 | 55 | 分层覆盖率门禁 + 补测 | `coverage-gate.mjs`（env 豁免 / core 85% / parser 80%）接入 CI；`rtsp/src/nal.js` 专项补测 42.9%→达标；迭代台账建立 | `fa8ebe3` |
-| 56 | 迭代扫描器 + 两项补测 | `iteration-scan.mjs` 聚合现盘（git/lint/check/双契约审计/覆盖率/backlog → 自动建议下一波）；`mp4/src/file-source.js` DOM stub 补测 56.7%→达标；`subtitle/src/errors.js` 构造器表驱动补测 74.2%→达标 | 本波 |
+| 56 | 迭代扫描器 + 两项补测 | `iteration-scan.mjs` 聚合现盘（git/lint/check/双契约审计/覆盖率/backlog → 自动建议下一波）；`mp4/src/file-source.js` DOM stub 补测 56.7%→达标；`subtitle/src/errors.js` 构造器表驱动补测 74.2%→达标 | `077a33e` |
+| 57 | webtorrent utils 补测 | `webtorrent/src/utils.js` 75%→达标（+15 例）；发现 `withTimeout` 未导出且零调用（死代码候选，待 owner 定夺） | 本波 |
 
 ---
 
@@ -76,10 +77,12 @@
 - [x] **P1** `iteration-scan.mjs`：聚合扫描器已落地（第五十六波）
 - [x] **P1** 补测 `mp4/src/file-source.js` 56.7% → 达标出列（第五十六波，+12 例）
 - [x] **P2** 补测 `subtitle/src/errors.js` 74.2% → 达标出列（第五十六波，+26 例）
+- [x] **P1** 补测 `webtorrent/src/utils.js` 75% → 达标出列（第五十七波，+15 例）
 
 ### 待办（按优先级，下一波取 P1 第一条）
-- [ ] **P1** 补测 `webtorrent/src/utils.js` **75%**（parser 层最差，差 5 个百分点）
-- [ ] **P2** 补测 `rtmp/src/flv-demuxer.js` 75.1%、`webtorrent/src/loader.js` 79%
+- [ ] **P1** 死代码处置（**待 owner 定夺**）：`webtorrent/src/utils.js` 的 `withTimeout` 未从 `index.js` 导出、全仓零调用——删掉 or 导出，二选一（第五十七波发现，已补测证明可用）
+- [ ] **P1** 补测 `rtmp/src/flv-demuxer.js` **75.1%**（parser 层最差）
+- [ ] **P2** 补测 `webtorrent/src/loader.js` 79%
 - [ ] **P2** 补测 `core/src/exp-golomb.js` 82.2%、`core/src/data-source.js` 84.8%（core 门槛 85%，各差 2.8/0.2）
 - [ ] **P2** 真机 e2e 回归脚本化：把 `docs/review/i3/` 的手工验证固化成可重跑脚本
 - [ ] **P2** README 刷新：当前 README 未反映第 50-56 波（GitHub 首推、CI、契约对齐、分层门禁、迭代机制）成果
