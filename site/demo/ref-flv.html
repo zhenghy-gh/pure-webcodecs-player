@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FLV 参考实现对照 · PurePlay</title>
+  <!-- 新皮肤四件套（DESIGN.md v1.1 §11）；本页为 CDN 可选增强对照页 -->
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../css/layout.css">
+  <link rel="stylesheet" href="../css/components.css">
+</head>
+<body>
+<div class="demo">
+  <header class="topbar demo__topbar" data-skin="topbar">
+    <a class="topbar__logo" href="./index.html">
+      <svg class="icon icon-20" aria-hidden="true"><use href="../assets/icons.svg#i-logo"/></svg>
+      <span class="topbar__title">PurePlay</span>
+    </a>
+    <nav class="tabs" data-skin="tabs">
+      <a class="tabs__item" href="./index.html">总览</a>
+      <a class="tabs__item" href="./ref-hls.html">HLS 对照</a>
+      <a class="tabs__item is-active" href="./ref-flv.html">FLV 对照</a>
+    </nav>
+    <div class="topbar__actions">
+      <span class="badge badge--warning" id="cdn-badge">CDN 未加载</span>
+    </div>
+  </header>
+
+  <main class="stage demo__stage is-idle" id="stage">
+    <div class="stage__viewport" id="viewport">
+      <video id="video" playsinline></video>
+    </div>
+    <div class="stage__overlay">
+      <div class="spinner" role="status"></div>
+      <span class="buffering-text">缓冲中…</span>
+    </div>
+    <div class="drop" id="drop" data-skin="drop">
+      <span class="drop__icon"><svg class="icon icon-32"><use href="../assets/icons.svg#i-upload"/></svg></span>
+      <strong>FLV 参考实现（flv.js，生产级方案对照）</strong>
+      <span>通过 CDN 加载 flv.js 播放 HTTP-FLV 流；与自研 <code>flv/</code> 模块（Tag 解析 → MSE）互为对照。</span>
+      <div class="field field-row" style="max-width:520px">
+        <input class="field__input" id="url" type="text" placeholder="粘贴 HTTP(S) FLV 地址（需允许 CORS 与混合内容）"
+               aria-label="FLV 流地址">
+        <button class="btn btn--solid field__btn" id="load">载入</button>
+        <button class="btn btn--ghost field__btn" id="sample">填入示例地址</button>
+        <button class="btn btn--ghost field__btn" id="reload">重试 CDN</button>
+      </div>
+      <div class="drop__chips">
+        <span class="chip">CDN 可选增强</span><span class="chip">失败自动降级提示</span>
+        <span class="chip">自研路线：../../flv/demo/index.html</span>
+      </div>
+      <span class="drop__hint">公开可用的 CORS FLV 端点稀少且多为 http:// —— 页面为 https 时会被浏览器拦为混合内容，属预期降级场景。</span>
+    </div>
+    <div class="stage__errbox">
+      <div class="errbox">
+        <span class="errbox__icon"><svg class="icon icon-32"><use href="../assets/icons.svg#i-warning"/></svg></span>
+        <h2 class="errbox__title">播放失败</h2>
+        <span class="errbox__code" id="err-code">E_NET_UNKNOWN</span>
+        <p class="errbox__detail" id="err-detail">—</p>
+        <div class="errbox__actions">
+          <button class="btn btn--solid" id="err-retry">重试</button>
+          <button class="btn btn--ghost" id="err-copy">复制诊断信息</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="controls demo__controls is-idle" id="controls">
+    <div class="controls__group">
+      <button class="btn-icon" data-skin="play" aria-label="播放">
+        <svg class="icon"><use href="../assets/icons.svg#i-play"/></svg></button>
+      <span class="controls__time" id="cur">00:00</span>
+      <div class="slider__wrap">
+        <input class="slider slider--progress" type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度">
+      </div>
+      <span class="controls__time controls__time--total" id="total">00:00</span>
+    </div>
+    <div class="controls__group">
+      <button class="btn-icon" data-skin="mute" aria-label="静音">
+        <svg class="icon"><use href="../assets/icons.svg#i-volume-high"/></svg></button>
+      <input class="slider slider--volume" type="range" min="0" max="100" value="100" aria-label="音量">
+      <button class="btn-icon" disabled title="参考流无字幕轨" aria-label="字幕">
+        <svg class="icon"><use href="../assets/icons.svg#i-cc"/></svg></button>
+      <button class="btn-icon" data-skin="fs" aria-label="全屏">
+        <svg class="icon"><use href="../assets/icons.svg#i-expand"/></svg></button>
+    </div>
+  </footer>
+
+  <aside class="panel demo__panel" id="panel">
+    <section class="panel__section">
+      <h2 class="panel__title">媒体信息</h2>
+      <div class="kv"><span class="kv__key">容器</span><span class="kv__val">HTTP-FLV</span></div>
+      <div class="kv"><span class="kv__key">时长</span><span class="kv__val" id="i-dur">—</span></div>
+      <div class="kv"><span class="kv__key">分辨率</span><span class="kv__val" id="i-res">—</span></div>
+      <div class="kv"><span class="kv__key">引擎</span><span class="kv__val" id="i-engine">—</span></div>
+    </section>
+    <section class="panel__section">
+      <h2 class="panel__title">参考实现对照</h2>
+      <div class="kv"><span class="kv__key">本页方案</span><span class="kv__val">flv.js（社区生产级）</span></div>
+      <div class="kv"><span class="kv__key">依赖形态</span><span class="kv__val">CDN 可选增强·探测降级</span></div>
+      <div class="kv"><span class="kv__key">自研对照</span><span class="kv__val"><a href="../../flv/demo/index.html">flv/ 模块（Tag 解析 → MSE）</a></span></div>
+      <div class="kv"><span class="kv__key">适用场景</span><span class="kv__val">对接存量 FLV 源快速验证</span></div>
+      <div class="kv"><span class="kv__key">自研价值</span><span class="kv__val">零依赖·协议教学·可控定制</span></div>
+    </section>
+    <section class="panel__section">
+      <h2 class="panel__title">状态</h2>
+      <div class="kv"><span class="kv__key">阶段</span><span class="kv__val" id="i-stage">未加载</span></div>
+    </section>
+  </aside>
+</div>
+
+<script type="module" src="../js/skin.js"></script>
+<script type="module">
+  /* 页面胶水：CDN 探测加载 + 播放控制。失败降级提示照常，不影响零依赖模块。 */
+  import Skin from '../js/skin.js';
+
+  const $ = s => document.querySelector(s);
+  const video = $('#video'), stage = $('#stage'), controls = $('#controls');
+  const progress = $('input.slider--progress'), volume = $('input.slider--volume');
+  const playBtn = $('[data-skin="play"]'), muteBtn = $('[data-skin="mute"]');
+  const SAMPLE = 'https://sf1-hscdn-tos.pstatp.com/obj/media-fe/xgplayer_doc_video/flv/xgplayer-demo-360p.flv';
+
+  Skin.initTabs();
+  Skin.bindRange(progress, { onCommit: v => { if (video.duration) video.currentTime = v / 1000 * video.duration; } });
+  Skin.bindRange(volume, { onPreview: v => { if (!muted()) video.volume = v / 100; } });
+  Skin.bindKeys({
+    ' ': () => playBtn.click(),
+    f: () => $('[data-skin="fs"]').click(), F: () => $('[data-skin="fs"]').click(),
+    m: () => muteBtn.click(), M: () => muteBtn.click(),
+  });
+
+  function muted() { return controls.classList.contains('is-muted'); }
+  function setPlaying(onNow) {
+    controls.classList.toggle('is-playing', onNow);
+    controls.classList.toggle('is-paused', !onNow);
+    playBtn.setAttribute('aria-label', onNow ? '暂停' : '播放');
+    playBtn.querySelector('use').setAttribute('href', `../assets/icons.svg#i-${onNow ? 'pause' : 'play'}`);
+  }
+  playBtn.addEventListener('click', () => { video.paused ? video.play() : video.pause(); });
+  video.addEventListener('play', () => setPlaying(true));
+  video.addEventListener('pause', () => setPlaying(false));
+  muteBtn.addEventListener('click', () => {
+    const m = !video.muted;
+    video.muted = m;
+    controls.classList.toggle('is-muted', m);
+    muteBtn.querySelector('use').setAttribute('href',
+      `../assets/icons.svg#i-volume-${m ? 'mute' : video.volume > .5 ? 'high' : 'low'}`);
+  });
+  volume.addEventListener('input', () => {
+    if (!video.muted) return;
+    video.muted = false;
+    controls.classList.remove('is-muted');
+    muteBtn.querySelector('use').setAttribute('href', '../assets/icons.svg#i-volume-high');
+  });
+
+  const fmt = Skin.formatTime;
+  video.addEventListener('timeupdate', () => {
+    progress.value = String(video.duration ? Math.round(video.currentTime / video.duration * 1000) : 0);
+    progress.dispatchEvent(new Event('input'));
+    $('#cur').textContent = fmt(video.currentTime);
+    if (video.buffered.length) {
+      progress.dataset.buffered = String(Math.min(100,
+        video.buffered.end(video.buffered.length - 1) / (video.duration || 1) * 100));
+    }
+  });
+  video.addEventListener('durationchange', () => {
+    $('#total').textContent = fmt(video.duration || 0);
+    $('#i-dur').textContent = fmt(video.duration || 0);
+  });
+  video.addEventListener('loadedmetadata', () => { $('#i-res').textContent = `${video.videoWidth}×${video.videoHeight}`; });
+  for (const ev of ['waiting', 'stalled']) video.addEventListener(ev, () => stage.classList.add('is-buffering'));
+  for (const ev of ['playing', 'canplay']) video.addEventListener(ev, () => stage.classList.remove('is-buffering'));
+
+  /* ---- 错误盒（§8.4） ---- */
+  function showError(code, detail) {
+    stage.classList.add('has-error');
+    $('#err-code').textContent = code;
+    $('#err-detail').textContent = detail;
+  }
+  $('#err-retry').addEventListener('click', () => { stage.classList.remove('has-error'); start(); });
+  $('#err-copy').addEventListener('click', async e => {
+    const diag = `UA=${navigator.userAgent}\ncode=${$('#err-code').textContent}\n${$('#err-detail').textContent}`;
+    try { await navigator.clipboard.writeText(diag); e.target.textContent = '已复制'; setTimeout(() => e.target.textContent = '复制诊断信息', 1500); } catch {}
+  });
+
+  /* ---- CDN 可选增强 ---- */
+  let flv = null;
+  function loadScript(src, timeout = 8000) {
+    return new Promise((ok, bad) => {
+      const s = document.createElement('script');
+      const t = setTimeout(() => { s.remove(); bad(new Error('CDN 加载超时')); }, timeout);
+      s.src = src;
+      s.onload = () => { clearTimeout(t); ok(); };
+      s.onerror = () => { clearTimeout(t); s.remove(); bad(new Error('CDN 脚本加载失败')); };
+      document.head.appendChild(s);
+    });
+  }
+  function degrade(reason) {
+    $('#cdn-badge').textContent = 'CDN 不可达 · 已降级';
+    $('#cdn-badge').className = 'badge badge--warning';
+    $('#i-engine').textContent = '不可用';
+    $('#i-stage').textContent = '已降级（自研模块不受影响）';
+    Skin.toast({ type: 'warn', title: '参考实现未能加载', detail: reason + '；自研 flv/ 模块不依赖 CDN。', timeout: 8000 });
+  }
+  async function start() {
+    stage.classList.remove('has-error');
+    const url = $('#url').value.trim();
+    if (!url) { Skin.toast({ type: 'info', title: '请先填写 FLV 地址', detail: '可用「填入示例地址」按钮。' }); return; }
+    stage.classList.add('is-buffering');
+    $('#i-stage').textContent = '加载 CDN…';
+    try {
+      if (!window.flvjs) await loadScript('https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js');
+    } catch (e) { stage.classList.remove('is-buffering'); degrade(e.message); return; }
+    if (!window.flvjs?.isSupported()) {
+      stage.classList.remove('is-buffering');
+      degrade('当前环境不支持 MSE（flv.js 依赖 MSE）');
+      return;
+    }
+
+    $('#cdn-badge').textContent = 'CDN 已就绪';
+    $('#cdn-badge').className = 'badge badge--success';
+    stage.classList.remove('is-idle');
+    try {
+      flv?.destroy();
+      flv = window.flvjs.createPlayer({ type: 'flv', url, isLive: false }, { enableWorker: false, enableStashBuffer: true });
+      flv.attachMediaElement(video);
+      flv.on(window.flvjs.Events.ERROR, (type, detail) => {
+        const code = type === window.flvjs.ErrorTypes.NETWORK_ERROR ? 'E_NET_FLV_FATAL' : 'E_DEMUX_FLV_FATAL';
+        showError(code, String(detail));
+      });
+      flv.load();
+      video.play().catch(() => {});
+      $('#i-engine').textContent = 'flv.js ' + (window.flvjs.version || '');
+      $('#i-stage').textContent = '就绪';
+    } catch (e) {
+      showError('E_SRC_OPEN_FAIL', String(e?.message || e));
+    }
+  }
+  $('#load').addEventListener('click', start);
+  $('#reload').addEventListener('click', start);
+  $('#sample').addEventListener('click', () => { $('#url').value = SAMPLE; start(); });
+
+  $('[data-skin="fs"]').addEventListener('click', () => Skin.toggleFullscreen(stage));
+  $('#viewport').addEventListener('dblclick', () => Skin.toggleFullscreen(stage));
+</script>
+</body>
+</html>

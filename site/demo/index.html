@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>总览 · PurePlay</title>
+  <!-- pp-* 家族（M3 收敛目标，视觉规范 v1.0）-->
+  <link rel="stylesheet" href="../skin.css">
+  <style>
+    /* 本页专属：首页卡片网格（仅消费 --pp-* 变量与 .pp-card 基类） */
+    .home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--pp-sp-3, 12px); }
+    .hero { margin-bottom: var(--pp-sp-5, 20px); }
+    .hero h1 { font-size: var(--pp-fs-xl); margin: 0 0 6px; }
+    .hero p { color: var(--pp-text-dim); margin: 0; font-size: var(--pp-fs-sm); }
+  </style>
+</head>
+<body class="pp-scope">
+
+  <header class="pp-topbar" data-pp-tabs>
+    <span class="pp-topbar__brand">PurePlay</span>
+    <nav class="pp-tabs">
+      <a class="pp-tabs__item is-active" href="./index.html">总览</a>
+      <a class="pp-tabs__item" href="../../wav/demo/index.html">WAV</a>
+      <a class="pp-tabs__item" href="../../flac/demo/index.html">FLAC</a>
+      <a class="pp-tabs__item" href="../../ape/demo/index.html">APE</a>
+      <a class="pp-tabs__item" href="../../subtitle/demo/index.html">字幕</a>
+      <a class="pp-tabs__item" href="./ref-hls.html">HLS 对照</a>
+      <a class="pp-tabs__item" href="./ref-flv.html">FLV 对照</a>
+    </nav>
+  </header>
+
+  <main class="pp-page">
+    <section class="hero">
+      <h1>PurePlay · 演示站</h1>
+      <p>零构建、纯 ESM、零第三方运行时依赖。选择模块进入对应 demo；CDN 对照页为可选增强。</p>
+    </section>
+
+    <section class="home-grid" id="module-grid"><!-- 由下方脚本按 MODULES 生成 --></section>
+
+    <!-- 参考实现对照：CDN 可选增强 -->
+    <section class="hero" style="margin-top:28px">
+      <h2 style="font-size:var(--pp-fs-lg)">参考实现对照 <span class="pp-badge pp-badge--warn">CDN 可选增强 · 失败降级</span></h2>
+      <p style="color:var(--pp-text-dim)">社区生产级播放库横向对照；自研管线零依赖，不受 CDN 可用性影响。</p>
+    </section>
+    <section class="home-grid" id="ref-grid">
+      <a class="pp-card home-card" href="./ref-hls.html">
+        <strong>HLS 对照 · hls.js</strong><br>
+        <span class="pp-drop__hint">CDN 加载 hls.js 播公开测试流，与自研 hls/ 模块对照</span><br>
+        <span class="pp-badge pp-badge--warn">可选增强</span>
+      </a>
+      <a class="pp-card home-card" href="./ref-flv.html">
+        <strong>FLV 对照 · flv.js</strong><br>
+        <span class="pp-drop__hint">CDN 加载 flv.js 播 HTTP-FLV；含混合内容降级说明</span><br>
+        <span class="pp-badge pp-badge--warn">可选增强</span>
+      </a>
+    </section>
+  </main>
+
+  <script type="module">
+    /* 模块清单取自 nav.js 的 MODULES 数据源（数据与渲染解耦；nav.js 渲染职能已退役） */
+    import { initSkin } from '../skin.js';
+    initSkin({ brand: 'PurePlay' });
+    const { MODULES } = await import('../nav.js');
+    const STATUS_CLS = { ok: 'pp-badge--ok', wip: 'pp-badge--warn', na: '' };
+    const STATUS_TEXT = { ok: '可用', wip: '建设中', na: '规划中' };
+
+    const grid = document.getElementById('module-grid');
+    for (const m of MODULES) {
+      const a = document.createElement('a');
+      a.className = 'pp-card home-card';
+      a.href = '../../' + m.href;
+      const title = document.createElement('strong');
+      title.textContent = m.title;
+      const desc = document.createElement('span');
+      desc.className = 'pp-drop__hint';
+      desc.textContent = m.desc;
+      const meta = document.createElement('div');
+      meta.style.marginTop = '6px';
+      meta.innerHTML = `<code>${m.name}</code> <span class="pp-badge ${STATUS_CLS[m.status] || ''}">${STATUS_TEXT[m.status] || m.status}</span>`;
+      a.append(title, desc, meta);
+      grid.appendChild(a);
+    }
+  </script>
+</body>
+</html>

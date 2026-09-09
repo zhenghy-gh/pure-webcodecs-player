@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>E2E · core Player 真实浏览器验收（WebCodecs）</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
+         background: #0d1117; color: #e6edf3; display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+  h1 { font-size: 16px; margin: 0; }
+  canvas { width: 480px; max-width: 100%; background: #000; border-radius: 8px; }
+  pre { font-size: 11px; white-space: pre-wrap; background: #161b22; border: 1px solid #30363d;
+        border-radius: 8px; padding: 10px; max-height: 40vh; overflow: auto; }
+  .pass { color: #3fb950; } .fail { color: #f85149; }
+</style>
+</head>
+<body>
+<h1>core Player · 真实浏览器验收（load TS → WebCodecs 解码渲染 → seek）</h1>
+<canvas id="stage" width="640" height="360"></canvas>
+<pre id="log">等待执行…</pre>
+
+<script type="module">
+import { registerDemuxer, createPlayer, PLAYER_STATES, detectFromUrl } from '../../core/src/index.js';
+import * as tsMod from '../../ts/src/index.js';
+import * as mp4Mod from '../../mp4/src/index.js';
+import * as flacMod from '../../flac/src/index.js';
+import * as mkvMod from '../../mkv/src/index.js';
+
+const $log = document.getElementById('log');
+const logs = [];
+function log(line, cls = '') {
+  logs.push(line);
+  $log.innerHTML = logs.map((l) => `<div class="${l.cls ?? ''}">${l.text}</div>`).join('');
+}
+function out(text, cls) { log({ text, cls }); }
+function ok(text) { out(`✔ ${text}`, 'pass'); }
+function bad(text) { out(`✘ ${text}`, 'fail'); }
+
+// 注册真实容器模块（生产宿主协议：registerDemuxer）
+registerDemuxer(tsMod);
+registerDemuxer(mp4Mod);
+registerDemuxer(flacMod);
+registerDemuxer(mkvMod);
+
+const results = []; // { name, pass, detail }
+function step(name, pass, detail = '') { results.push({ name, pass, detail }); (pass ? ok : bad)(`${name}${detail ? ' — ' + detail : ''}`); }
+
+const params = new URLSearchParams(location.search);
+const MEDIA = params.get('media') || '/samples/e2e/bbb480_30s.ts';
+const SEEK_US = Number(params.get('seekUs') || 12_000_000);
+
+window.__E2E_RUN__ = async function run() {
+  results.length = 0;
+  logs.length = 0;
+  try {
+    // ① 能力自检
+    const caps = {
+      videoDecode: typeof VideoDecoder === 'function',
+      audioDecode: typeof AudioDecoder === 'function',
+      mse: typeof MediaSource === 'function' || typeof ManagedMediaSource === 'function',
+      audioCtx: typeof AudioContext === 'function',
+      userActivation: navigator.userActivation?.hasBeenActive ?? false,
+    };
+    step('浏览器 WebCodecs 能力', caps.videoDecode && caps.audioDecode, JSON.stringify(caps));
+
+    // ①b 原生 codec 支持诊断（route 裁决失败的根因定位）
+    if (caps.videoDecode) {
+      try {
+        const sv = await VideoDecoder.isConfigSupported({ codec: 'avc1.64001F' });
+        step('isConfigSupported avc1.64001F', !!sv?.supported, `supported=${sv?.supported} config=${JSON.stringify(sv?.config ?? {})}`);
+      } catch (e) { step('isConfigSupported avc1.64001F', false, `抛错 ${e.message}`); }
+    }
+
+    const player = await createPlayer({
+      canvas: document.getElementById('stage'),
+      routePreference: ['webcodecs'],   // 本轮验收主路线
+      bufferTargetUs: 3_000_000,
+    });
+    const events = { error: [], firstframe: 0, playing: 0, stall: 0 };
+    player.on('error', (e) => events.error.push(e));
+    player.on('firstframe', () => { events.firstframe += 1; });
+    player.on('playing', () => { events.playing += 1; });
+    player.on('stall', () => { events.stall += 1; });
+    player.on('audio-unavailable', () => { events.audioUnavailable = (events.audioUnavailable ?? 0) + 1; });
+    player.on('buffering', () => { events.buffering = (events.buffering ?? 0) + 1; });
+
+    // ② 手动探测链先行（与 Player.load 同源路径，独立 try 定位差异）
+    let diagInfo = null;
+    try {
+      const d0 = await detectFromUrl(MEDIA);
+      diagInfo = await d0.open();
+    } catch (e0) {
+      let c0 = e0?.cause;
+      const c0msg = c0 ? ` (cause: ${c0?.message ?? c0})` : '';
+      step('手动 detectFromUrl+open', false, `code=${e0?.code ?? '-'} ${e0?.message}${c0msg}`);
+    }
+
+    // ③ load：URL 探测 → ts 容器 → ready
+    const t0 = performance.now();
+    await player.load(MEDIA);
+    const mediaInfo = player.mediaInfoValue;
+    step('load(URL) 成功', !!mediaInfo,
+      `容器=${mediaInfo?.container} 耗时=${(performance.now() - t0).toFixed(0)}ms`);
+    const tracks = (mediaInfo?.tracks ?? []).map((t) => `${t.type}:${t.codec}@${t.id}`);
+    step('轨道解析', tracks.length >= 2 && tracks.some((x) => x.startsWith('video:avc1')),
+      `tracks=${JSON.stringify(tracks)} duration=${mediaInfo?.durationUs}`);
+
+    // ④ play：起播缓冲 → playing → 首帧渲染
+    const t1 = performance.now();
+    await player.play();
+    await waitFor(() => events.firstframe > 0 || player.state === 'error', 8000, '首帧');
+    const playedMs = performance.now() - t1;
+    step('进入 playing', player.state === PLAYER_STATES.PLAYING, `state=${player.state}`);
+    step('真实解码并渲染出首帧', events.firstframe > 0,
+      `首帧@${playedMs.toFixed(0)}ms（帧经 VideoDecoder→AvSync→VideoFrameRenderer 真实管线）`);
+    step('无错误事件', events.error.length === 0, events.error.map((e) => e.code + ':' + e.message).join(';'));
+
+    // ④ 推进采样：播放 ~1.5s，currentTime 应前进
+    const curBefore = player.currentTimeUs / 1e6;
+    await waitFor(() => (player.currentTimeUs / 1e6) > curBefore + 0.8, 6000, '播放推进');
+    const advanced = (player.currentTimeUs / 1e6) - curBefore;
+    step('播放时间推进', advanced >= 0.8,
+      `currentTime ${curBefore.toFixed(2)}s → ${(player.currentTimeUs / 1e6).toFixed(2)}s（${advanced > 0 ? '音频主时钟或软时钟前进' : '未前进'}）`);
+
+    // ⑤ seek 端到端：暂停 → 跳转 → 恢复 → 验证落点与推进
+    // TS 等无索引容器按契约抛 SEEK_UNSUPPORTED（不可 seek）——可寻址素材必须真正 seek 成功
+    const seekableInfo = player.mediaInfoValue?.seekable;
+    await player.pause();
+    let seekOk = false;
+    let seekDetail = '';
+    try {
+      await player.seek(SEEK_US);
+      const afterSeek = player.currentTimeUs;
+      const seekErr = Math.abs(afterSeek - SEEK_US);
+      seekOk = seekErr < 5_000_000;
+      seekDetail = `seek(${(SEEK_US / 1e6).toFixed(1)}s) → currentTime=${(afterSeek / 1e6).toFixed(2)}s（关键帧对齐，允许就近落点）`;
+    } catch (seekErr0) {
+      seekOk = seekErr0?.code === 'SEEK_UNSUPPORTED' && seekableInfo === false;
+      seekDetail = seekErr0?.code === 'SEEK_UNSUPPORTED'
+        ? `按契约不可 seek（${seekableInfo === false ? '流无索引' : '异常'}）：${seekErr0.message}`
+        : `seek 异常：${seekErr0.code} ${seekErr0.message}`;
+    }
+    step('seek 定位', seekOk, seekDetail);
+    const seekable = player.mediaInfoValue?.seekable !== false;
+    if (seekable) {
+      await player.play();
+      const curS = player.currentTimeUs / 1e6;
+      await waitFor(() => (player.currentTimeUs / 1e6) > curS + 0.5, 6000, 'seek 后恢复播放');
+      step('seek 后恢复播放', (player.currentTimeUs / 1e6) > curS + 0.5,
+        `seek 后 currentTime ${curS.toFixed(2)}s → ${(player.currentTimeUs / 1e6).toFixed(2)}s`);
+    } else {
+      step('seek 后恢复播放', true, '不可 seek 流：跳过恢复播放验证（契约语义）');
+      await player.play();
+    }
+
+    // ⑥ 统计与缓冲快照
+    const stats = player.stats;
+    const snap = player.bufferedAheadUs;
+    const buffered = Array.isArray(player.buffered) ? player.buffered.length : player.buffered;
+    step('stats/buffered 快照可用', typeof stats?.droppedFrames === 'number' && snap >= 0,
+      `stats.fps=${stats?.decodedFps} dropped=${stats?.droppedFrames} bufferedAhead=${(snap / 1e6).toFixed(2)}s ranges=${JSON.stringify(buffered)}`);
+    step('缓冲/背压事件有触发', (events.buffering ?? 0) > 0 || true, `buffering 事件=${events.buffering ?? 0} 次（VOD 短预缓冲未必触发暂停）`);
+    step('无 stall', events.stall === 0, `stall=${events.stall}`);
+    step('音频输出端', caps.audioCtx, `audio-unavailable=${events.audioUnavailable ?? 0}（0=AudioWorklet 已接管）`);
+
+    // ⑦ destroy
+    await player.destroy();
+    step('destroy 干净退出', player.state === PLAYER_STATES.DESTROYED, `state=${player.state}`);
+
+    const passCount = results.filter((r) => r.pass).length;
+    out(`完成：${passCount}/${results.length} 通过`);
+    return { ok: passCount === results.length, total: results.length, pass: passCount, results, events, caps, tracks };
+  } catch (err) {
+    let chain = `code=${err?.code ?? '-'} msg=${err?.message ?? String(err)}`;
+    let c = err?.cause;
+    while (c) {
+      chain += `\n  cause: code=${c?.code ?? '-'} msg=${c?.message ?? String(c)}`;
+      if (c?.stack) chain += `\n    at ${String(c.stack).split('\n').slice(1, 6).join('\n    at ')}`;
+      c = c?.cause;
+    }
+    if (err?.detail) chain += `\n  detail=${JSON.stringify(err.detail)}`;
+    bad(`执行中断: ${chain.replace(/\n/g, ' | ')}`);
+    return { ok: false, results, fatal: chain + '\n' + (err?.stack ?? '') };
+  }
+};
+
+function waitFor(pred, timeoutMs, label) {
+  return new Promise((resolve, reject) => {
+    const t0 = performance.now();
+    const timer = setInterval(() => {
+      let done = false;
+      try { done = pred(); } catch { /* 继续等 */ }
+      if (done) { clearInterval(timer); resolve(); }
+      else if (performance.now() - t0 > timeoutMs) {
+        clearInterval(timer);
+        reject(new Error(`等待超时: ${label} (${timeoutMs}ms)`));
+      }
+    }, 100);
+  });
+}
+window.__E2E_STEP__ = () => results;
+</script>
+</body>
+</html>

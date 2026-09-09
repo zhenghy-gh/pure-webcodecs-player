@@ -1,0 +1,11 @@
+{
+  "name": "player-mkv",
+  "version": "0.1.0",
+  "private": true,
+  "description": "浏览器 MKV/WebM 播放器：EBML 解析器 + Matroska Demuxer（纯 ESM 零构建）",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test __tests__/"
+  }
+}

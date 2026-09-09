@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>APE · PurePlay</title>
+  <!-- 新皮肤四件套；元数据查看器＝单列变体（无播放控制条，解码属 Phase 3） -->
+  <link rel="stylesheet" href="../../site/css/tokens.css">
+  <link rel="stylesheet" href="../../site/css/base.css">
+  <link rel="stylesheet" href="../../site/css/layout.css">
+  <link rel="stylesheet" href="../../site/css/components.css">
+</head>
+<body>
+<div class="demo demo--single">
+  <header class="topbar demo__topbar" data-skin="topbar">
+    <a class="topbar__logo" href="../../site/index.html">
+      <svg class="icon icon-20" aria-hidden="true"><use href="../../site/assets/icons.svg#i-logo"/></svg>
+      <span class="topbar__title">PurePlay</span>
+    </a>
+    <nav class="tabs" data-skin="tabs">
+      <a class="tabs__item" href="../../site/demo/index.html">总览</a>
+      <a class="tabs__item" href="../wav/demo/index.html">WAV</a>
+      <a class="tabs__item" href="../flac/demo/index.html">FLAC</a>
+      <a class="tabs__item is-active" href="./index.html">APE</a>
+      <a class="tabs__item" href="../subtitle/demo/index.html">字幕</a>
+    </nav>
+    <div class="topbar__actions">
+      <span class="badge badge--neutral" id="stage-badge">未加载</span>
+    </div>
+  </header>
+
+  <main class="stage demo__stage stage--audio is-idle" id="stage">
+    <div class="stage__viewport" id="viewport" style="display:flex;align-items:center;justify-content:center">
+      <img id="cover" alt="封面" style="max-width:200px;border-radius:var(--radius-md);display:none">
+    </div>
+    <div class="drop" id="drop" data-skin="drop">
+      <span class="drop__icon"><svg class="icon icon-32"><use href="../../site/assets/icons.svg#i-upload"/></svg></span>
+      <strong>拖入 .ape 文件，或点击选择</strong>
+      <span>MAC 容器头（descriptor / legacy）+ APEv1/v2 标签解析与封面对照</span>
+      <div class="field field-row" style="justify-content:center">
+        <button class="btn btn--solid field__btn" id="pick">选择 .ape 文件</button>
+        <input type="file" id="file" accept=".ape,.apl,.mac" style="display:none">
+      </div>
+      <div class="drop__chips">
+        <span class="chip">MAC 头解析</span><span class="chip">APEv1/v2 标签</span><span class="chip">封面二进制拆包</span>
+      </div>
+      <span class="drop__hint">音频解码复杂度高，按 PRD 降级为元数据展示（WASM 路线见模块 README）。</span>
+    </div>
+  </main>
+
+  <aside class="panel demo__panel" id="panel">
+    <section class="panel__section">
+      <h2 class="panel__title">容器信息（MAC 头）</h2>
+      <div id="info"><span class="chip">尚未加载文件。</span></div>
+    </section>
+    <section class="panel__section">
+      <h2 class="panel__title">APE TAG 标签</h2>
+      <div id="tags"><span class="chip">—</span></div>
+    </section>
+  </aside>
+</div>
+
+<script type="module" src="../../site/js/skin.js"></script>
+<script type="module">
+  import { summarizeApe } from '../src/index.js';
+  import Skin from '../../site/js/skin.js';
+
+  const $ = s => document.querySelector(s);
+  const stage = $('#stage');
+  Skin.initTabs();
+
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  function renderKv(id, rows) {
+    $(id).innerHTML = rows.length
+      ? rows.map(([k, v]) => `<div class="kv"><span class="kv__key">${esc(k)}</span><span class="kv__val">${esc(v)}</span></div>`).join('')
+      : '<span class="chip">—</span>';
+  }
+  function setBadge(kind, text) {
+    const b = $('#stage-badge');
+    b.className = `badge badge--${kind}`;
+    b.textContent = text;
+  }
+
+  async function show(bytes) {
+    try {
+      const { info, tag, cover } = summarizeApe(bytes);
+      renderKv('#info', [
+        ['版本', `${info.version}（${info.kind === 'descriptor' ? 'descriptor 形态' : 'legacy 形态'}）`],
+        ['压缩级别', `${info.compressionLevel}（code ${info.compressionCode}）`],
+        ['采样率', `${info.sampleRate} Hz`],
+        ['声道', String(info.channels)],
+        ['位深', `${info.bitsPerSample} bit${info.kind === 'legacy' ? '（推断值）' : ''}`],
+        ['每帧块数', String(info.blocksPerFrame)],
+        ['总帧数', info.totalFrames != null ? String(info.totalFrames) : '未知（legacy）'],
+        ['时长', info.durationUs != null ? `${(info.durationUs / 1e6).toFixed(2)} s` : '未知'],
+        ['formatFlags', Object.entries(info.formatFlags).filter(([, v]) => v).map(([k]) => k).join(', ') || '—'],
+      ]);
+      renderKv('#tags', tag ? tag.items.map(it => [
+        `${it.key}${it.readOnly ? ' 🔒' : ''}`,
+        it.type === 'utf8' ? it.value : `<binary ${it.value.length}B / ${it.type}>`,
+      ]) : [['—', '文件不含 APE 标签']]);
+
+      const img = $('#cover');
+      if (cover && /^image\//.test(cover.mime)) {
+        img.src = URL.createObjectURL(new Blob([cover.data], { type: cover.mime }));
+        img.style.display = 'block';
+        $('#drop').style.display = 'none';
+        stage.classList.remove('is-idle');
+      }
+      setBadge('success', '解析完成');
+      Skin.toast({ type: 'success', title: '解析完成', detail: `${tag?.items.length ?? 0} 个标签项` });
+    } catch (err) {
+      setBadge('error', '解析失败');
+      Skin.toast({ type: 'error', title: 'APE 解析失败', detail: err?.message || String(err) });
+    }
+  }
+
+  $('#pick').addEventListener('click', () => $('#file').click());
+  $('#file').addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (f) show(new Uint8Array(await f.arrayBuffer()));
+  });
+  document.addEventListener('drop', async e => {
+    const f = e.dataTransfer?.files?.[0];
+    if (f) show(new Uint8Array(await f.arrayBuffer()));
+  });
+
+</script>
+</body>
+</html>

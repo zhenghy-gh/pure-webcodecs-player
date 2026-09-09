@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TS 解复用器 · PurePlay</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px; font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+         background:#101418; color:#d8dee6; line-height:1.6; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:#7a8593; font-size:13px; margin-bottom:20px; }
+  .card { background:#171c22; border:1px solid #232b34; border-radius:10px; padding:16px 20px; margin-bottom:16px; }
+  #dropZone { border:2px dashed #33404e; border-radius:10px; padding:36px; text-align:center; cursor:pointer;
+              transition:border-color .2s,background .2s; }
+  #dropZone.dragover { border-color:#4f9cf9; background:#182233; }
+  input[type="text"] { width:100%; padding:9px 12px; margin-top:10px; background:#0d1117;
+    border:1px solid #2a3441; border-radius:6px; color:#d8dee6; font-size:13px; }
+  button { padding:8px 16px; margin:8px 8px 0 0; background:#2563eb; color:#fff; border:none;
+           border-radius:6px; font-size:13px; cursor:pointer; }
+  button:hover { background:#3b82f6; }
+  button.warn { background:#7c5c10; } button.warn:hover { background:#96700f; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
+  th,td { text-align:left; padding:6px 10px; border-bottom:1px solid #232b34; }
+  th { color:#7a8593; font-weight:normal; }
+  pre { background:#0d1117; padding:10px; border-radius:6px; overflow-x:auto; font-size:12px;
+        font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .err { color:#f87171; } .warn { color:#fbbf24; } .ok { color:#4ade80; }
+  .hidden { display:none; }
+  kbd { background:#222b35; border-radius:4px; padding:1px 6px; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>ts/ · MPEG-TS 解复用器 · PurePlay</h1>
+<div class="sub">
+  契约口径：static probe → ProbeResult｜open() → MediaInfo｜samples(trackId) 异步迭代｜时间基整数微秒。<br>
+  拖入 <kbd>.ts</kbd>/<kbd>.m2ts</kbd> 文件或输入地址 → program/PMT 树 + 轨道信息；
+  「扰动开关」注入垃圾字节演示失步重同步（resync）；非 0x47 输入将得到 PROBE_FAILED。
+</div>
+
+<div class="card">
+  <div id="dropZone">
+    把 <b>.ts</b> 文件拖到这里，或点击选择文件
+    <input type="file" id="fileInput" accept=".ts,.mts,.m2ts,.mpg" class="hidden">
+    <input type="text" id="urlInput" placeholder="或输入 http(s)://…/stream.ts 地址后回车（fetch 流式）">
+  </div>
+</div>
+
+<div class="card hidden" id="resultCard">
+  <h2 style="font-size:16px;margin-top:0">解析结果</h2>
+  <pre id="summary"></pre>
+  <h2 style="font-size:14px">Program / PMT 树</h2>
+  <table id="psiTable"></table>
+  <h2 style="font-size:14px">轨道</h2>
+  <table id="trackTable"></table>
+  <div id="exportArea"></div>
+  <button class="warn" id="btnPerturb">⚡ 扰动开关：向流中注入垃圾字节（演示 resync）</button>
+</div>
+
+<div class="card hidden" id="errorCard"><h2 style="font-size:16px;margin-top:0" class="warn">警告 / 错误（非致命错误保留解析）</h2><pre id="errors"></pre></div>
+
+<script type="module">
+import { createDemuxer, TsDemuxer } from '../src/index.js';
+
+const $ = (id) => document.getElementById(id);
+const fmtBytes = (n) => n > 1048576 ? (n / 1048576).toFixed(2) + ' MB' : (n / 1024).toFixed(1) + ' KB';
+const fmtUs = (us) => us == null ? '—' : (us >= 1e6 ? (us / 1e6).toFixed(2) + ' s' : us + ' µs');
+
+let currentBytes = null;
+
+$('dropZone').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', (e) => e.target.files[0] && runFile(e.target.files[0]));
+$('urlInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.value.trim()) runUrl(e.target.value.trim());
+});
+['dragover', 'dragleave', 'drop'].forEach((ev) =>
+  $('dropZone').addEventListener(ev, (e) => {
+    e.preventDefault();
+    $('dropZone').classList.toggle('dragover', ev === 'dragover');
+    if (ev === 'drop' && e.dataTransfer.files[0]) runFile(e.dataTransfer.files[0]);
+  }));
+
+async function runFile(file) {
+  currentBytes = new Uint8Array(await file.arrayBuffer());
+  await parse(currentBytes);
+}
+
+async function runUrl(url) {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    currentBytes = new Uint8Array(await resp.arrayBuffer());
+    await parse(currentBytes);
+  } catch (err) {
+    showError([`NETWORK_ERROR：${err.message}`]);
+  }
+}
+
+async function parse(bytes) {
+  $('resultCard').classList.remove('hidden');
+  $('errorCard').classList.add('hidden');
+  $('summary').textContent = '解析中…';
+
+  // 契约 probe：非 0x47 特征 → PROBE_FAILED（PRD 异常口径）
+  const pr = TsDemuxer.probe(bytes.subarray(0, 4096));
+  if (!pr || pr.confidence < 0.8) {
+    $('summary').innerHTML = '<span class="err">PROBE_FAILED：未识别为 MPEG-TS（缺少 0x47 同步特征）。</span>原始字节已保留，可检查文件完整性。';
+    return;
+  }
+
+  const warnings = [];
+  const t0 = performance.now();
+  const demuxer = await createDemuxer(bytes);
+  demuxer.on('error', () => {});
+  const cost = performance.now() - t0;
+
+  const mi = demuxer.mediaInfo;
+  const snap = demuxer.engine.psiSnapshot();
+
+  // 收集引擎 warn 级消息（CRC 失败/CC 断续等）
+  demuxer.engine.on('warn', (e) => warnings.push(e.message));
+
+  const perTrack = new Map();
+  for (const t of mi.tracks) {
+    const stat = { n: 0, kf: 0, firstUs: null };
+    for await (const s of demuxer.samples(t.id)) {
+      stat.n++;
+      if (s.keyframe) stat.kf++;
+      if (stat.firstUs == null) stat.firstUs = s.timestamp;
+      perTrack.set(t.id, stat);
+    }
+  }
+
+  $('summary').textContent =
+    `容器: MPEG-TS   包长: ${snap.packetSize} 字节${snap.packetSize === 192 ? '（M2TS，含 4 字节前缀）' : ''}\n` +
+    `probe: confidence=${pr.confidence}   节目号: ${snap.programNumber ?? '—'}\n` +
+    `时长: ${fmtUs(mi.durationUs)}   解析耗时: ${cost.toFixed(0)} ms   数据量: ${fmtBytes(bytes.length)}\n` +
+    `CC 连续性错误: ${snap.ccErrors}   忽略的 ES: ${snap.ignoredStreams.length ? JSON.stringify(snap.ignoredStreams) : '无'}`;
+
+  renderPsi(snap);
+  renderTracks(mi.tracks, perTrack);
+  renderExports(mi.tracks, demuxer);
+  if (warnings.length) showError(warnings); else $('errorCard').classList.add('hidden');
+}
+
+function renderPsi(snap) {
+  const rows = [];
+  for (const prog of snap.programs) {
+    rows.push(`<tr><td rowspan="${prog.streams.length || 1}">PMT pid ${prog.pmtPid}（v${prog.version}）</td><td>节目 ${snap.programNumber ?? '—'}</td><td>PMT/PCR</td></tr>`);
+    for (const st of prog.streams) {
+      rows.push(`<tr><td>ES pid ${st.pid}</td><td>${st.supported ? `<span class="ok">${st.codec}</span>` : `<span class="warn">不支持(已记录)</span>`}</td></tr>`);
+    }
+  }
+  $('psiTable').innerHTML = `<tr><th>PMT</th><th>ES</th><th>编码</th></tr>${rows.join('')}`;
+}
+
+function renderTracks(tracks, perTrack) {
+  const rows = tracks.map((t) => {
+    const st = perTrack.get(t.id) ?? {};
+    const detail = t.type === 'video'
+      ? `分辨率 ${t.width ?? '未知'}×${t.height ?? '未知'} · bitstreamFormat=${t.bitstreamFormat} · description ${(t.description?.length ?? 0)}B`
+      : `${t.sampleRate ?? '?'} Hz · ${t.numberOfChannels ?? '?'}ch`;
+    return `<tr><td>#${t.id}</td><td>${t.type}</td><td><code>${t.codec || '(未知)'}</code></td><td>${detail}</td><td>${st.n ?? 0} 帧 / 首帧 ${fmtUs(st.firstUs)}</td></tr>`;
+  }).join('');
+  $('trackTable').innerHTML = tracks.length
+    ? `<tr><th>轨道</th><th>类型</th><th>codec(§3)</th><th>参数</th><th>样本</th></tr>${rows}`
+    : '<tr><td class="warn">无受支持轨道（PSI 信息已保留在上方树中）</td></tr>';
+}
+
+/** 导出提取的裸流：视频拼 AnnexB；AAC 重建 ADTS 头 */
+function renderExports(tracks, demuxer) {
+  const area = $('exportArea');
+  area.innerHTML = '';
+  for (const t of tracks) {
+    const btn = document.createElement('button');
+    btn.textContent = `⬇ 导出轨道 ${t.id}（.${t.codec.startsWith('hvc') ? '265' : t.codec.startsWith('avc') ? '264' : 'aac'}）`;
+    btn.onclick = async () => {
+      const parts = [];
+      for await (const s of demuxer.samples(t.id)) {
+        if (t.type === 'audio') parts.push(adtsHeader(s, t), s.data);
+        else parts.push(s.data);
+      }
+      const blob = new Blob(parts, { type: 'application/octet-stream' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `track${t.id}.${t.type === 'audio' ? 'aac' : t.codec.startsWith('hvc') ? '265' : '264'}`;
+      a.click();
+    };
+    area.appendChild(btn);
+  }
+}
+
+function adtsHeader(sample, track) {
+  const RATES = [96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];
+  const idx = Math.max(0, RATES.indexOf(track.sampleRate ?? 44100));
+  const ch = Math.min(track.numberOfChannels ?? 2, 7);
+  const aot = track.description ? ((track.description[0] >> 3) & 0x1f) : 2;
+  const len = sample.data.length + 7;
+  const head = new Uint8Array(7);
+  head[0] = 0xff; head[1] = 0xf1;
+  head[2] = (((aot - 1) & 0x03) << 6) | (idx << 2) | ((ch >> 2) & 0x01);
+  head[3] = ((ch & 0x03) << 6) | ((len >> 11) & 0x1f);
+  head[4] = (len >> 3) & 0xff;
+  head[5] = ((len & 0x07) << 5) | 0x1f;
+  head[6] = 0xfc;
+  return head;
+}
+
+// 扰动开关：破坏同步字节后重新解析，观察 resync 恢复
+$('btnPerturb').addEventListener('click', async () => {
+  if (!currentBytes) return;
+  const corrupted = new Uint8Array(currentBytes);
+  for (let k = 0; k < 3; k++) {
+    const off = (corrupted.length >> 1) + k * 188;
+    if (off + 8 <= corrupted.length) {
+      corrupted[off] = 0x12;
+      corrupted[off + 5] ^= 0xff;
+    }
+  }
+  showError(['已注入扰动：中部同步字节破坏。重新解析观察 resync 恢复与 CC 告警…']);
+  await parse(corrupted);
+});
+
+function showError(list) {
+  $('errorCard').classList.remove('hidden');
+  $('errors').textContent = list.join('\n');
+}
+</script>
+</body>
+</html>

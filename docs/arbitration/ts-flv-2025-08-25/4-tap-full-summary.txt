@@ -1,0 +1,7 @@
+## $ npm test（全仓）尾部统计与失败清单
+# tests 773
+# suites 15
+# pass 773
+# fail 0
+# cancelled 0
+# skipped 0

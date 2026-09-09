@@ -1,0 +1,11 @@
+{
+  "name": "player-webtorrent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "P2P 边下边播封装：torrent → piece 缓存 → MediaByteSource 按序喂流（webtorrent 为可选依赖）",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test __tests__/"
+  }
+}

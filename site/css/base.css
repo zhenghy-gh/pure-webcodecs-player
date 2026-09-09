@@ -1,0 +1,64 @@
+/* site/css/base.css — 重置、排版、滚动条、焦点环、选区、动效降级 …依据 docs/DESIGN.md v1.1 */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 { margin: 0 0 var(--sp-2); font-weight: var(--fw-semibold); line-height: var(--lh-head); }
+h1 { font-size: var(--fs-xl); }
+h2 { font-size: var(--fs-lg); }
+p  { margin: 0 0 var(--sp-3); }
+
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+img, svg, canvas, video { display: block; max-width: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+code, .mono { font-family: var(--font-mono); }
+
+/* 数字场景（时间码/统计）必须等宽数字，避免刷新跳动 */
+.controls__time, .kv__val, .slider__tip, .tag { font-variant-numeric: tabular-nums; }
+
+/* 选区（§5） */
+::selection { background: var(--accent-dim); }
+
+/* 滚动条统一细化 */
+* { scrollbar-width: thin; scrollbar-color: var(--gray-700) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--gray-700); border-radius: var(--radius-full); }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* 焦点环：禁移除不给替代；鼠标点击不触发、Tab 导航必触发（视觉规范 §3 硬性要求） */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* 装饰性图标默认随文字色；纯图标钮的 svg 不拦截指针 */
+svg.icon { fill: none; stroke: currentColor; stroke-width: 1.8; pointer-events: none; }
+
+/* 动效降级（§12.5）：reduce 下无旋转/呼吸/位移动画 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

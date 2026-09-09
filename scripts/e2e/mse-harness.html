@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>E2E · core Player 真实浏览器验收（MSE）</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
+         background: #0d1117; color: #e6edf3; display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+  h1 { font-size: 16px; margin: 0; }
+  video { width: 480px; max-width: 100%; background: #000; border-radius: 8px; }
+  pre { font-size: 11px; white-space: pre-wrap; background: #161b22; border: 1px solid #30363d;
+        border-radius: 8px; padding: 10px; max-height: 40vh; overflow: auto; }
+  .pass { color: #3fb950; } .fail { color: #f85149; }
+</style>
+</head>
+<body>
+<h1>core Player · 真实浏览器验收（load → MSE 重封装 → MediaSource → &lt;video&gt; 渲染）</h1>
+<video id="stage" width="640" height="360" muted playsinline controls></video>
+<pre id="log">等待执行…</pre>
+
+<script type="module">
+import { registerDemuxer, createPlayer, PLAYER_STATES } from '../../core/src/index.js';
+import * as tsMod from '../../ts/src/index.js';
+import * as mp4Mod from '../../mp4/src/index.js';
+import * as flacMod from '../../flac/src/index.js';
+import * as mkvMod from '../../mkv/src/index.js';
+
+const $log = document.getElementById('log');
+const logs = [];
+function out(text, cls) { logs.push({ text, cls }); $log.innerHTML = logs.map((l) => `<div class="${l.cls ?? ''}">${l.text}</div>`).join(''); }
+function ok(text) { out(`✔ ${text}`, 'pass'); }
+function bad(text) { out(`✘ ${text}`, 'fail'); }
+
+registerDemuxer(tsMod);
+registerDemuxer(mp4Mod);
+registerDemuxer(flacMod);
+registerDemuxer(mkvMod);
+
+const results = [];
+function step(name, pass, detail = '') { results.push({ name, pass, detail }); (pass ? ok : bad)(`${name}${detail ? ' — ' + detail : ''}`); }
+
+const params = new URLSearchParams(location.search);
+const MEDIA = params.get('media') || '/samples/e2e/sintel-trailer.mp4';
+const SEEK_US = Number(params.get('seekUs') || 20_000_000);
+
+window.__E2E_RUN__ = async function run() {
+  results.length = 0;
+  logs.length = 0;
+  try {
+    // ① MSE 环境自检
+    const caps = {
+      mediaSource: typeof MediaSource === 'function',
+      managed: typeof ManagedMediaSource === 'function',
+      isTypeSupported: typeof MediaSource !== 'function' ? false
+        : MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"'),
+      aac: typeof MediaSource !== 'function' ? false
+        : MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"'),
+    };
+    step('浏览器 MSE 能力', caps.mediaSource || caps.managed,
+      JSON.stringify(caps));
+
+    const element = document.getElementById('stage');
+    const player = await createPlayer({
+      mediaElement: element,
+      routePreference: ['mse'],       // 强制走 MSE 兜底路线
+      bufferTargetUs: 3_000_000,
+    });
+    const events = { error: [], firstframe: 0, stall: 0, buffering: 0 };
+    player.on('error', (e) => events.error.push(e));
+    player.on('firstframe', () => { events.firstframe += 1; });
+    player.on('stall', () => { events.stall += 1; });
+    player.on('buffering', () => { events.buffering += 1; });
+
+    // ② load：探测 → 容器 → MSE 管线（MediaSource + SourceBuffer + init segment）
+    const t0 = performance.now();
+    await player.load(MEDIA);
+    const info = player.mediaInfoValue;
+    step('load(URL) 成功', !!info, `容器=${info?.container} 耗时=${(performance.now() - t0).toFixed(0)}ms`);
+    step('路线裁决为 mse', player.route === 'mse', `route=${player.route}`);
+    const tracks = (info?.tracks ?? []).map((t) => `${t.type}:${t.codec}@${t.id}`);
+    step('轨道解析', tracks.length >= 2, `tracks=${JSON.stringify(tracks)}`);
+
+    const pipe = player.pipeline;
+    step('MSE 管线已建并初始化', !!pipe && pipe._initialized === true,
+      `state=${pipe?.state} initSegments=${pipe?.counters?.initSegments} tracks=${pipe?.mse ? [...pipe.mse.keys?.() ?? []].join(',') : '-'}`);
+    step('MediaSource 已 open', !!pipe?.mse?.mediaSource, `readyState=${pipe?.mse?.mediaSource?.readyState ?? pipe?.mse?.state ?? '-'}`);
+
+    // ③ play → 元素真实解码出画面
+    const t1 = performance.now();
+    await player.play();
+    await waitFor(() => element.videoWidth > 0 && element.readyState >= 2, 10000, '元素首帧');
+    const firstMs = performance.now() - t1;
+    step('元素真实解码（videoWidth>0）', element.videoWidth > 0,
+      `分辨率=${element.videoWidth}x${element.videoHeight} readyState=${element.readyState} 首帧@${firstMs.toFixed(0)}ms`);
+    step('收到 firstframe 事件', events.firstframe > 0, `firstframe=${events.firstframe}`);
+    step('播放中无 error 事件', events.error.length === 0,
+      events.error.map((e) => `${e.code}:${e.message}`).join(';') || '无');
+
+    // ④ 播放推进：以元素时间轴为准（MSE 路线的主时钟是 <video>.currentTime）
+    const t0c = element.currentTime;
+    await waitFor(() => element.currentTime > t0c + 0.8, 8000, '元素时间推进');
+    step('元素时间轴推进', element.currentTime > t0c + 0.8,
+      `currentTime ${t0c.toFixed(2)}s → ${element.currentTime.toFixed(2)}s`);
+    step('Player.currentTimeUs 跟随元素时钟',
+      Math.abs(player.currentTimeUs / 1e6 - element.currentTime) < 1.0,
+      `player=${(player.currentTimeUs / 1e6).toFixed(2)}s element=${element.currentTime.toFixed(2)}s`);
+    step('真实渲染帧数增长', (element.getVideoPlaybackQuality?.().totalVideoFrames ?? -1) > 0,
+      `totalVideoFrames=${element.getVideoPlaybackQuality?.().totalVideoFrames ?? 'n/a'} dropped=${element.getVideoPlaybackQuality?.().droppedVideoFrames ?? 'n/a'}`);
+
+    // ⑤ seek（可寻址素材）
+    const seekable = info?.seekable !== false;
+    await player.pause();
+    let seekOk = false, seekDetail = '';
+    try {
+      await player.seek(SEEK_US);
+      await waitFor(() => Math.abs(element.currentTime - SEEK_US / 1e6) < 5.0, 8000, 'seek 落点');
+      const err = Math.abs(element.currentTime - SEEK_US / 1e6);
+      seekOk = err < 5.0; // 关键帧对齐语义：落点为就近关键帧（与 WebCodecs 路线同容差）
+      seekDetail = `seek(${(SEEK_US / 1e6).toFixed(1)}s) → element.currentTime=${element.currentTime.toFixed(2)}s（偏差 ${err.toFixed(2)}s）`;
+    } catch (e) {
+      seekOk = e?.code === 'SEEK_UNSUPPORTED' && !seekable;
+      seekDetail = `${e?.code ?? 'ERR'} ${e?.message}`;
+    }
+    step('seek 定位', seekOk, seekDetail);
+    await player.play();
+    const curS = element.currentTime;
+    await waitFor(() => element.currentTime > curS + 0.4, 8000, 'seek 后恢复');
+    step('seek 后恢复播放', element.currentTime > curS + 0.4,
+      `seek 后 ${curS.toFixed(2)}s → ${element.currentTime.toFixed(2)}s`);
+    // stall 语义：起播/seek 后元素报 waiting 属正常生命周期，只要能自行恢复即非故障
+    step('stall 可自行恢复', element.readyState >= 3 && !element.paused,
+      `stall=${events.stall} 次（起播/seek 后 waiting 属正常），当前 readyState=${element.readyState} paused=${element.paused}`);
+
+    // ⑥ 缓冲与统计
+    const ranges = player.buffered ?? [];
+    const ahead = player.bufferedAheadUs ?? 0;
+    step('buffered/水位可用', Array.isArray(ranges) && ahead >= 0,
+      `bufferedAhead=${(ahead / 1e6).toFixed(2)}s ranges=${JSON.stringify(ranges)}`);
+    step('管线段计数', (pipe?.counters?.mediaSegments ?? 0) > 0,
+      `mediaSegments=${pipe?.counters?.mediaSegments} samples=${pipe?.counters?.samples} bytes=${pipe?.counters?.bytes}`);
+
+    // ⑦ destroy：元素与 MediaSource 应被释放
+    await player.destroy();
+    step('destroy 干净退出', player.state === PLAYER_STATES.DESTROYED, `state=${player.state}`);
+    step('元素已停止并释放 src', element.paused === true && !element.src,
+      `paused=${element.paused} src="${element.src ?? ''}" mseReadyState=${pipe?.mse?.mediaSource?.readyState ?? '-'}`);
+
+    const passCount = results.filter((r) => r.pass).length;
+    out(`完成：${passCount}/${results.length} 通过`);
+    return { ok: passCount === results.length, total: results.length, pass: passCount, results, events, caps };
+  } catch (err) {
+    let chain = `code=${err?.code ?? '-'} msg=${err?.message ?? String(err)}`;
+    let c = err?.cause;
+    while (c) {
+      chain += `\n  cause: code=${c?.code ?? '-'} msg=${c?.message ?? String(c)}`;
+      if (c?.stack) chain += `\n    at ${String(c.stack).split('\n').slice(1, 6).join('\n    at ')}`;
+      c = c?.cause;
+    }
+    bad(`执行中断: ${chain.replace(/\n/g, ' | ')}`);
+    return { ok: false, results, fatal: chain + '\n' + (err?.stack ?? '') };
+  }
+};
+
+function waitFor(pred, timeoutMs, label) {
+  return new Promise((resolve, reject) => {
+    const t0 = performance.now();
+    const timer = setInterval(() => {
+      let done = false;
+      try { done = pred(); } catch { /* 继续等 */ }
+      if (done) { clearInterval(timer); resolve(); }
+      else if (performance.now() - t0 > timeoutMs) {
+        clearInterval(timer);
+        reject(new Error(`等待超时: ${label} (${timeoutMs}ms)`));
+      }
+    }, 100);
+  });
+}
+window.__E2E_STEP__ = () => results;
+</script>
+</body>
+</html>

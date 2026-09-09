@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FLAC · PurePlay</title>
+  <!-- 新皮肤四件套（DESIGN.md v1.1 §11）；三区同构骨架 -->
+  <link rel="stylesheet" href="../../site/css/tokens.css">
+  <link rel="stylesheet" href="../../site/css/base.css">
+  <link rel="stylesheet" href="../../site/css/layout.css">
+  <link rel="stylesheet" href="../../site/css/components.css">
+</head>
+<body>
+<div class="demo">
+  <header class="topbar demo__topbar" data-skin="topbar">
+    <a class="topbar__logo" href="../../site/index.html">
+      <svg class="icon icon-20" aria-hidden="true"><use href="../../site/assets/icons.svg#i-logo"/></svg>
+      <span class="topbar__title">PurePlay</span>
+    </a>
+    <nav class="tabs" data-skin="tabs">
+      <a class="tabs__item" href="../../site/demo/index.html">总览</a>
+      <a class="tabs__item" href="../wav/demo/index.html">WAV</a>
+      <a class="tabs__item is-active" href="./index.html">FLAC</a>
+      <a class="tabs__item" href="../ape/demo/index.html">APE</a>
+      <a class="tabs__item" href="../subtitle/demo/index.html">字幕</a>
+    </nav>
+    <div class="topbar__actions">
+      <span class="badge badge--neutral" id="stage-badge">未加载</span>
+    </div>
+  </header>
+
+  <main class="stage demo__stage stage--audio is-idle" id="stage">
+    <div class="stage__viewport" id="viewport">
+      <canvas id="wave"></canvas>
+    </div>
+    <div class="stage__overlay">
+      <div class="spinner" role="status"></div>
+      <span class="buffering-text">缓冲中…</span>
+    </div>
+    <div class="drop" id="drop" data-skin="drop">
+      <span class="drop__icon"><svg class="icon icon-32"><use href="../../site/assets/icons.svg#i-upload"/></svg></span>
+      <strong>拖入 .flac 文件，或用下方方式载入</strong>
+      <span>解码主路径 WebAudio 原生解码；失败自动回退纯 JS 参考解码器</span>
+      <div class="field field-row" style="max-width:520px">
+        <input class="field__input" id="url" type="text" placeholder="或输入 .flac 地址（需允许跨域）">
+        <button class="btn btn--solid field__btn" id="load-url">打开</button>
+        <button class="btn btn--ghost field__btn" id="gen-demo">载入示例流</button>
+      </div>
+      <div class="drop__chips">
+        <span class="chip">CONSTANT</span><span class="chip">VERBATIM</span><span class="chip">FIXED</span><span class="chip">LPC+Rice</span><span class="chip">mid/side</span>
+      </div>
+      <span class="drop__hint">点击波形可跳转播放位置；解析全部在本地完成。</span>
+    </div>
+  </main>
+
+  <footer class="controls demo__controls is-idle" id="controls">
+    <div class="controls__group">
+      <button class="btn-icon" data-skin="play" aria-label="播放">
+        <svg class="icon"><use href="../../site/assets/icons.svg#i-play"/></svg></button>
+      <span class="controls__time" id="cur">00:00</span>
+      <div class="slider__wrap">
+        <input class="slider slider--progress" type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度">
+      </div>
+      <span class="controls__time controls__time--total" id="total">-:--</span>
+    </div>
+    <div class="controls__group">
+      <button class="btn-icon" data-skin="mute" aria-label="静音">
+        <svg class="icon"><use href="../../site/assets/icons.svg#i-volume-high"/></svg></button>
+      <input class="slider slider--volume" type="range" min="0" max="100" value="100" aria-label="音量">
+      <div class="menu" data-skin="rate" id="rate">
+        <button class="btn-icon" aria-label="倍速"><span class="menu__label mono" style="font-size:12px">1x</span></button>
+        <ul class="menu__list">
+          <li><button class="menu__item" data-rate="0.5">0.5x</button></li>
+          <li><button class="menu__item menu__item--selected" data-rate="1">正常</button></li>
+          <li><button class="menu__item" data-rate="1.5">1.5x</button></li>
+          <li><button class="menu__item" data-rate="2">2x</button></li>
+        </ul>
+      </div>
+      <button class="btn-icon" data-skin="fs" aria-label="全屏">
+        <svg class="icon"><use href="../../site/assets/icons.svg#i-expand"/></svg></button>
+    </div>
+  </footer>
+
+  <aside class="panel demo__panel" id="panel">
+    <section class="panel__section">
+      <h2 class="panel__title">媒体信息</h2>
+      <div class="kv"><span class="kv__key">容器</span><span class="kv__val">FLAC</span></div>
+      <div class="kv"><span class="kv__key">采样率</span><span class="kv__val" id="i-sr">—</span></div>
+      <div class="kv"><span class="kv__key">声道</span><span class="kv__val" id="i-ch">—</span></div>
+      <div class="kv"><span class="kv__key">位深</span><span class="kv__val" id="i-bd">—</span></div>
+      <div class="kv"><span class="kv__key">时长</span><span class="kv__val" id="i-dur">—</span></div>
+      <div class="kv"><span class="kv__key">解码路径</span><span class="kv__val" id="i-via">—</span></div>
+    </section>
+    <section class="panel__section">
+      <h2 class="panel__title">标签（VORBIS COMMENT）</h2>
+      <div id="tags"><span class="chip">—</span></div>
+    </section>
+    <section class="panel__section">
+      <h2 class="panel__title">实时统计</h2>
+      <div id="stats"><span class="chip">载入后显示</span></div>
+    </section>
+  </aside>
+</div>
+
+<script type="module" src="../../site/js/skin.js"></script>
+<script type="module">
+  /* 页面胶水：皮肤原语 + WavPlayer 复用管线（loadFlacSmart 智能解码） */
+  import { createFlacPlayer, loadFlacSmart, parseMetadata } from '../src/index.js';
+  import { computePeaks, drawWaveform } from '../../wav/src/index.js';
+  import Skin from '../../site/js/skin.js';
+
+  const $ = s => document.querySelector(s);
+  const player = createFlacPlayer();
+  const stage = $('#stage'), controls = $('#controls');
+  const canvas = $('#wave');
+  const progress = $('input.slider--progress'), volume = $('input.slider--volume');
+  const playBtn = $('[data-skin="play"]'), muteBtn = $('[data-skin="mute"]');
+  const fmt = Skin.formatTime;
+  let peaks = null;
+  let rafPending = false;
+  const dur = () => player?.duration() || 0;
+
+  if (!player) $('#drop strong').textContent = '当前环境不支持 WebAudio/AudioWorklet';
+  Skin.initTabs();
+
+  function setPlaying(onNow) {
+    controls.classList.toggle('is-playing', onNow);
+    controls.classList.toggle('is-paused', !onNow);
+    playBtn.setAttribute('aria-label', onNow ? '暂停' : '播放');
+    playBtn.querySelector('use').setAttribute('href', `../../site/assets/icons.svg#i-${onNow ? 'pause' : 'play'}`);
+  }
+  playBtn.addEventListener('click', async () => {
+    if (!player?.planar) return;
+    try { player.state === 'playing' ? player.pause() : await player.play(); } catch (e) { toastErr(e); }
+  });
+  player?.on('play', () => setPlaying(true));
+  player?.on('pause', () => setPlaying(false));
+  player?.on('ended', () => setPlaying(false));
+
+  Skin.bindRange(progress, {
+    onCommit: v => { if (dur()) player.seek(v / 1000 * dur()); },
+    onPreview: v => { if (dur()) $('#cur').textContent = fmt(v / 1000 * dur()); },
+  });
+  progress.dataset.buffered = '100';
+  volume.addEventListener('input', () => {
+    player?.setVolume(Number(volume.value) / 100);
+    controls.classList.remove('is-muted');
+  });
+  let lastVol = 100;
+  muteBtn.addEventListener('click', () => {
+    const m = !controls.classList.contains('is-muted');
+    if (m && Number(volume.value) > 0) lastVol = Number(volume.value);
+    volume.value = m ? 0 : lastVol;
+    volume.dispatchEvent(new Event('input'));
+    controls.classList.toggle('is-muted', m);
+  });
+  const menu = $('#rate');
+  $('.menu [aria-label="倍速"]').addEventListener('click', () => menu.classList.toggle('is-open'));
+  for (const it of menu.querySelectorAll('.menu__item')) {
+    it.addEventListener('click', () => {
+      menu.querySelectorAll('.menu__item').forEach(x => x.classList.remove('menu__item--selected'));
+      it.classList.add('menu__item--selected');
+      menu.querySelector('.menu__label').textContent = `${it.dataset.rate}x`;
+      menu.classList.remove('is-open');
+      player?.setRate(Number(it.dataset.rate));
+    });
+  }
+
+  player?.on('time', () => {
+    if (!dur()) return;
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(() => { rafPending = false; redraw(); });
+    }
+    $('#cur').textContent = fmt(player.currentTime());
+    progress.value = String(Math.round(player.currentTime() / dur() * 1000));
+    progress.dispatchEvent(new Event('input'));
+  });
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+    redraw();
+  }
+  function redraw() {
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    drawWaveform(ctx, { width: canvas.clientWidth, height: canvas.clientHeight },
+      peaks || { mins: new Float32Array(0), maxs: new Float32Array(0) },
+      dur() ? player.currentTime() / dur() : 0,
+      peaks ? undefined : { bg: '#000000' });
+    ctx.restore();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  canvas.addEventListener('click', e => {
+    if (!peaks || !dur()) return;
+    const r = canvas.getBoundingClientRect();
+    player.seek(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * dur());
+  });
+
+  $('[data-skin="fs"]').addEventListener('click', () => Skin.toggleFullscreen(stage));
+  $('#viewport').addEventListener('dblclick', () => Skin.toggleFullscreen(stage));
+  Skin.bindKeys({
+    ' ': () => playBtn.click(),
+    f: () => $('[data-skin="fs"]').click(), F: () => $('[data-skin="fs"]').click(),
+    m: () => muteBtn.click(), M: () => muteBtn.click(),
+    ArrowLeft: () => dur() && player.seek(Math.max(0, player.currentTime() - 5)),
+    ArrowRight: () => dur() && player.seek(Math.min(dur(), player.currentTime() + 5)),
+  });
+
+  setInterval(() => {
+    if (!player?.getStats || !peaks) return;
+    $('#stats').innerHTML = player.getStats().map(([k, v]) =>
+      `<div class="kv"><span class="kv__key">${k}</span><span class="kv__val">${String(v)}</span></div>`).join('');
+  }, 500);
+
+  /* ---- 装载：loadFlacSmart 主路径原生解码，回退 JS 解码器 ---- */
+  function setBadge(kind, text) {
+    const b = $('#stage-badge');
+    b.className = `badge badge--${kind}`;
+    b.textContent = text;
+  }
+  async function loadBytes(bytes, name) {
+    try {
+      setBadge('warning', '解码中…');
+      stage.classList.add('is-buffering');
+      const t0 = performance.now();
+      const playable = await loadFlacSmart(player, bytes);
+      player.load(playable.wavBytes);
+      peaks = computePeaks(player.planar, Math.max(64, canvas.clientWidth));
+      stage.classList.remove('is-buffering', 'is-idle');
+      stage.classList.add('is-paused');
+      setBadge('success', '就绪');
+      $('#i-sr').textContent = `${playable.sampleRate} Hz`;
+      $('#i-ch').textContent = String(playable.channels);
+      $('#i-bd').textContent = `${parseMetadata(bytes).streamInfo.bitsPerSample} bit`;
+      $('#i-via').textContent = playable.via === 'decode-audio-data' ? 'WebAudio 原生' : 'JS 回退';
+      $('#total').textContent = fmt(player.duration());
+      $('#i-dur').textContent = fmt(player.duration());
+      const tags = Object.entries(parseMetadata(bytes).tags);
+      $('#tags').innerHTML = tags.length
+        ? tags.map(([k, v]) => `<div class="kv"><span class="kv__key">${k}</span><span class="kv__val">${v}</span></div>`).join('')
+        : '<span class="chip">无标签</span>';
+      redraw();
+      Skin.toast({ type: 'success', title: `已解析 ${name}`,
+        detail: `${playable.via === 'decode-audio-data' ? '原生' : 'JS 回退'} · ${(performance.now() - t0).toFixed(1)}ms` });
+    } catch (err) {
+      stage.classList.remove('is-buffering');
+      setBadge('error', '解析失败');
+      Skin.toast({ type: 'error', title: 'FLAC 解析失败', detail: err?.message || String(err) });
+    }
+  }
+
+  document.addEventListener('drop', async e => {
+    const f = e.dataTransfer?.files?.[0];
+    if (f) {
+      if (!/\.flac$/i.test(f.name)) { Skin.toast({ type: 'warn', title: '请拖入 .flac 文件' }); return; }
+      loadBytes(new Uint8Array(await f.arrayBuffer()), f.name);
+    }
+  });
+  $('#load-url').addEventListener('click', async () => {
+    const url = $('#url').value.trim();
+    if (!url) return;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      loadBytes(new Uint8Array(await res.arrayBuffer()), url.split('/').pop());
+    } catch (err) { Skin.toast({ type: 'error', title: '地址加载失败', detail: err.message }); }
+  });
+  /* 内置示例：程序化生成合法 FLAC 流（VERBATIM 扫频） */
+  $('#gen-demo').addEventListener('click', async () => {
+    const { buildDemoFlac } = await import('./demo-flac-fixture.js');
+    loadBytes(buildDemoFlac(), 'demo-sweep.flac（程序生成）');
+  });
+</script>
+</body>
+</html>

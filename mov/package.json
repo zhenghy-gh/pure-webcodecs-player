@@ -1,0 +1,14 @@
+{
+  "name": "@player/mov",
+  "version": "0.1.0",
+  "description": "QuickTime(MOV) 兼容层：基于 mp4 的 box 解析扩展，处理 QT 特有 atom 与历史布局",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test __tests__/*.test.js"
+  },
+  "license": "MIT"
+}

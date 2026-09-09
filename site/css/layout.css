@@ -1,0 +1,236 @@
+/* site/css/layout.css — 页面网格、topbar、stage、panel、响应式断点 …依据 docs/DESIGN.md v1.1 */
+
+/* 6.1 三区网格（页型 B 标准 demo） */
+.demo {
+  display: grid;
+  min-height: 100vh;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding-inline: var(--sp-4);
+  grid-template-columns: minmax(0, 1fr) var(--panel-w);
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr) auto;
+  grid-template-areas:
+    "topbar   topbar"
+    "stage    panel"
+    "controls panel";
+}
+.demo__topbar   { grid-area: topbar; }
+.demo__stage    { grid-area: stage; }
+.demo__controls { grid-area: controls; }
+.demo__panel    { grid-area: panel; }
+
+/* 页型 A 总览首页 / 简单页：单列变体 */
+.demo--single {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "topbar" "stage" "controls" "panel";
+}
+
+/* 6.2 topbar */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  height: var(--topbar-h);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-nav);
+  background: var(--bg-page);                 /* 纯色 fallback 先行 */
+  border-bottom: 1px solid var(--border-subtle);
+}
+@supports (backdrop-filter: blur(8px)) {
+  /* 渐进增强：半透明底 + 毛玻璃（§6.2） */
+  .topbar { background: rgba(10, 14, 22, .78); backdrop-filter: blur(8px); }
+}
+
+.topbar__logo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-primary);
+}
+.topbar__logo:hover { text-decoration: none; }
+.topbar__logo svg { width: 24px; height: 24px; stroke: var(--accent); }
+.topbar__title { font-size: var(--fs-xl); font-weight: var(--fw-semibold); letter-spacing: .01em; }
+
+.tabs {
+  display: flex;
+  align-self: stretch;
+  align-items: stretch;
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent, var(--fade-mask) var(--sp-4), var(--fade-mask) calc(100% - var(--sp-4)), transparent);
+          mask-image: linear-gradient(to right, transparent, var(--fade-mask) var(--sp-4), var(--fade-mask) calc(100% - var(--sp-4)), transparent);
+}
+.tabs::-webkit-scrollbar { display: none; }
+
+.tabs__item {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  padding-inline: var(--sp-3);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.tabs__item:hover { background: var(--bg-hover); color: var(--text-primary); text-decoration: none; }
+.tabs__item.is-active { color: var(--accent); background: var(--accent-dim); }
+.tabs__item.is-active::after {
+  content: "";
+  position: absolute;
+  left: var(--sp-3); right: var(--sp-3); bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: var(--radius-full) var(--radius-full) 0 0;
+}
+
+.topbar__actions { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+/* 面板抽屉开关：仅 ≤1024px 由 layout 断点显示 */
+.topbar__panel-toggle { display: none; }
+
+/* 6.3 stage（四层叠放容器） */
+.stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-deep);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-block: var(--sp-3);
+}
+/* 音频类模块（wav/flac/ape，§6.3）：可视化画布替代视频比例 */
+.stage--audio { aspect-ratio: auto; min-height: 240px; }
+
+.stage__viewport { position: absolute; inset: 0; }
+.stage__viewport > video,
+.stage__viewport > canvas {
+  width: 100%; height: 100%;
+  object-fit: contain;            /* 媒体等价 contain 行为 */
+}
+
+/* L1 字幕覆盖层（§13.1）：必须 pointer-events:none；只读舞台状态类 */
+.subtitle-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+.stage.is-buffering .subtitle-layer { opacity: .5; }        /* 缓冲弱化 */
+.stage.has-error    .subtitle-layer { opacity: .4; }        /* 冻结刷新由播放器停止驱动 */
+.stage[data-cc="off"] .subtitle-layer { visibility: hidden; } /* CC 关闭，DOM/canvas 保留秒开 */
+.stage.is-idle      .subtitle-layer { visibility: hidden; }   /* 无媒体不渲染 */
+
+/* L2 舞台状态层：spinner / live 徽章 / dropzone */
+.stage__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.stage.is-buffering .stage__overlay { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* L3 错误盒：仅 has-error 显示（阻断错误不走 toast） */
+.stage__errbox { display: none; }
+.stage.has-error .stage__errbox {
+  display: flex;
+  z-index: 30;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 拖放热区 = 空状态卡（idle 时显示） */
+.stage .drop { position: absolute; inset: 0; z-index: 20; display: none; }
+.stage.is-idle:not(.has-error) .drop,
+.stage.is-dragging .drop { display: flex; }
+
+/* 全窗拖拽高亮（§6.3）：inset 8px 虚线框 */
+.stage.is-dragging::after {
+  content: "松开以载入文件";
+  position: absolute;
+  inset: 8px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--accent-border);
+  border-radius: calc(var(--radius-lg) - 4px);
+  background: var(--accent-dim);
+  color: var(--accent-hover);
+  font-size: var(--fs-md);
+}
+
+/* 全屏态（§7.2⑦）：控制条转悬浮由 components 处理；此处保证铺满 */
+.stage.is-fullscreen:fullscreen,
+.stage.is-fullscreen:-webkit-full-screen { width: 100vw; height: 100vh; border-radius: 0; margin: 0; }
+
+/* 6.4 info-panel */
+.panel {
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-subtle);
+  padding: var(--sp-4);
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.demo__panel { margin-block: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg); border-left: 1px solid var(--border-subtle); }
+
+/* 面板区块卡 */
+.panel__section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3);
+}
+.panel__title {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* 6.6 响应式断点 */
+/* ≤1120px：面板收窄 */
+@media (max-width: 1120px) {
+  :root { --panel-w: 280px; }
+}
+
+/* ≤1024px：单列竖排，面板转右侧抽屉（可边播边看数据，不加遮罩） */
+@media (max-width: 1024px) {
+  .demo {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "topbar" "stage" "controls" "panel";
+  }
+  .demo__panel {
+    position: fixed;
+    top: var(--topbar-h);
+    right: 0;
+    bottom: 0;
+    width: min(var(--panel-w), 86vw);
+    margin: 0;
+    border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+    transform: translateX(100%);
+    transition: transform var(--dur-base) var(--ease-standard);
+    z-index: calc(var(--z-nav) - 1);
+    box-shadow: var(--shadow-2);
+  }
+  .demo__panel.is-open { transform: translateX(0); }
+  .topbar__panel-toggle { display: inline-flex; }
+}
+
+/* ≤640px：紧凑化（控制条细节在 components 同断点处理） */
+@media (max-width: 640px) {
+  .demo { padding-inline: var(--sp-2); }
+  .tabs__item { padding-inline: var(--sp-2); }
+}

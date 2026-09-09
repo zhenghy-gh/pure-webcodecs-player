@@ -1,0 +1,614 @@
+/* ============================================================
+ * M3 收敛 compat 层（裁决③）：本文件进入退役过渡期。
+ * ①顶部引入 pp 权威令牌；②--dsk-* 全部映射为 --pp-* 别名——
+ * 遗留页面零改动即继承目标视觉；类名/标记迁移按页推进，
+ * 完成后本文件整体归档删除。冻结期内不新增任何组件规则。
+ * ============================================================ */
+@import url('./skin.css');
+
+/* ---- dsk→pp 令牌别名（唯一允许的新增内容） ---- */
+:root {
+  --dsk-bg: var(--pp-bg);
+  --dsk-bg-elev: var(--pp-surface);
+  --dsk-surface: var(--pp-raised);
+  --dsk-border: var(--pp-border);
+  --dsk-border-strong: var(--pp-border-strong);
+  --dsk-text: var(--pp-text);
+  --dsk-text-dim: var(--pp-text-dim);
+  --dsk-text-faint: var(--pp-text-faint);
+  --dsk-accent: var(--pp-accent);
+  --dsk-accent-strong: var(--pp-accent-hover);
+  --dsk-accent-contrast: var(--pp-on-accent);
+  --dsk-ok: var(--pp-ok);
+  --dsk-warn: var(--pp-warn);
+  --dsk-danger: var(--pp-danger);
+  --dsk-font: var(--pp-font);
+  --dsk-font-mono: var(--pp-font-mono);
+  --dsk-fs-xs: var(--pp-fs-xs);
+  --dsk-fs-sm: var(--pp-fs-sm);
+  --dsk-fs-md: var(--pp-fs-md);
+  --dsk-fs-lg: var(--pp-fs-lg);
+  --dsk-fs-xl: var(--pp-fs-xl);
+  --dsk-radius-sm: var(--pp-radius-sm);
+  --dsk-radius-md: var(--pp-radius-md);
+  --dsk-radius-lg: var(--pp-radius-lg);
+  --dsk-bar-h: var(--pp-bar-h);
+  --dsk-nav-h: var(--pp-nav-h);
+  --dsk-shadow-1: var(--pp-shadow-1);
+  --dsk-shadow-2: var(--pp-shadow-2);
+  --dsk-fast: var(--pp-fast);
+  --dsk-ease: var(--pp-ease);
+}
+
+/* ============================================================
+ * 以下为原 site.css 规则（冻结，仅消费上方别名）
+ * ============================================================ */
+/* ============================================================
+ * 原规则体（冻结）
+ * ------------------------------------------------------------
+ * 结构：
+ *   1. 设计令牌（CSS 自定义属性，深色默认；[data-theme="light"] 浅色）
+ *   2. 基础重置与排版
+ *   3. 页面骨架（.site-*）
+ *   4. 顶部导航（.site-nav）
+ *   5. 演示卡片网格 / 表单面板
+ *   6. 播放控制条（BEM：.pui = player-ui）
+ *   7. 工具类
+ * 命名规范：页面级组件 .site-xxx；播放控制条块名 .pui，
+ *           元素 .pui__xxx，修饰符 .pui__xxx--yyy。
+ * 注：DESIGN.md（designer）发布后，仅需对齐第 1 节令牌取值。
+ * ============================================================ */
+
+/* ---------- 1. 设计令牌 ---------- */
+:root {
+  color-scheme: dark;
+
+  /* 色板 */
+  --dsk-bg: #0b0e14;            /* 页面背景 */
+  --dsk-bg-elev: #11151f;       /* 抬升面（卡片/面板） */
+  --dsk-surface: #171c29;       /* 控件表面 */
+  --dsk-border: #232a3b;        /* 描边 */
+  --dsk-border-strong: #303a52;
+  --dsk-text: #e8ecf4;          /* 主文字 */
+  --dsk-text-dim: #9aa5bd;      /* 次要文字 */
+  --dsk-text-faint: #626e8c;    /* 弱化文字 */
+  --dsk-accent: #6c8cff;        /* 主色（进度/按钮/链接） */
+  --dsk-accent-strong: #89a1ff;
+  --dsk-accent-contrast: #0b0e14;
+  --dsk-ok: #3fce7c;
+  --dsk-warn: #f2b94b;
+  --dsk-danger: #ff6b6b;
+
+  /* 字体 */
+  --dsk-font: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei",
+              -apple-system, "Segoe UI", Roboto, sans-serif;
+  --dsk-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
+  --dsk-fs-xs: 12px;
+  --dsk-fs-sm: 13px;
+  --dsk-fs-md: 14px;
+  --dsk-fs-lg: 17px;
+  --dsk-fs-xl: 24px;
+
+  /* 尺寸与圆角 */
+  --dsk-radius-sm: 6px;
+  --dsk-radius-md: 10px;
+  --dsk-radius-lg: 16px;
+  --dsk-bar-h: 56px;            /* 控制条高度 */
+  --dsk-nav-h: 56px;            /* 顶部导航高度 */
+
+  /* 阴影 */
+  --dsk-shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
+  --dsk-shadow-2: 0 8px 24px rgb(0 0 0 / 45%);
+
+  /* 动效 */
+  --dsk-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dsk-fast: 120ms var(--dsk-ease);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --dsk-bg: #f4f6fb;
+  --dsk-bg-elev: #ffffff;
+  --dsk-surface: #eceff7;
+  --dsk-border: #d8deec;
+  --dsk-border-strong: #bcc6dd;
+  --dsk-text: #1a2130;
+  --dsk-text-dim: #55607a;
+  --dsk-text-faint: #8b96ad;
+  --dsk-accent: #3d63dd;
+  --dsk-accent-strong: #2c50c4;
+  --dsk-accent-contrast: #ffffff;
+}
+
+/* ---------- 2. 基础重置 ---------- */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body.dsk-body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--dsk-bg);
+  color: var(--dsk-text);
+  font-family: var(--dsk-font);
+  font-size: var(--dsk-fs-md);
+  line-height: 1.6;
+}
+
+h1, h2, h3 { line-height: 1.25; margin: 0 0 0.5em; }
+p { margin: 0 0 1em; }
+a { color: var(--dsk-accent); text-decoration: none; }
+a:hover { color: var(--dsk-accent-strong); }
+code, pre { font-family: var(--dsk-font-mono); font-size: 0.92em; }
+
+/* ---------- 3. 页面骨架 ---------- */
+.site-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: calc(var(--dsk-nav-h) + 28px) 20px 48px;
+}
+
+.site-hero { margin-bottom: 28px; }
+.site-hero__title {
+  font-size: var(--dsk-fs-xl);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.site-hero__desc { color: var(--dsk-text-dim); margin: 0; }
+
+/* 演示卡片网格 */
+.site-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.demo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--dsk-bg-elev);
+  border: 1px solid var(--dsk-border);
+  border-radius: var(--dsk-radius-lg);
+  padding: 18px;
+  transition: border-color var(--dsk-fast), transform var(--dsk-fast);
+}
+.demo-card:hover {
+  border-color: var(--dsk-border-strong);
+  transform: translateY(-2px);
+}
+.demo-card__title { font-size: var(--dsk-fs-lg); font-weight: 600; margin: 0; }
+.demo-card__desc { color: var(--dsk-text-dim); font-size: var(--dsk-fs-sm); margin: 0; flex: 1; }
+.demo-card__meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  font-size: var(--dsk-fs-xs);
+  color: var(--dsk-text-faint);
+}
+
+/* 状态徽标 */
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--dsk-border);
+  font-size: var(--dsk-fs-xs);
+  color: var(--dsk-text-dim);
+  white-space: nowrap;
+}
+.badge--ok { color: var(--dsk-ok); border-color: color-mix(in srgb, var(--dsk-ok) 45%, transparent); }
+.badge--wip { color: var(--dsk-warn); border-color: color-mix(in srgb, var(--dsk-warn) 45%, transparent); }
+.badge--na { color: var(--dsk-text-faint); }
+
+/* 通用面板与表单 */
+.panel {
+  background: var(--dsk-bg-elev);
+  border: 1px solid var(--dsk-border);
+  border-radius: var(--dsk-radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.panel__title {
+  font-size: var(--dsk-fs-md);
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--dsk-text);
+}
+.panel--flush { padding: 0; overflow: hidden; }
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.field-row:last-child { margin-bottom: 0; }
+
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--dsk-radius-sm);
+  border: 1px solid var(--dsk-border-strong);
+  background: var(--dsk-surface);
+  color: var(--dsk-text);
+  font-family: inherit;
+  font-size: var(--dsk-fs-md);
+  cursor: pointer;
+  transition: filter var(--dsk-fast), border-color var(--dsk-fast);
+}
+.btn:hover { filter: brightness(1.15); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn--primary {
+  background: var(--dsk-accent);
+  border-color: var(--dsk-accent);
+  color: var(--dsk-accent-contrast);
+  font-weight: 600;
+}
+
+.input {
+  flex: 1;
+  min-width: 200px;
+  padding: 7px 12px;
+  border-radius: var(--dsk-radius-sm);
+  border: 1px solid var(--dsk-border-strong);
+  background: var(--dsk-bg);
+  color: var(--dsk-text);
+  font-family: inherit;
+  font-size: var(--dsk-fs-md);
+}
+.input:focus-visible {
+  outline: 2px solid var(--dsk-accent);
+  outline-offset: 1px;
+}
+.input::placeholder { color: var(--dsk-text-faint); }
+
+select.input { cursor: pointer; }
+
+/* 元数据表（ape/flac/wav 信息展示共用） */
+.meta-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--dsk-fs-sm);
+}
+.meta-table th,
+.meta-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--dsk-border);
+  vertical-align: top;
+}
+.meta-table th {
+  color: var(--dsk-text-dim);
+  font-weight: 500;
+  white-space: nowrap;
+  width: 1%;
+}
+.meta-table tr:last-child td { border-bottom: none; }
+.meta-table td code { color: var(--dsk-accent); word-break: break-all; }
+
+/* 视频画布容器：各模块 demo 的 <video>/<canvas> 统一套此壳 */
+.stage {
+  position: relative;
+  background: #000;
+  border-radius: var(--dsk-radius-lg);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.stage > video,
+.stage > canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+.stage--audio { aspect-ratio: auto; min-height: 220px; }
+
+/* ---------- 4. 顶部导航 ---------- */
+.site-nav {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 100;
+  height: var(--dsk-nav-h);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--dsk-bg) 82%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--dsk-border);
+}
+.site-nav__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: var(--dsk-fs-md);
+  color: var(--dsk-text);
+  white-space: nowrap;
+}
+.site-nav__brand:hover { color: var(--dsk-accent); }
+.site-nav__logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--dsk-accent), #b06cff);
+  display: inline-block;
+  flex: none;
+}
+.site-nav__links {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
+}
+.site-nav__links::-webkit-scrollbar { display: none; }
+.site-nav__link {
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: var(--dsk-fs-sm);
+  color: var(--dsk-text-dim);
+  white-space: nowrap;
+  transition: color var(--dsk-fast), background var(--dsk-fast);
+}
+.site-nav__link:hover { color: var(--dsk-text); background: var(--dsk-surface); }
+.site-nav__link--active {
+  color: var(--dsk-accent);
+  background: color-mix(in srgb, var(--dsk-accent) 14%, transparent);
+  font-weight: 600;
+}
+.site-nav__gh {
+  font-size: var(--dsk-fs-sm);
+  color: var(--dsk-text-faint);
+  white-space: nowrap;
+}
+
+/* ---------- 6. 播放控制条（.pui = player-ui） ---------- */
+.pui-root { width: 100%; }
+
+.pui {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-height: var(--dsk-bar-h);
+  padding: 6px 12px;
+  background: linear-gradient(180deg, var(--dsk-bg-elev), var(--dsk-bg));
+  border: 1px solid var(--dsk-border);
+  border-radius: var(--dsk-radius-md);
+  user-select: none;
+}
+.pui[hidden] { display: none; }
+
+/* 按钮 */
+.pui__btn {
+  appearance: none;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsk-text);
+  cursor: pointer;
+  transition: background var(--dsk-fast), color var(--dsk-fast), transform var(--dsk-fast);
+}
+.pui__btn:hover { background: var(--dsk-surface); }
+.pui__btn:active { transform: scale(0.92); }
+.pui__btn:focus-visible { outline: 2px solid var(--dsk-accent); outline-offset: 2px; }
+.pui__btn[disabled] { opacity: 0.35; cursor: not-allowed; transform: none; }
+.pui__btn svg { width: 20px; height: 20px; fill: currentColor; pointer-events: none; }
+
+/* 主播放键稍大 */
+.pui__btn--main { width: 42px; height: 42px; }
+.pui__btn--main svg { width: 24px; height: 24px; }
+.pui__btn--on { color: var(--dsk-accent); }   /* 开关类按钮的激活态 */
+
+/* 时间标签 */
+.pui__time {
+  font-family: var(--dsk-font-mono);
+  font-size: var(--dsk-fs-sm);
+  color: var(--dsk-text-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  min-width: 96px;
+  text-align: center;
+}
+.pui__time-current { color: var(--dsk-text); }
+
+/* 进度条 */
+.pui__progress {
+  flex: 1 1 180px;
+  min-width: 120px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+.pui__progress-track {
+  position: relative;
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--dsk-surface);
+  overflow: visible;
+}
+.pui__progress-buffered,
+.pui__progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  border-radius: 999px;
+}
+.pui__progress-buffered { background: color-mix(in srgb, var(--dsk-text-faint) 35%, transparent); }
+.pui__progress-fill { background: var(--dsk-accent); }
+.pui__progress-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--dsk-shadow-1);
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform var(--dsk-fast);
+  pointer-events: none;
+}
+.pui__progress:hover .pui__progress-thumb,
+.pui__progress--dragging .pui__progress-thumb { transform: translate(-50%, -50%) scale(1); }
+.pui__progress--live .pui__progress-track { background: var(--dsk-danger); }
+
+/* 音量组 */
+.pui__volume {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.pui__volume-slider {
+  width: 72px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+.pui__volume-track {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--dsk-surface);
+}
+.pui__volume-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--dsk-text-dim);
+}
+.pui__volume-slider:hover .pui__volume-fill { background: var(--dsk-accent); }
+
+/* 倍速菜单 */
+.pui__rate { position: relative; }
+.pui__rate-btn {
+  width: auto !important;
+  min-width: 44px;
+  border-radius: var(--dsk-radius-sm) !important;
+  font-family: var(--dsk-font-mono);
+  font-size: var(--dsk-fs-sm) !important;
+}
+.pui__rate-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  min-width: 84px;
+  padding: 4px;
+  background: var(--dsk-bg-elev);
+  border: 1px solid var(--dsk-border);
+  border-radius: var(--dsk-radius-sm);
+  box-shadow: var(--dsk-shadow-2);
+  display: none;
+}
+.pui__rate-menu--open { display: block; }
+.pui__rate-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  border-radius: var(--dsk-radius-sm);
+  color: var(--dsk-text-dim);
+  font-family: var(--dsk-font-mono);
+  font-size: var(--dsk-fs-sm);
+  text-align: right;
+  cursor: pointer;
+}
+.pui__rate-item:hover { background: var(--dsk-surface); color: var(--dsk-text); }
+.pui__rate-item--active { color: var(--dsk-accent); font-weight: 600; }
+
+/* 统计面板抽屉 */
+.pui__stats {
+  order: 99;
+  flex-basis: 100%;
+  display: none;
+  margin: 4px 0 2px;
+  padding: 10px 12px;
+  background: var(--dsk-bg);
+  border: 1px dashed var(--dsk-border-strong);
+  border-radius: var(--dsk-radius-sm);
+  max-height: 240px;
+  overflow: auto;
+}
+.pui__stats--open { display: block; }
+.pui__stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 4px 16px;
+  font-size: var(--dsk-fs-xs);
+  font-family: var(--dsk-font-mono);
+}
+.pui__stats-key { color: var(--dsk-text-faint); }
+.pui__stats-val { color: var(--dsk-text); word-break: break-all; }
+.pui__stats-empty { color: var(--dsk-text-faint); font-size: var(--dsk-fs-xs); }
+
+/* 错误提示条 */
+.pui__error {
+  order: 98;
+  flex-basis: 100%;
+  display: none;
+  margin: 2px 0;
+  padding: 8px 12px;
+  border-radius: var(--dsk-radius-sm);
+  background: color-mix(in srgb, var(--dsk-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsk-danger) 40%, transparent);
+  color: var(--dsk-danger);
+  font-size: var(--dsk-fs-sm);
+}
+.pui__error--show { display: block; }
+
+/* 窄屏收纳：隐藏音量滑杆文字宽度，保留图标 */
+@media (max-width: 560px) {
+  .pui__volume-slider { width: 52px; }
+  .pui__time { min-width: 80px; }
+}
+
+/* ---------- 7. 工具类 ---------- */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.kbd {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--dsk-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font-family: var(--dsk-font-mono);
+  font-size: var(--dsk-fs-xs);
+  color: var(--dsk-text-dim);
+}
+
+.text-dim { color: var(--dsk-text-dim); }
+.mono { font-family: var(--dsk-font-mono); }

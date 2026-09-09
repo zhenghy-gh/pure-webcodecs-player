@@ -1,0 +1,14 @@
+{
+  "name": "@player/core",
+  "version": "0.1.0",
+  "description": "公共内核：类型契约、位流原语、NAL 转换、能力探测、MSE/WebCodecs/AudioWorklet 输出端、时钟同步与统计",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test __tests__/"
+  },
+  "license": "MIT"
+}

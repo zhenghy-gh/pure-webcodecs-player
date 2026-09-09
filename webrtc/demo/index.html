@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRTC 低延迟播放 · 纯前端播放器</title>
+  <link rel="stylesheet" href="../../site/site.css">
+  <style>
+    .rtc-panel { max-width: 960px; margin: 0 auto; padding: 16px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+    .row input { flex: 1; min-width: 240px; padding: 6px 10px; }
+    .stats { font-family: ui-monospace, monospace; font-size: 13px;
+             background: var(--pui-surface, #16181d); color: var(--pui-text, #e8eaed);
+             border-radius: 8px; padding: 10px 14px; margin-top: 12px; white-space: pre-wrap; }
+    .banner { border-radius: 8px; padding: 10px 14px; margin: 12px 0; display: none; line-height: 1.7; }
+    .banner.warn { display: block; background: rgba(255,196,0,.12); border: 1px solid rgba(255,196,0,.4); }
+    .banner.err { display: block; background: rgba(255,82,82,.1); border: 1px solid rgba(255,82,82,.45); }
+    .state-chip { padding: 2px 10px; border-radius: 999px; font-size: 13px; }
+    .state-connected { background: rgba(80,200,120,.18); color: #3fbf6f; }
+    .state-connecting, .state-reconnecting { background: rgba(255,196,0,.15); color: #e0a800; }
+    .state-failed, .state-closed { background: rgba(255,82,82,.14); color: #ff6b6b; }
+    h2 { margin-top: 28px; font-size: 18px; }
+  </style>
+</head>
+<body class="dsk-body">
+  <div data-site-nav data-root="../../"></div>
+
+  <main class="site-page rtc-panel">
+    <h1>WebRTC 低延迟播放（WHEP 信令）</h1>
+    <p class="muted">
+      标准信令走 WHEP（RFC 9725：HTTP POST SDP）；自定义信令服务可用 ws(s):// 地址或注入适配器。
+      真实拉流需要可达的 WHEP 端点；下方"离线回环演示"无需任何网络即可验证管线。
+    </p>
+
+    <div id="banner" class="banner"></div>
+
+    <h2>① 真实拉流（需 WHEP 端点 + 网络）</h2>
+    <div class="row">
+      <input id="url" type="text" spellcheck="false"
+             placeholder="https://edge.example.com/wheptv/xxx 或 webrtc://host/app/stream 或 wss://sig/path">
+      <button id="btn-play">播放</button>
+      <button id="btn-stop">停止</button>
+    </div>
+    <div class="row">
+      <span>状态：</span><span id="chip" class="state-chip">idle</span>
+    </div>
+
+    <div style="aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden">
+      <video id="video" autoplay playsinline controls muted style="width:100%;height:100%"></video>
+    </div>
+
+    <h2>② 离线回环演示（无网络可跑）</h2>
+    <div class="row">
+      <button id="btn-loop">启动本机回环（canvas → RTCPeerConnection → 播放）</button>
+      <button id="btn-loop-stop">停止回环</button>
+    </div>
+    <div style="aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden">
+      <video id="loopVideo" autoplay playsinline muted style="width:100%;height:100%"></video>
+    </div>
+
+    <h2>统计（getStats）</h2>
+    <div class="stats" id="stats">等待连接…</div>
+  </main>
+
+  <script type="module" src="../../site/nav.js"></script>
+  <script type="module">
+    import { WebRtcPlayer } from '../src/index.js';
+
+    const $ = (id) => document.getElementById(id);
+    let player = null;
+
+    function banner(kind, html) {
+      const el = $('banner');
+      el.className = kind ? `banner ${kind}` : 'banner';
+      el.innerHTML = html || '';
+    }
+
+    function setChip(state) {
+      const chip = $('chip');
+      chip.textContent = state;
+      chip.className = `state-chip state-${state}`;
+    }
+
+    function renderStats(m) {
+      if (!m) return;
+      $('stats').textContent =
+        `RTT=${m.rttMs ?? '-'}ms  视频码率=${m.video.kbps ?? '-'}kbps  音频码率=${m.audio.kbps ?? '-'}kbps\n` +
+        `丢包 视频=${m.video.packetsLost} 音频=${m.audio.packetsLost}  抖动=${m.video.jitterMs ?? '-'}ms\n` +
+        `解码帧=${m.video.framesDecoded} 丢帧=${m.video.framesDropped} FPS=${m.video.framesPerSecond ?? '-'}\n` +
+        `播放缓冲驻留=${m.video.bufferDelayMs ?? '-'}ms  端到端延迟估计=${m.latencyEstimateMs ?? '不支持'}ms`;
+    }
+
+    async function play() {
+      const url = $('url').value.trim();
+      if (!url) { banner('warn', '请先输入 WHEP / webrtc:// 地址'); return; }
+      banner(null);
+      await stop();
+      player = new WebRtcPlayer({
+        onEvent: (type, payload) => {
+          if (type === 'statechange') {
+            setChip(payload.to);
+            if (payload.to === 'failed') {
+              banner('err', '🚫 连接失败。常见原因：<br>' +
+                '① 地址不可达或非 WHEP 端点；<br>' +
+                '② 服务端未开启 CORS；<br>' +
+                '③ ICE 打洞失败（内网部署需配置 TURN/STUN）。');
+            }
+          } else if (type === 'stats') renderStats(payload);
+          else if (type === 'error') banner('err', `错误：${payload.message}`);
+          else if (type === 'reconnecting') banner('warn', `连接中断，第 ${payload.attempt} 次重连中（${payload.delayMs}ms 后）…`);
+        },
+      });
+      try {
+        await player.play(url, { video: $('video') });
+      } catch (err) {
+        banner('err', `建立失败：${err.message}<br>提示：WHEP 端点必须支持跨域 POST application/sdp。`);
+      }
+    }
+
+    async function stop() {
+      if (player) { await player.destroy(); player = null; }
+      $('stats').textContent = '已停止';
+      setChip('closed');
+    }
+
+    $('btn-play').onclick = () => play().catch((e) => banner('err', e.message));
+    $('btn-stop').onclick = () => stop();
+
+    /* ---------------- 离线回环演示 ---------------- */
+
+    let loop = null;
+    function startLoop() {
+      banner(null);
+      if (!('RTCPeerConnection' in window)) {
+        banner('warn', '当前浏览器不支持 RTCPeerConnection');
+        return;
+      }
+      // A：canvas 动画作为推流源
+      const canvas = document.createElement('canvas');
+      canvas.width = 640; canvas.height = 360;
+      const ctx = canvas.getContext('2d');
+      let t = 0;
+      const timer = setInterval(() => {
+        t += 0.03;
+        ctx.fillStyle = '#10131a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < 5; i++) {
+          ctx.beginPath();
+          ctx.arc(
+            canvas.width / 2 + Math.sin(t + i) * 180,
+            canvas.height / 2 + Math.cos(t * 1.3 + i) * 100,
+            28 + Math.sin(t * 2 + i) * 10, 0, Math.PI * 2
+          );
+          ctx.fillStyle = `hsl(${(t * 60 + i * 40) % 360},70%,55%)`;
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fff';
+        ctx.font = '20px monospace';
+        ctx.fillText(`LOCAL LOOP  ${(t).toFixed(1)}s`, 20, 34);
+      }, 33);
+
+      const streamA = canvas.captureStream(30);
+      const a = new RTCPeerConnection();
+      const b = new RTCPeerConnection();
+      a.onicecandidate = (e) => e.candidate && b.addIceCandidate(e.candidate).catch(() => {});
+      b.onicecandidate = (e) => e.candidate && a.addIceCandidate(e.candidate).catch(() => {});
+      b.ontrack = (e) => {
+        $('loopVideo').srcObject = e.streams[0];
+        banner('warn', '✅ 回环已连通：canvas 动画经真实 RTCPeerConnection 收流渲染（离线可用）。');
+      };
+      for (const track of streamA.getTracks()) a.addTrack(track, streamA);
+
+      Promise.all([a.createOffer(), 0]).then(async ([offer]) => {
+        await a.setLocalDescription(offer);
+        await b.setRemoteDescription(a.localDescription);
+        const answer = await b.createAnswer();
+        await b.setLocalDescription(answer);
+        await a.setRemoteDescription(b.localDescription);
+      });
+
+      loop = { a, b, timer, canvas };
+    }
+
+    function stopLoop() {
+      if (!loop) return;
+      clearInterval(loop.timer);
+      loop.a.close(); loop.b.close();
+      $('loopVideo').srcObject = null;
+      loop = null;
+      banner(null);
+    }
+    $('btn-loop').onclick = startLoop;
+    $('btn-loop-stop').onclick = stopLoop;
+    addEventListener('beforeunload', () => stop());
+  </script>
+</body>
+</html>

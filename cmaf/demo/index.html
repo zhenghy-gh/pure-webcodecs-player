@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CMAF 低延迟解析 · 纯前端播放器</title>
+  <link rel="stylesheet" href="../../site/site.css">
+  <style>
+    .cmaf-panel { max-width: 960px; margin: 0 auto; padding: 16px; }
+    .drop-zone { border: 2px dashed var(--pui-border, #3a3f4b); border-radius: 12px;
+                 padding: 32px; text-align: center; cursor: pointer; transition: all .15s; }
+    .drop-zone.hover { border-color: #7aa7ff; background: rgba(122,167,255,.08); }
+    .tree { font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.7;
+            background: var(--pui-surface, #16181d); color: var(--pui-text, #e8eaed);
+            border-radius: 8px; padding: 12px 16px; max-height: 420px; overflow: auto;
+            white-space: pre; }
+    .banner { border-radius: 8px; padding: 10px 14px; margin: 12px 0; display: none; }
+    .banner.warn { display: block; background: rgba(255,196,0,.12); border: 1px solid rgba(255,196,0,.4); }
+    .banner.err { display: block; background: rgba(255,82,82,.1); border: 1px solid rgba(255,82,82,.45); }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+    .row input { flex: 1; min-width: 240px; padding: 6px 10px; }
+    h2 { margin-top: 28px; font-size: 18px; }
+  </style>
+</head>
+<body class="dsk-body">
+  <div data-site-nav data-root="../../"></div>
+
+  <main class="site-page cmaf-panel">
+    <h1>CMAF chunk 解析与 WebCodecs 直解路线</h1>
+    <p class="muted">
+      拖入本地 CMAF / fMP4 分片文件（.cmf1/.cmfv/.cmfa/.m4s/mp4）即可离线解析 box 结构、
+      chunk 时间线与解码配置；远程拉取需要可达地址 + CORS。
+    </p>
+
+    <div id="banner" class="banner"></div>
+
+    <h2>① 本地文件（离线可用）</h2>
+    <div class="drop-zone" id="drop">
+      拖入 .cmf1 / .cmfv / .cmfa / .m4s / mp4 文件，或点击选择
+      <input type="file" id="file" accept=".cmf1,.cmfv,.cmfa,.m4s,.mp4,.mp5" hidden>
+    </div>
+
+    <h2>② 远程地址（需网络可达 + CORS）</h2>
+    <div class="row">
+      <input id="url" type="text" placeholder="输入 CMAF track / LL-HLS part 地址（如 https://.../chunk.m4s）">
+      <button id="btn-fetch">抓取解析</button>
+    </div>
+
+    <div class="row">
+      <button id="btn-wc">WebCodecs 能力探测</button>
+      <span id="wc-result" class="muted"></span>
+    </div>
+
+    <h2>解析结果</h2>
+    <div class="tree" id="tree">等待输入…</div>
+  </main>
+
+  <script type="module" src="../../site/nav.js"></script>
+  <script type="module">
+    import {
+      probe, splitChunks, parseInitSegment,
+      decoderConfigsFromInit,
+    } from '../src/index.js';
+
+    const $ = (id) => document.getElementById(id);
+
+    function banner(kind, html) {
+      const el = $('banner');
+      el.className = kind ? `banner ${kind}` : 'banner';
+      el.innerHTML = html || '';
+    }
+
+    function fmtBytes(n) {
+      return n > 1048576 ? `${(n / 1048576).toFixed(2)}MB` : `${(n / 1024).toFixed(1)}KB`;
+    }
+
+    /** box 结构树（浅层递归，深度 2） */
+    function boxTree(buf) {
+      const lines = [];
+      let off = 0;
+      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      while (off + 8 <= buf.length) {
+        let size = dv.getUint32(off);
+        const type = String.fromCharCode(buf[off+4],buf[off+5],buf[off+6],buf[off+7]);
+        if (size === 0) size = buf.length - off;
+        if (size < 8) break;
+        lines.push(`├─ ${type}  size=${size}`);
+        // 第二层
+        if (['moov','moof','traf','stbl','minf','trak','mdia'].includes(type)) {
+          let inner = off + 8 + (type==='moof'||type==='traf'||type==='stbl'||type==='minf'||type==='trak'||type==='mdia' ? 0 : 0);
+          inner = off + 8;
+          const end = off + size;
+          let p = inner;
+          while (p + 8 <= end && p !== end) {
+            let isz = dv.getUint32(p);
+            if (isz === 0) isz = end - p;
+            if (isz < 8 || p + isz > end) break;
+            lines.push(`│   └─ ${String.fromCharCode(buf[p+4],buf[p+5],buf[p+6],buf[p+7])}  size=${isz}`);
+            p += isz;
+          }
+        }
+        off += size;
+      }
+      return lines.join('\n');
+    }
+
+    function render(buf, name) {
+      try {
+        const p = probe(buf);
+        if (!p) {
+          banner('warn', '未识别为 CMAF/fMP4 形态（应以 ftyp 或 styp 开头）。已展示原始 box 结构供排查。');
+        }
+        const { chunks, initRange } = splitChunks(buf);
+        let out = `# ${name}  (${fmtBytes(buf.length)})\n`;
+        out += `probe: ${p ? JSON.stringify(p) : 'null'}\n\n`;
+        out += boxTree(buf) + '\n\n';
+
+        if (initRange) {
+          const initBytes = buf.slice(initRange.startOffset, initRange.startOffset + initRange.byteLength);
+          const info = parseInitSegment(initBytes);
+          out += `init segment: ${fmtBytes(initRange.byteLength)}\n`;
+          if (info.video) {
+            out += `  video : entry=${info.video.entryType} timescale=${info.video.timescale}`;
+            try {
+              const cfg = decoderConfigsFromInit(initBytes);
+              out += ` codec=${cfg.video?.codec ?? '-'}`;
+            } catch { /* Node-only path */ }
+            out += '\n';
+          }
+          if (info.audio) out += `  audio : AOT=${info.audio.codecAot} timescale=${info.audio.timescale}\n`;
+        }
+
+        out += `\nchunks: ${chunks.length}\n`;
+        for (const c of chunks.slice(0, 50)) {
+          for (const t of c.tracks) {
+            const kf = t.samples.filter((s) => s.keyframe).length;
+            out += `  chunk#${c.index} sn基=${t.baseTime} 样本=${t.samples.length} 关键帧=${kf} 大小=${fmtBytes(c.byteLength)}\n`;
+          }
+        }
+        $('tree').textContent = out;
+      } catch (err) {
+        banner('err', `解析失败：${err.message}`);
+      }
+    }
+
+    async function handleFile(file) {
+      hideOffline();
+      try {
+        const ab = await file.arrayBuffer();
+        render(new Uint8Array(ab), file.name);
+      } catch (err) {
+        banner('err', `读取文件失败：${err.message}`);
+      }
+    }
+
+    const drop = $('drop');
+    drop.onclick = () => $('file').click();
+    drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('hover'); };
+    drop.ondragleave = () => drop.classList.remove('hover');
+    drop.ondrop = (e) => {
+      e.preventDefault(); drop.classList.remove('hover');
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    };
+    $('file').onchange = (e) => e.target.files[0] && handleFile(e.target.files[0]);
+
+    function hideOffline() { banner(null); }
+
+    $('btn-fetch').onclick = async () => {
+      const url = $('url').value.trim();
+      if (!url) { banner('warn', '请先输入地址'); return; }
+      if (!navigator.onLine) {
+        banner('warn', '⚠️ 浏览器处于离线状态：无法抓取远程分片。请改用本地拖入方式体验完整功能。');
+        return;
+      }
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        render(new Uint8Array(await res.arrayBuffer()), url);
+        hideOffline();
+      } catch (err) {
+        banner('err',
+          `🚫 抓取失败：${err.message}<br>` +
+          '常见原因：地址不可达、服务端未开启 CORS、https 页面拦截 http 资源。可改用本地拖入。');
+      }
+    };
+
+    $('btn-wc').onclick = () => {
+      const has = typeof VideoDecoder !== 'undefined';
+      $('wc-result').textContent = has
+        ? `VideoDecoder 可用 ✓${typeof AudioDecoder !== 'undefined' ? '，AudioDecoder 可用 ✓' : '；AudioDecoder 不可用'}`
+        : '当前浏览器不支持 WebCodecs——直解路线不可用（MSE 兜底或升级浏览器）';
+    };
+  </script>
+</body>
+</html>

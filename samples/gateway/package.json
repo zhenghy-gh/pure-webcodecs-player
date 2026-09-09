@@ -1,0 +1,17 @@
+{
+  "name": "@player-samples/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "本地联调测试网关：ws-flv 循环推流 + rtsp-ws 模拟中继（零第三方依赖，仅 node: 内置模块）",
+  "bin": {
+    "player-gateway": "./bin/gateway.js"
+  },
+  "scripts": {
+    "start": "node bin/gateway.js",
+    "test": "node --test --test-force-exit \"__tests__/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

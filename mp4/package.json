@@ -1,0 +1,15 @@
+{
+  "name": "@player/mp4",
+  "version": "0.1.0",
+  "description": "ISO-BMFF(MP4/fMP4)：box 解析、demux、fMP4 remux 输出 MSE、WebCodecs 管线、本地 File 与 HTTP Range 渐进加载",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test __tests__/*.test.js"
+  },
+  "license": "MIT",
+  "dependencies": {}
+}

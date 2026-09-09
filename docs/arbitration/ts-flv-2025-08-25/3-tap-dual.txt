@@ -1,0 +1,707 @@
+# 仲裁证据③ 双套件 + 全仓 TAP 原文 —— 2026-08-26 13:03:20
+
+## $ npm run test:ts
+TAP version 13
+# Subtest: parseAdtsHeader：基础字段
+ok 1 - parseAdtsHeader：基础字段
+  ---
+  duration_ms: 0.538583
+  type: 'test'
+  ...
+# Subtest: splitAdtsFrames：连续多帧切分
+ok 2 - splitAdtsFrames：连续多帧切分
+  ---
+  duration_ms: 0.432667
+  type: 'test'
+  ...
+# Subtest: splitAdtsFrames：前导垃圾与截断帧容错
+ok 3 - splitAdtsFrames：前导垃圾与截断帧容错
+  ---
+  duration_ms: 0.067417
+  type: 'test'
+  ...
+# Subtest: AudioSpecificConfig：构造与解析往返（含扩展采样率）
+ok 4 - AudioSpecificConfig：构造与解析往返（含扩展采样率）
+  ---
+  duration_ms: 0.080625
+  type: 'test'
+  ...
+# Subtest: parseLatmSyncStream：提取 ASC 与裸帧
+ok 5 - parseLatmSyncStream：提取 ASC 与裸帧
+  ---
+  duration_ms: 0.20325
+  type: 'test'
+  ...
+# Subtest: parseLatmSyncStream：非法同步字返回 null
+ok 6 - parseLatmSyncStream：非法同步字返回 null
+  ---
+  duration_ms: 0.041208
+  type: 'test'
+  ...
+# [codec-string] 参数集不可得，降级为基础串 "avc1"
+# [codec-string] 参数集不可得，降级为基础串 "avc1"
+# [codec-string] 参数集不可得，降级为基础串 "avc1"
+# Subtest: 交叉验证：共享库 makeTS 基础流（probe/open/samples/µs）
+ok 7 - 交叉验证：共享库 makeTS 基础流（probe/open/samples/µs）
+  ---
+  duration_ms: 2.8105
+  type: 'test'
+  ...
+# Subtest: 交叉验证：含 AAC 音频的混合流（numberOfChannels/description 契约字段）
+ok 8 - 交叉验证：含 AAC 音频的混合流（numberOfChannels/description 契约字段）
+  ---
+  duration_ms: 0.987875
+  type: 'test'
+  ...
+# Subtest: 交叉验证：PES 带 AF 填充（auPadBytes）不破坏解析
+ok 9 - 交叉验证：PES 带 AF 填充（auPadBytes）不破坏解析
+  ---
+  duration_ms: 0.35675
+  type: 'test'
+  ...
+# Subtest: findStartCode：识别 3/4 字节起始码
+ok 10 - findStartCode：识别 3/4 字节起始码
+  ---
+  duration_ms: 0.669333
+  type: 'test'
+  ...
+# Subtest: splitAnnexB：混合起始码 + 尾部零填充
+ok 11 - splitAnnexB：混合起始码 + 尾部零填充
+  ---
+  duration_ms: 0.27075
+  type: 'test'
+  ...
+# Subtest: annexbToAvcc：长度前缀正确
+ok 12 - annexbToAvcc：长度前缀正确
+  ---
+  duration_ms: 0.075584
+  type: 'test'
+  ...
+# Subtest: nalusToAnnexB ↔ splitAnnexB 往返
+ok 13 - nalusToAnnexB ↔ splitAnnexB 往返
+  ---
+  duration_ms: 0.150209
+  type: 'test'
+  ...
+# Subtest: buildAvcc：结构与 SPS/PPS 内容一致
+ok 14 - buildAvcc：结构与 SPS/PPS 内容一致
+  ---
+  duration_ms: 0.08875
+  type: 'test'
+  ...
+# Subtest: parseH264SpsDimensions：常见分辨率
+ok 15 - parseH264SpsDimensions：常见分辨率
+  ---
+  duration_ms: 0.192625
+  type: 'test'
+  ...
+# Subtest: buildHvcc + parseHevcSpsDimensions：HEVC 三件套
+ok 16 - buildHvcc + parseHevcSpsDimensions：HEVC 三件套
+  ---
+  duration_ms: 0.211625
+  type: 'test'
+  ...
+# Subtest: classify：按 codec 选择类型字段
+ok 17 - classify：按 codec 选择类型字段
+  ---
+  duration_ms: 0.078208
+  type: 'test'
+  ...
+# Subtest: 时间戳 5 字节编解码往返
+ok 18 - 时间戳 5 字节编解码往返
+  ---
+  duration_ms: 2.158542
+  type: 'test'
+  ...
+# Subtest: parsePESHeader：PTS+DTS 完整头
+ok 19 - parsePESHeader：PTS+DTS 完整头
+  ---
+  duration_ms: 0.259375
+  type: 'test'
+  ...
+# Subtest: parsePESHeader：仅 PTS
+ok 20 - parsePESHeader：仅 PTS
+  ---
+  duration_ms: 0.104125
+  type: 'test'
+  ...
+# Subtest: parsePESHeader：非法起始码返回 null
+ok 21 - parsePESHeader：非法起始码返回 null
+  ---
+  duration_ms: 0.046834
+  type: 'test'
+  ...
+# Subtest: unwrapTimestamp：33bit 回绕解卷积
+ok 22 - unwrapTimestamp：33bit 回绕解卷积
+  ---
+  duration_ms: 0.05825
+  type: 'test'
+  ...
+# Subtest: PAT：解析节目映射与 CRC
+ok 23 - PAT：解析节目映射与 CRC
+  ---
+  duration_ms: 1.647833
+  type: 'test'
+  ...
+# Subtest: PAT：CRC 篡改后校验失败仍可解析
+ok 24 - PAT：CRC 篡改后校验失败仍可解析
+  ---
+  duration_ms: 0.248292
+  type: 'test'
+  ...
+# Subtest: PMT：多流解析与 stream_type 映射
+ok 25 - PMT：多流解析与 stream_type 映射
+  ---
+  duration_ms: 0.451125
+  type: 'test'
+  ...
+# Subtest: PsiAssembler：跨包 Section 重组（60 个流的超长 PMT）
+ok 26 - PsiAssembler：跨包 Section 重组（60 个流的超长 PMT）
+  ---
+  duration_ms: 1.168166
+  type: 'test'
+  ...
+# Subtest: mpegCrc32 与已知向量一致
+ok 27 - mpegCrc32 与已知向量一致
+  ---
+  duration_ms: 0.100667
+  type: 'test'
+  ...
+# [codec-string] 参数集不可得，降级为基础串 "avc1"
+# Subtest: §10 导出形状：containerName/extensions/mimeTypes/probe/createDemuxer
+ok 28 - §10 导出形状：containerName/extensions/mimeTypes/probe/createDemuxer
+  ---
+  duration_ms: 0.946917
+  type: 'test'
+  ...
+# Subtest: probe：命中返回 ProbeResult（confidence≥0.8），垃圾字节返回 null 且不抛异常
+ok 29 - probe：命中返回 ProbeResult（confidence≥0.8），垃圾字节返回 null 且不抛异常
+  ---
+  duration_ms: 0.86175
+  type: 'test'
+  ...
+# Subtest: open()：MediaInfo 契约形状与轨道字段（µs 时间基）
+ok 30 - open()：MediaInfo 契约形状与轨道字段（µs 时间基）
+  ---
+  duration_ms: 2.592792
+  type: 'test'
+  ...
+# Subtest: open() 后 durationUs 由 EOS 估算回填（整块源在 open 期间即完成）
+ok 31 - open() 后 durationUs 由 EOS 估算回填（整块源在 open 期间即完成）
+  ---
+  duration_ms: 0.5555
+  type: 'test'
+  ...
+# Subtest: readSample：契约 Sample 形状 + ticks→µs 黄金值
+ok 32 - readSample：契约 Sample 形状 + ticks→µs 黄金值
+  ---
+  duration_ms: 0.491875
+  type: 'test'
+  ...
+# Subtest: 音频多帧步进：µs 闭式计算无累计漂移（44100Hz × 1024 采样）
+ok 33 - 音频多帧步进：µs 闭式计算无累计漂移（44100Hz × 1024 采样）
+  ---
+  duration_ms: 0.946417
+  type: 'test'
+  ...
+# Subtest: samples() 迭代至 EOS 后 readSample 返回 null
+ok 34 - samples() 迭代至 EOS 后 readSample 返回 null
+  ---
+  duration_ms: 0.4275
+  type: 'test'
+  ...
+# Subtest: 逐字节喂入与整块喂入结果一致（流式等价性保持）
+ok 35 - 逐字节喂入与整块喂入结果一致（流式等价性保持）
+  ---
+  duration_ms: 3.151917
+  type: 'test'
+  ...
+# Subtest: HEVC 流：hvcC 经 core 生成规范 codec string（level 93 黄金值）
+ok 36 - HEVC 流：hvcC 经 core 生成规范 codec string（level 93 黄金值）
+  ---
+  duration_ms: 0.859375
+  type: 'test'
+  ...
+# Subtest: 未 open 调 readSample/samples → STATE_ERROR；destroy 后一切调用抛 STATE_ERROR
+ok 37 - 未 open 调 readSample/samples → STATE_ERROR；destroy 后一切调用抛 STATE_ERROR
+  ---
+  duration_ms: 1.127917
+  type: 'test'
+  ...
+# Subtest: destroy 幂等
+ok 38 - destroy 幂等
+  ---
+  duration_ms: 0.320042
+  type: 'test'
+  ...
+# Subtest: parseInit() 为 open() 的过渡别名（§2.4）
+ok 39 - parseInit() 为 open() 的过渡别名（§2.4）
+  ---
+  duration_ms: 0.192333
+  type: 'test'
+  ...
+# Subtest: seek：TS 无索引容器 reject SEEK_UNSUPPORTED
+ok 40 - seek：TS 无索引容器 reject SEEK_UNSUPPORTED
+  ---
+  duration_ms: 0.257125
+  type: 'test'
+  ...
+# Subtest: createDemuxer：垃圾输入 reject PROBE_FAILED
+ok 41 - createDemuxer：垃圾输入 reject PROBE_FAILED
+  ---
+  duration_ms: 0.137
+  type: 'test'
+  ...
+# Subtest: CC 连续计数：跳变被检测并计入诊断
+ok 42 - CC 连续计数：跳变被检测并计入诊断
+  ---
+  duration_ms: 0.274833
+  type: 'test'
+  ...
+# Subtest: PAT/PMT 版本对账：同版本去重、新版本触发轨道刷新
+ok 43 - PAT/PMT 版本对账：同版本去重、新版本触发轨道刷新
+  ---
+  duration_ms: 0.256791
+  type: 'test'
+  ...
+# Subtest: PES 缓冲上限：异常流不会无限堆积（超限丢弃并继续）
+ok 44 - PES 缓冲上限：异常流不会无限堆积（超限丢弃并继续）
+  ---
+  duration_ms: 207.472875
+  type: 'test'
+  ...
+# Subtest: LATM 音频流：契约轨道与样本（µs）
+ok 45 - LATM 音频流：契约轨道与样本（µs）
+  ---
+  duration_ms: 0.577083
+  type: 'test'
+  ...
+# Subtest: 垃圾前缀后自动重同步（resync），样本完整
+ok 46 - 垃圾前缀后自动重同步（resync），样本完整
+  ---
+  duration_ms: 0.311541
+  type: 'test'
+  ...
+# Subtest: 未知 stream_type 记入 ignoredStreams（全损信息保留）
+ok 47 - 未知 stream_type 记入 ignoredStreams（全损信息保留）
+  ---
+  duration_ms: 0.226917
+  type: 'test'
+  ...
+# Subtest: M2TS（192 字节包）端到端
+ok 48 - M2TS（192 字节包）端到端
+  ---
+  duration_ms: 0.219125
+  type: 'test'
+  ...
+# Subtest: pause/resume 标志位（直播推送语义）
+ok 49 - pause/resume 标志位（直播推送语义）
+  ---
+  duration_ms: 0.195
+  type: 'test'
+  ...
+# Subtest: progress 事件在 DataSource 泵路径触发
+ok 50 - progress 事件在 DataSource 泵路径触发
+  ---
+  duration_ms: 0.302625
+  type: 'test'
+  ...
+# Subtest: 流中部垃圾注入：跨包错位后重同步，后续样本完整且时间戳连续
+ok 51 - 流中部垃圾注入：跨包错位后重同步，后续样本完整且时间戳连续
+  ---
+  duration_ms: 0.3175
+  type: 'test'
+  ...
+# Subtest: start()+'sample' 推送：事件计数与 pull 通道一致；pause/resume 生效
+ok 52 - start()+'sample' 推送：事件计数与 pull 通道一致；pause/resume 生效
+  ---
+  duration_ms: 82.12925
+  type: 'test'
+  ...
+# Subtest: ChunkSource 流式 start()：边推边吐（直播语义）
+ok 53 - ChunkSource 流式 start()：边推边吐（直播语义）
+  ---
+  duration_ms: 132.138416
+  type: 'test'
+  ...
+# [codec-string] 参数集不可得，降级为基础串 "avc1"
+# [codec-string] 参数集不可得，降级为基础串 "avc1"
+# [codec-string] 参数集不可得，降级为基础串 "avc1"
+# [codec-string] 参数集不可得，降级为基础串 "hvc1"
+# [codec-string] 参数集不可得，降级为基础串 "avc1"
+# [codec-string] 参数集不可得，降级为基础串 "avc1"
+# Subtest: PES 边界：declaredLength 对齐包尾（提前出帧路径命中）
+ok 54 - PES 边界：declaredLength 对齐包尾（提前出帧路径命中）
+  ---
+  duration_ms: 2.903291
+  type: 'test'
+  ...
+# Subtest: PES 边界：无 PTS/DTS 时样本以 0 时间戳输出且不崩溃
+ok 55 - PES 边界：无 PTS/DTS 时样本以 0 时间戳输出且不崩溃
+  ---
+  duration_ms: 0.408
+  type: 'test'
+  ...
+# Subtest: PsiAssembler：pointer_field 非零时正确跳过上一节残余
+ok 56 - PsiAssembler：pointer_field 非零时正确跳过上一节残余
+  ---
+  duration_ms: 0.391958
+  type: 'test'
+  ...
+# Subtest: 多节目 PAT：两套 PMT 并存、轨道按 PID 区分
+ok 57 - 多节目 PAT：两套 PMT 并存、轨道按 PID 区分
+  ---
+  duration_ms: 0.4735
+  type: 'test'
+  ...
+# Subtest: TEI 置位包被丢弃并计入诊断；加扰包被跳过
+ok 58 - TEI 置位包被丢弃并计入诊断；加扰包被跳过
+  ---
+  duration_ms: 0.687833
+  type: 'test'
+  ...
+# Subtest: AF-only 包（无载荷）不参与重组也不崩溃，CC 规则生效
+ok 59 - AF-only 包（无载荷）不参与重组也不崩溃，CC 规则生效
+  ---
+  duration_ms: 0.497917
+  type: 'test'
+  ...
+# Subtest: unwrapTimestamp：跨回绕连续多帧序列保持单调
+ok 60 - unwrapTimestamp：跨回绕连续多帧序列保持单调
+  ---
+  duration_ms: 0.065916
+  type: 'test'
+  ...
+1..60
+# tests 60
+# suites 0
+# pass 60
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 526.682125
+
+## $ npm run test:flv
+TAP version 13
+# Subtest: 标量编解码往返
+ok 1 - 标量编解码往返
+  ---
+  duration_ms: 0.572958
+  type: 'test'
+  ...
+# Subtest: 嵌套对象与 ECMA 数组
+ok 2 - 嵌套对象与 ECMA 数组
+  ---
+  duration_ms: 0.764375
+  type: 'test'
+  ...
+# Subtest: decodeAmf0All：脚本二元组（方法名+参数）
+ok 3 - decodeAmf0All：脚本二元组（方法名+参数）
+  ---
+  duration_ms: 0.9165
+  type: 'test'
+  ...
+# Subtest: 非法数据返回 null / 空数组
+ok 4 - 非法数据返回 null / 空数组
+  ---
+  duration_ms: 0.220917
+  type: 'test'
+  ...
+# Subtest: 交叉验证：共享库 tiny/basic 形态均可解析（契约字段）
+ok 5 - 交叉验证：共享库 tiny/basic 形态均可解析（契约字段）
+  ---
+  duration_ms: 4.480208
+  type: 'test'
+  ...
+# Subtest: 交叉验证：av 样本轨道为 H.264+AAC 且样本计数吻合
+ok 6 - 交叉验证：av 样本轨道为 H.264+AAC 且样本计数吻合
+  ---
+  duration_ms: 1.490458
+  type: 'test'
+  ...
+# Subtest: §10 导出形状：containerName/extensions/mimeTypes/probe/createDemuxer
+ok 7 - §10 导出形状：containerName/extensions/mimeTypes/probe/createDemuxer
+  ---
+  duration_ms: 1.301292
+  type: 'test'
+  ...
+# Subtest: probe：命中 ProbeResult；垃圾字节 null 且不抛异常
+ok 8 - probe：命中 ProbeResult；垃圾字节 null 且不抛异常
+  ---
+  duration_ms: 0.494542
+  type: 'test'
+  ...
+# Subtest: open()：MediaInfo 形状（durationUs=onMetaData×1e6、seekable、轨道排序）
+ok 9 - open()：MediaInfo 形状（durationUs=onMetaData×1e6、seekable、轨道排序）
+  ---
+  duration_ms: 1.584166
+  type: 'test'
+  ...
+# Subtest: readSample：毫秒→微秒精确换算黄金值
+ok 10 - readSample：毫秒→微秒精确换算黄金值
+  ---
+  duration_ms: 0.439583
+  type: 'test'
+  ...
+# Subtest: samples() 迭代至 EOS；EOS 后 readSample 为 null
+ok 11 - samples() 迭代至 EOS；EOS 后 readSample 为 null
+  ---
+  duration_ms: 0.451417
+  type: 'test'
+  ...
+# Subtest: Enhanced-FLV HEVC（FourCC hvc1）契约轨道
+ok 12 - Enhanced-FLV HEVC（FourCC hvc1）契约轨道
+  ---
+  duration_ms: 0.4555
+  type: 'test'
+  ...
+# Subtest: seek：关键帧对齐并返回 actualTimestampUs；后续样本从关键帧继续
+ok 13 - seek：关键帧对齐并返回 actualTimestampUs；后续样本从关键帧继续
+  ---
+  duration_ms: 0.300209
+  type: 'test'
+  ...
+# Subtest: seek：早于首关键帧时钳制到首关键帧
+ok 14 - seek：早于首关键帧时钳制到首关键帧
+  ---
+  duration_ms: 0.158792
+  type: 'test'
+  ...
+# Subtest: ChunkSource 流式模式 seekable=false → SEEK_UNSUPPORTED
+ok 15 - ChunkSource 流式模式 seekable=false → SEEK_UNSUPPORTED
+  ---
+  duration_ms: 5.053125
+  type: 'test'
+  ...
+# Subtest: 未 open 调 readSample/samples → STATE_ERROR；destroy 幂等
+ok 16 - 未 open 调 readSample/samples → STATE_ERROR；destroy 幂等
+  ---
+  duration_ms: 0.786125
+  type: 'test'
+  ...
+# Subtest: parseInit() 为 open() 的过渡别名（§2.4）
+ok 17 - parseInit() 为 open() 的过渡别名（§2.4）
+  ---
+  duration_ms: 0.330959
+  type: 'test'
+  ...
+# Subtest: 工厂：垃圾输入 reject PROBE_FAILED
+ok 18 - 工厂：垃圾输入 reject PROBE_FAILED
+  ---
+  duration_ms: 0.061292
+  type: 'test'
+  ...
+# Subtest: AMF0 onMetaData 黄金值：数值/布尔/字符串叶子完整保留
+ok 19 - AMF0 onMetaData 黄金值：数值/布尔/字符串叶子完整保留
+  ---
+  duration_ms: 0.252917
+  type: 'test'
+  ...
+# Subtest: 无 onMetaData 时 durationUs=null 且 seekable=false（纯音频流）
+ok 20 - 无 onMetaData 时 durationUs=null 且 seekable=false（纯音频流）
+  ---
+  duration_ms: 0.170917
+  type: 'test'
+  ...
+# Subtest: getBufferedRanges：可 seek 时返回 [0,duration] 区间
+ok 21 - getBufferedRanges：可 seek 时返回 [0,duration] 区间
+  ---
+  duration_ms: 0.154209
+  type: 'test'
+  ...
+# Subtest: start()+'sample' 推送：事件序列与 pull 一致
+ok 22 - start()+'sample' 推送：事件序列与 pull 一致
+  ---
+  duration_ms: 80.301625
+  type: 'test'
+  ...
+# Subtest: AMF0 strict-array(0x0A) 解码
+ok 23 - AMF0 strict-array(0x0A) 解码
+  ---
+  duration_ms: 0.832083
+  type: 'test'
+  ...
+# Subtest: AMF0 date(0x0B) 解码（毫秒+时区占位）
+ok 24 - AMF0 date(0x0B) 解码（毫秒+时区占位）
+  ---
+  duration_ms: 0.091666
+  type: 'test'
+  ...
+# Subtest: AMF0 long-string(0x0C) 与 undefined(0x06)
+ok 25 - AMF0 long-string(0x0C) 与 undefined(0x06)
+  ---
+  duration_ms: 0.490083
+  type: 'test'
+  ...
+# Subtest: AMF0 ECMA 数组含非连续键时保留对象形态
+ok 26 - AMF0 ECMA 数组含非连续键时保留对象形态
+  ---
+  duration_ms: 0.490542
+  type: 'test'
+  ...
+# Subtest: Enhanced-FLV：未知 FourCC 落入传统路径并报不支持 CodecID
+ok 27 - Enhanced-FLV：未知 FourCC 落入传统路径并报不支持 CodecID
+  ---
+  duration_ms: 0.823583
+  type: 'test'
+  ...
+# Subtest: Enhanced-FLV：packetType=2(end) 上报 end 事件、不产出码流
+ok 28 - Enhanced-FLV：packetType=2(end) 上报 end 事件、不产出码流
+  ---
+  duration_ms: 0.174
+  type: 'test'
+  ...
+# Subtest: Enhanced-FLV av01/vp09：配置透传、codec string 留空（禁编造 profile）
+ok 29 - Enhanced-FLV av01/vp09：配置透传、codec string 留空（禁编造 profile）
+  ---
+  duration_ms: 0.764375
+  type: 'test'
+  ...
+# Subtest: remux 边界：极小 fragmentUs 下每关键帧即切，data_offset 全部精确
+ok 30 - remux 边界：极小 fragmentUs 下每关键帧即切，data_offset 全部精确
+  ---
+  duration_ms: 1.858583
+  type: 'test'
+  ...
+# Subtest: remux 边界：大 CompositionTime 正确写入 trun cts 字段
+ok 31 - remux 边界：大 CompositionTime 正确写入 trun cts 字段
+  ---
+  duration_ms: 0.47075
+  type: 'test'
+  ...
+# Subtest: remux reset() 后实例可复用（二次 drain）
+ok 32 - remux reset() 后实例可复用（二次 drain）
+  ---
+  duration_ms: 0.733125
+  type: 'test'
+  ...
+# Subtest: header：魔数探测与音视频标志
+ok 33 - header：魔数探测与音视频标志
+  ---
+  duration_ms: 0.819791
+  type: 'test'
+  ...
+# Subtest: 非 FLV 数据触发 error
+ok 34 - 非 FLV 数据触发 error
+  ---
+  duration_ms: 0.137458
+  type: 'test'
+  ...
+# Subtest: onMetaData 解析
+ok 35 - onMetaData 解析
+  ---
+  duration_ms: 0.432833
+  type: 'test'
+  ...
+# Subtest: AVC 序列头与视频帧
+ok 36 - AVC 序列头与视频帧
+  ---
+  duration_ms: 0.586208
+  type: 'test'
+  ...
+# Subtest: Enhanced-FLV HEVC（FourCC hvc1）
+ok 37 - Enhanced-FLV HEVC（FourCC hvc1）
+  ---
+  duration_ms: 0.343334
+  type: 'test'
+  ...
+# Subtest: AAC 音频：配置帧 + 裸帧
+ok 38 - AAC 音频：配置帧 + 裸帧
+  ---
+  duration_ms: 0.565042
+  type: 'test'
+  ...
+# Subtest: MP3 音频直通
+ok 39 - MP3 音频直通
+  ---
+  duration_ms: 0.254917
+  type: 'test'
+  ...
+# Subtest: 流式分片等价：整块 vs 逐字节
+ok 40 - 流式分片等价：整块 vs 逐字节
+  ---
+  duration_ms: 2.170125
+  type: 'test'
+  ...
+# Subtest: 截断的尾部 Tag 不产生半包事件
+ok 41 - 截断的尾部 Tag 不产生半包事件
+  ---
+  duration_ms: 0.898291
+  type: 'test'
+  ...
+# Subtest: remux：init segment 结构完整且只输出一次
+ok 42 - remux：init segment 结构完整且只输出一次
+  ---
+  duration_ms: 4.655958
+  type: 'test'
+  ...
+# Subtest: remux：media segment 为 moof+mdat、trun 与 mdat 账目一致、data_offset 精确
+ok 43 - remux：media segment 为 moof+mdat、trun 与 mdat 账目一致、data_offset 精确
+  ---
+  duration_ms: 0.795917
+  type: 'test'
+  ...
+# Subtest: remux：时间基归零（baseMediaDecodeTime 从 0 开始）
+ok 44 - remux：时间基归零（baseMediaDecodeTime 从 0 开始）
+  ---
+  duration_ms: 0.492375
+  type: 'test'
+  ...
+# Subtest: remux：纯音频流产出 mp4a init 与分片
+ok 45 - remux：纯音频流产出 mp4a init 与分片
+  ---
+  duration_ms: 0.385042
+  type: 'test'
+  ...
+# Subtest: remux：init segment 可被 mp4 模块 probe 识别（pm 验收点）
+ok 46 - remux：init segment 可被 mp4 模块 probe 识别（pm 验收点）
+  ---
+  duration_ms: 10.441
+  type: 'test'
+  ...
+# Subtest: parseFlvHeader：字段黄金值与非法输入
+ok 47 - parseFlvHeader：字段黄金值与非法输入
+  ---
+  duration_ms: 1.50875
+  type: 'test'
+  ...
+# Subtest: iterateTags：一次性遍历类型/时间戳/数据长度
+ok 48 - iterateTags：一次性遍历类型/时间戳/数据长度
+  ---
+  duration_ms: 0.6355
+  type: 'test'
+  ...
+# Subtest: iterateTags：截断尾部不产出半包
+ok 49 - iterateTags：截断尾部不产出半包
+  ---
+  duration_ms: 0.112083
+  type: 'test'
+  ...
+# Subtest: FlvTagStream：整块 vs 任意切块结果一致
+ok 50 - FlvTagStream：整块 vs 任意切块结果一致
+  ---
+  duration_ms: 0.403291
+  type: 'test'
+  ...
+# Subtest: FlvTagStream：WebSocket 风格单帧喂入（rtmp 复用形态）
+ok 51 - FlvTagStream：WebSocket 风格单帧喂入（rtmp 复用形态）
+  ---
+  duration_ms: 0.188584
+  type: 'test'
+  ...
+# Subtest: FlvTagStream：resumeMidStream 支持跳过文件头续传
+ok 52 - FlvTagStream：resumeMidStream 支持跳过文件头续传
+  ---
+  duration_ms: 0.086041
+  type: 'test'
+  ...
+1..52
+# tests 52
+# suites 0
+# pass 52
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 160.500583

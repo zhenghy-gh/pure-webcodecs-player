@@ -1,0 +1,14 @@
+{
+  "name": "@player/rtsp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WebSocket 中继 RTSP 播放器客户端：SDP 解析 / RTP 解析 / H264·H265 depacketize / interleaved($) 与纯 RTP-over-WS 双帧协议",
+  "type_comment": "纯 ESM，零构建、零第三方运行时依赖；测试用 node --test（Node>=22，依赖全局 WebSocket）",
+  "scripts": {
+    "test": "node --test --test-force-exit \"__tests__/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

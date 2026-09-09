@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PurePlay · mkv —— 浏览器 MKV/WebM 解析演示</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36;
+    --text: #e6e9ef; --dim: #8a93a5; --acc: #4f8cff; --ok: #3fb96f; --warn: #e2a33c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--dim); margin-bottom: 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .drop {
+    border: 2px dashed var(--line); border-radius: 10px; padding: 28px; text-align: center;
+    color: var(--dim); cursor: pointer; transition: border-color .15s, color .15s;
+  }
+  .drop.on { border-color: var(--acc); color: var(--acc); }
+  input[type="text"] {
+    width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); outline: none; margin-top: 10px;
+  }
+  button {
+    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: #1d2330; color: var(--text); cursor: pointer; margin-right: 8px; margin-top: 10px;
+  }
+  button:hover { border-color: var(--acc); color: var(--acc); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  th { color: var(--dim); font-weight: 500; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; background: #20283a; }
+  .tag.ok { color: var(--ok); } .tag.no { color: var(--warn); }
+  tr.bad td { color: var(--warn); }
+  .stat { display: inline-block; margin: 4px 18px 4px 0; color: var(--dim); }
+  .stat b { color: var(--text); font-weight: 600; }
+  canvas { max-width: 100%; border-radius: 8px; background: #000; margin-top: 10px; }
+  .err { color: #ff7b72; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PurePlay · mkv —— MKV/WebM 纯前端解析演示</h1>
+  <div class="sub">EBML 解析 → Segment/Info/Tracks/Cues → 契约 Sample 流（open / readSample / seek）。零依赖纯 ESM，数据全程本地处理。</div>
+
+  <div class="panel">
+    <div id="drop" class="drop">拖入 .mkv / .webm 文件到此处，或点击选择文件<br /><small>文件不会上传，仅在浏览器内解析</small></div>
+    <input type="file" id="file" accept=".mkv,.webm,.mka,.mks,video/x-matroska" hidden />
+    <input type="text" id="url" placeholder="或输入 http(s) 地址（需服务端支持 Range 请求）" />
+    <button id="btnUrl">解析 URL</button>
+    <span id="srcMsg" style="color:var(--dim)"></span>
+  </div>
+
+  <div class="panel" id="infoPanel" hidden>
+    <div><span class="stat">容器 <b id="iContainer"></b></span>
+      <span class="stat">时长 <b id="iDuration"></b></span>
+      <span class="stat">可 seek <b id="iSeekable"></b></span></div>
+    <div id="iTitle" class="sub"></div>
+    <table>
+      <thead><tr><th>轨#</th><th>类型</th><th>CodecID</th><th>codec（§3）</th><th>参数</th><th>管线</th></tr></thead>
+      <tbody id="trackRows"></tbody>
+    </table>
+  </div>
+
+  <div class="panel" id="scanPanel" hidden>
+    <button id="btnScan">扫描全部样本</button>
+    <button id="btnSeekHalf" disabled>seek 至 50%（PRD 演示项）</button>
+    <button id="btnPreview" disabled>预览前若干视频帧（WebCodecs 实验）</button>
+    <div id="scanStat"></div>
+    <canvas id="cv" width="480" height="360" hidden></canvas>
+  </div>
+
+  <div class="panel err" id="errBox" hidden></div>
+</div>
+
+<script type="module">
+import { createDemuxer, FetchSource, MkvDemuxer } from '../src/index.js';
+
+const $ = (id) => document.getElementById(id);
+const drop = $('drop'), fileInput = $('file');
+
+// 尝试挂共享皮肤（site/ 由 ui-kit-dev 提供；不存在时静默保持内置样式）
+fetch('../../site/site.css').then((r) => {
+  if (r.ok) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet'; link.href = '../../site/site.css';
+    document.head.appendChild(link);
+  }
+}).catch(() => {});
+
+function showErr(e) {
+  const box = $('errBox');
+  box.hidden = false;
+  const code = e?.code ? `[${e.code}] ` : '';
+  box.textContent = '错误：' + code + (e?.message ?? String(e));
+}
+function clearErr() { $('errBox').hidden = true; }
+
+let demuxer = null;
+
+async function openInput(inputLike) {
+  clearErr();
+  try {
+    demuxer?.destroy?.();
+    // 契约工厂：探测→构造→open 一体；识别失败 reject PROBE_FAILED
+    demuxer = await createDemuxer(inputLike);
+    renderInfo(demuxer.mediaInfo);
+  } catch (e) { showErr(e); }
+}
+
+function renderInfo(mi) {
+  $('infoPanel').hidden = false;
+  $('scanPanel').hidden = false;
+
+  $('iContainer').textContent = mi.container;
+  $('iDuration').textContent = mi.durationUs != null ? (mi.durationUs / 1e6).toFixed(2) + ' s' : '未知';
+  $('iSeekable').textContent = mi.seekable ? '是' : '否';
+  const metaBits = [mi.metadata.title, mi.metadata.dateUTC,
+    mi.metadata.muxingApp && ('封装：' + mi.metadata.muxingApp)].filter(Boolean);
+  $('iTitle').textContent = metaBits.join(' · ');
+
+  const rows = $('trackRows');
+  rows.innerHTML = '';
+  for (const t of mi.tracks) {
+    const params = [];
+    if (t.type === 'video') params.push(`${t.width}×${t.height}`);
+    if (t.type === 'audio') params.push(`${t.sampleRate ?? '?'} Hz / ${t.numberOfChannels ?? '?'}ch`);
+    if (t.frameRate) params.push(t.frameRate.toFixed(2) + ' fps');
+    if (t.encrypted) params.push('加密轨');
+    const tr = document.createElement('tr');
+    if (!t.supported || t.encrypted) tr.className = 'bad'; // 失败标红（PRD 验收口径）
+    tr.innerHTML =
+      `<td>${t.id}</td><td>${t.type}</td><td>${t.extensions?.mkvCodecId ?? '-'}</td>` +
+      `<td><code>${t.codec || '?'}</code></td><td>${params.join(' · ') || '-'}</td>` +
+      `<td><span class="tag ${t.supported ? 'ok' : 'no'}">${t.encrypted ? 'NOT_SUPPORTED' : t.supported ? '可解' : '暂不支持'}</span></td>`;
+    rows.appendChild(tr);
+  }
+
+  // WebCodecs 可用性决定预览按钮
+  const vTrack = mi.tracks.find((t) => t.type === 'video' && t.supported && !t.encrypted);
+  let ok = false;
+  if (vTrack && 'VideoDecoder' in window) {
+    try {
+      const cfg = { codec: vTrack.codec };
+      if (vTrack.bitstreamFormat === 'avc') cfg.description = vTrack.description;
+      void cfg;
+      ok = true; // 精确 isConfigSupported 在预览点击时再做
+    } catch { ok = false; }
+  }
+  $('btnPreview').disabled = !ok;
+  $('btnSeekHalf').disabled = !mi.seekable || mi.durationUs == null;
+}
+
+// ── 交互 ──────────────────────────────────────────────
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('on'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('on'));
+drop.addEventListener('drop', (e) => {
+  e.preventDefault(); drop.classList.remove('on');
+  const f = e.dataTransfer.files?.[0];
+  if (f) openInput(f);
+});
+fileInput.addEventListener('change', () => fileInput.files[0] && openInput(fileInput.files[0]));
+$('btnUrl').addEventListener('click', async () => {
+  clearErr();
+  const url = $('url').value.trim();
+  if (!url) return;
+  try {
+    const src = await FetchSource.open(url);
+    $('srcMsg').textContent = src.acceptRanges ? '(Range 随机读)' : '(顺序流模式)';
+    const probeHit = MkvDemuxer.probe(await src.read(0, 64));
+    if (!probeHit) { showErr(new Error('非 Matroska/WebM 内容')); return; }
+    const d = new MkvDemuxer(src);
+    await d.open();
+    demuxer?.destroy?.();
+    demuxer = d;
+    renderInfo(d.mediaInfo);
+  } catch (e) { showErr(e); }
+});
+
+// ── 全量扫描统计 ──────────────────────────────────────
+$('btnScan').addEventListener('click', async () => {
+  if (!demuxer) return;
+  clearErr();
+  const perTrack = new Map();
+  let count = 0; let bytes = 0;
+  const t0 = performance.now();
+  try {
+    for (const t of demuxer.tracks) {
+      for (;;) {
+        const s = await demuxer.readSample(t.id);
+        if (s === null) break;
+        count++; bytes += s.size;
+        let st = perTrack.get(t.id);
+        if (!st) perTrack.set(t.id, st = { n: 0, min: Infinity, max: -Infinity, kf: 0 });
+        st.n++;
+        st.min = Math.min(st.min, s.timestamp);
+        st.max = Math.max(st.max, s.timestamp);
+        if (s.keyframe) st.kf++;
+      }
+    }
+  } catch (e) { showErr(e); return; }
+  const ms = (performance.now() - t0).toFixed(1);
+  let html = `<span class="stat">样本总数 <b>${count}</b></span>
+    <span class="stat">载荷合计 <b>${(bytes / 1024).toFixed(1)} KiB</b></span>
+    <span class="stat">耗时 <b>${ms} ms</b></span>`;
+  for (const [id, st] of perTrack) {
+    html += `<div class="stat">轨#${id}：<b>${st.n}</b> 帧 · ${st.min}~${st.max} µs · 关键帧 ${st.kf}</div>`;
+  }
+  $('scanStat').innerHTML = html;
+});
+
+// ── seek 50%（PRD 点名演示项）──────────────────────────
+$('btnSeekHalf').addEventListener('click', async () => {
+  if (!demuxer) return;
+  clearErr();
+  try {
+    const target = Math.floor(demuxer.mediaInfo.durationUs / 2);
+    const { actualTimestampUs } = await demuxer.seek(target);
+    $('scanStat').innerHTML =
+      `<span class="stat">seek 目标 <b>${target} µs</b></span>` +
+      `<span class="stat">实际落点 <b>${actualTimestampUs} µs</b></span>`;
+  } catch (e) { showErr(e); }
+});
+
+// ── WebCodecs 前几帧预览（实验性）──────────────────────
+$('btnPreview').addEventListener('click', async () => {
+  if (!demuxer) return;
+  clearErr();
+  const vTrack = demuxer.tracks.find((t) => t.type === 'video');
+  if (!vTrack) return;
+  const cv = $('cv'); cv.hidden = false;
+  const ctx2d = cv.getContext('2d');
+  let decoded = 0;
+  const LIMIT = 8;
+  try {
+    const config = {
+      codec: vTrack.codec,
+      codedWidth: vTrack.width ?? undefined,
+      codedHeight: vTrack.height ?? undefined,
+    };
+    if (vTrack.bitstreamFormat === 'avc') config.description = vTrack.description;
+    const support = await VideoDecoder.isConfigSupported(config);
+    if (!support?.supported) { showErr(new Error(`环境不支持 ${vTrack.codec}`)); return; }
+    const decoder = new VideoDecoder({
+      output(frame) {
+        ctx2d.drawImage(frame, 0, 0, cv.width, cv.height);
+        frame.close(); // 所有权铁律：绘制完立即 close
+        if (++decoded >= LIMIT) try { decoder.close(); } catch { /* 已关闭 */ }
+      },
+      error(err) { showErr(err); },
+    });
+    decoder.configure(config);
+    for (;;) {
+      if (decoded >= LIMIT) break;
+      const s = await demuxer.readSample(vTrack.id);
+      if (s === null) break;
+      decoder.decode(new EncodedVideoChunk({
+        type: s.keyframe ? 'key' : 'delta',
+        timestamp: s.timestamp,
+        data: s.data,
+      }));
+    }
+    await decoder.flush().catch(() => {});
+  } catch (e) { showErr(e); }
+});
+</script>
+</body>
+</html>

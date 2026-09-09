@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>rtmp.js · WebSocket-FLV 播放器演示</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: #10141a; color: #d7dee8; padding: 24px; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #7d8aa0; font-size: 13px; margin-bottom: 18px; line-height: 1.6; }
+  .panel { display: grid; grid-template-columns: minmax(340px, 500px) 1fr; gap: 18px; align-items: start; }
+  .card { background: #171d26; border: 1px solid #232c3a; border-radius: 10px; padding: 16px; }
+  .card h2 { font-size: 14px; color: #9fb4d1; margin-bottom: 10px; }
+  label { display: block; font-size: 12px; color: #7d8aa0; margin: 10px 0 4px; }
+  input, select {
+    width: 100%; background: #0d1117; border: 1px solid #2a3444; border-radius: 6px;
+    color: #d7dee8; padding: 8px 10px; font-size: 13px; font-family: ui-monospace, monospace;
+  }
+  .row { display: flex; gap: 10px; margin-top: 14px; }
+  button { flex: 1; border: 0; border-radius: 6px; padding: 9px 0; font-size: 13px; cursor: pointer; background: #2563eb; color: white; }
+  button.secondary { background: #334155; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  video { width: 100%; aspect-ratio: 16/9; background: black; border-radius: 8px; display: block; }
+  canvas { width: 100%; aspect-ratio: 16/9; background: black; border-radius: 8px; image-rendering: pixelated; display: none; }
+  #log {
+    height: 200px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 11px;
+    line-height: 1.6; background: #0d1117; border-radius: 6px; padding: 8px 10px; white-space: pre-wrap;
+  }
+  .ok { color: #86efac; } .warn { color: #fbbf24; } .err { color: #f87171; } .info { color: #93c5fd; }
+  .stats { font-size: 12px; color: #7d8aa0; margin-top: 8px; line-height: 1.8; }
+  .edu {
+    margin-top: 12px; padding: 10px 12px; border-left: 3px solid #fbbf24; background: rgba(251,191,36,.08);
+    font-size: 12px; line-height: 1.7; color: #e5c56a; border-radius: 0 6px 6px 0; display: none;
+  }
+  code { background: #0d1117; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>rtmp.js —— RTMP 浏览器播放的本质 = WebSocket-FLV</h1>
+<div class="sub">
+  浏览器没有 TCP API，无法直连 RTMP(1935)；可行链路是「RTMP 源 → 网关转封装 FLV → WebSocket 推送 → 本模块解析」。
+  延迟量级对照：HTTP-FLV ≈ 1~3s，WS-FLV ≈ 1~2s，WebRTC ≈ 0.2~1s。<br />
+  前置：<code>node samples/gateway/bin/gateway.js</code>；本页经静态服务器打开（<code>python3 -m http.server</code>）。
+</div>
+
+<div class="panel">
+  <div class="card">
+    <h2>连接参数</h2>
+    <label>地址形态</label>
+    <select id="scheme">
+      <option value="wsflv">ws-flv://（网关地址）</option>
+      <option value="rtmp">rtmp://（自动映射到 ws-flv 网关）</option>
+      <option value="direct">rtmp:// 直连（演示：必然拒绝并给出解释）</option>
+    </select>
+    <label>地址</label>
+    <input id="url" value="ws-flv://127.0.0.1:8321/live/test" />
+    <label>渲染管线</label>
+    <select id="pipeline">
+      <option value="mse">MSE（fMP4 remux → SourceBuffer）</option>
+      <option value="webcodecs">WebCodecs → Canvas（低延迟备选）</option>
+    </select>
+    <div class="row">
+      <button id="btnStart">播放</button>
+      <button id="btnStop" class="secondary" disabled>停止</button>
+    </div>
+    <div class="edu" id="edu">
+      <strong>为什么不能直连？</strong><br />
+      浏览器出于安全沙箱不暴露 TCP 套接字 API，RTMP 握手（TCP 1935）在网页里发不出去。
+      请部署 ws-flv 网关（如本项目 samples/gateway、nginx-http-flv、SRS 等），
+      用 <code>ws-flv://网关地址/app/stream</code> 播放；本页的「自动映射」也会把
+      <code>rtmp://host/app/stream</code> 改写为网关地址。
+    </div>
+    <div class="stats" id="stats">未连接</div>
+  </div>
+
+  <div class="card">
+    <h2>画面与日志</h2>
+    <video id="video" muted autoplay playsinline></video>
+    <canvas id="canvas" width="320" height="320"></canvas>
+    <div style="height:12px"></div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script type="module">
+import { WsFlvPlayer } from '../src/index.js';
+
+const $ = (id) => document.getElementById(id);
+const log = (msg, cls = '') => {
+  const el = $('log');
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.prepend(line);
+};
+
+let player = null;
+let mediaSource = null;
+let sourceBuffer = null;
+let pendingSegments = [];
+let decoder = null;
+
+function buildUrl() {
+  const mode = $('scheme').value;
+  const raw = $('url').value.trim();
+  if (mode === 'direct') return { url: raw, direct: true };
+  return { url: raw, direct: false };
+}
+
+/** AVCC（长度前缀）→ AnnexB，供 WebCodecs 路径 */
+function avccToAnnexb(data) {
+  let off = 0;
+  const parts = [];
+  while (off + 4 <= data.length) {
+    const len = (data[off] << 24) | (data[off + 1] << 16) | (data[off + 2] << 8) | data[off + 3];
+    off += 4;
+    if (len <= 0 || off + len > data.length) break;
+    parts.push(new Uint8Array([0, 0, 0, 1]), data.subarray(off, off + len));
+    off += len;
+  }
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
+}
+
+function setupMse() {
+  mediaSource = new MediaSource();
+  $('video').src = URL.createObjectURL(mediaSource);
+  return new Promise((resolve, reject) => {
+    mediaSource.addEventListener('sourceopen', () => {
+      try {
+        sourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.42c01e"');
+        sourceBuffer.mode = 'segments';
+        sourceBuffer.addEventListener('updateend', flushQueue);
+        resolve();
+      } catch (e) { reject(e); }
+    }, { once: true });
+    setTimeout(() => reject(new Error('MSE sourceopen 超时')), 8000);
+  });
+}
+function flushQueue() {
+  if (!sourceBuffer || sourceBuffer.updating || pendingSegments.length === 0) return;
+  try { sourceBuffer.appendBuffer(pendingSegments.shift()); } catch (e) { log(`append 失败: ${e.message}`, 'warn'); }
+}
+
+async function setupWebCodecs(track) {
+  const codec = track.codecString ?? 'avc1.42c01e';
+  decoder = new VideoDecoder({
+    output: (frame) => {
+      const ctx = $('canvas').getContext('2d');
+      ctx.drawImage(frame, 0, 0, $('canvas').width, $('canvas').height);
+      frame.close();
+    },
+    error: (e) => log(`解码错误: ${e.message}`, 'err'),
+  });
+  decoder.configure({ codec, description: track.description, optimizeForLatency: true });
+  $('video').style.display = 'none';
+  $('canvas').style.display = 'block';
+  log(`VideoDecoder 就绪 ${codec}`, 'info');
+}
+
+$('btnStart').onclick = async () => {
+  stop();
+  const { url, direct } = buildUrl();
+
+  if (direct || /^rtmps?:\/\//i.test(url)) {
+    // PRD 口径：直连输入一律拒绝并给教育文案
+    $('edu').style.display = 'block';
+    log('已拦截 rtmp:// 直连请求：浏览器无 TCP API，请改用 ws-flv 网关地址或选择「自动映射」。', 'warn');
+    return;
+  }
+  $('edu').style.display = 'none';
+
+  const pipeline = $('pipeline').value;
+  const sink = pipeline === 'mse'
+    ? {
+        onInitSegment: (bytes) => { pendingSegments.push(bytes); flushQueue(); },
+        onFragment: (bytes) => { pendingSegments.push(bytes); flushQueue(); },
+      }
+    : {};
+
+  player = new WsFlvPlayer({ backoff: { baseMs: 800 }, sink });
+
+  player.on('statechange', ({ to }) => log(`状态 → ${to}`, 'info'));
+  player.on('metadata', (m) => log(`onMetaData: ${m.width}x${m.height}@${m.framerate}fps`, 'ok'));
+  player.on('track', async (t) => {
+    log(`轨道就绪 ${t.kind} codec=${t.codecString}`, 'ok');
+    if (pipeline === 'mse') {
+      try { await setupMse(); log('MSE SourceBuffer 就绪', 'ok'); }
+      catch (e) { log(`MSE 初始化失败: ${e.message}`, 'err'); }
+    } else if (typeof VideoDecoder !== 'undefined') {
+      await setupWebCodecs(t);
+    } else {
+      log('当前浏览器不支持 WebCodecs', 'err');
+    }
+  });
+  player.on('sample', (s) => {
+    if (decoder && decoder.state === 'configured' && s.kind === 'video') {
+      try {
+        decoder.decode(new EncodedVideoChunk({
+          type: s.keyframe ? 'key' : 'delta',
+          timestamp: s.ptsUs,
+          data: avccToAnnexb(s.data),
+        }));
+      } catch (e) { /* 首帧前 delta 可能先到：忽略 */ }
+    }
+  });
+  player.on('error', (e) => log(`[${e.code}] ${e.message}`, 'err'));
+  player.on('will-reconnect', ({ delayMs }) => log(`将在 ${delayMs}ms 后重连`, 'warn'));
+  player.on('stall', () => log('上游空闲断流，等待重推…', 'warn'));
+
+  $('btnStart').disabled = true;
+  $('btnStop').disabled = false;
+  try {
+    await player.start(url);
+    log(`开始播放 ${url}`, 'ok');
+  } catch (e) {
+    log(`启动失败 [${e.code ?? 'ERROR'}]: ${e.message}`, 'err');
+    stop();
+  }
+};
+
+function stop() {
+  player?.stop?.();
+  player = null;
+  try { decoder?.close(); } catch {}
+  decoder = null;
+  pendingSegments = [];
+  if (mediaSource) { try { mediaSource.endOfStream(); } catch {} }
+  mediaSource = null; sourceBuffer = null;
+  $('btnStart').disabled = false;
+  $('btnStop').disabled = true;
+}
+$('btnStop').onclick = stop;
+$('scheme').onchange = () => {
+  const v = $('scheme').value;
+  if (v === 'wsflv') $('url').value = 'ws-flv://127.0.0.1:8321/live/test';
+  if (v === 'rtmp') $('url').value = 'rtmp://127.0.0.1/live/test';
+  if (v === 'direct') $('url').value = 'rtmp://127.0.0.1/live/test';
+};
+
+setInterval(() => {
+  if (!player) { $('stats').textContent = '未连接'; return; }
+  const s = player.stats;
+  $('stats').textContent =
+    `状态 ${player.state}｜样本 ${s.samples}｜字节 ${(s.bytesIn / 1024).toFixed(1)}KB｜重连 ${s.reconnects}`;
+}, 500);
+
+if (location.protocol === 'file:') log('请通过 http:// 静态服务器打开本页', 'err');
+</script>
+</body>
+</html>

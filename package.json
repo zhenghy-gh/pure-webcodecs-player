@@ -1,0 +1,25 @@
+{
+  "name": "pure-frontend-player",
+  "version": "0.1.0",
+  "private": true,
+  "description": "纯前端实现播放器：HLS/CMAF/WebRTC/MP4/MKV/TS 等模块化播放内核（零构建，纯 ESM）",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test --test-timeout=10000 --test-force-exit \"**/__tests__/*.test.{js,mjs}\"",
+    "test:watch": "node --test --test-timeout=10000 --test-force-exit --watch \"**/__tests__/*.test.{js,mjs}\"",
+    "test:hls": "node --test --test-timeout=10000 --test-force-exit \"hls/__tests__/*.test.{js,mjs}\"",
+    "test:cmaf": "node --test --test-timeout=10000 --test-force-exit \"cmaf/__tests__/*.test.{js,mjs}\"",
+    "test:webrtc": "node --test --test-timeout=10000 --test-force-exit \"webrtc/__tests__/*.test.{js,mjs}\"",
+    "test:ts": "node --test --test-timeout=10000 --test-force-exit \"ts/__tests__/*.test.{js,mjs}\"",
+    "test:flv": "node --test --test-timeout=10000 --test-force-exit \"flv/__tests__/*.test.{js,mjs}\"",
+    "lint": "node scripts/lint.mjs",
+    "check": "node scripts/check.mjs",
+    "demo": "node serve.mjs",
+    "server": "node scripts/static-server.mjs",
+    "gateway": "node samples/gateway/bin/gateway.js",
+    "fixtures": "node samples/generate-all.mjs"
+  }
+}

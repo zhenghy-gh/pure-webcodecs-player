@@ -1,0 +1,29 @@
+# 依赖（本项目原则零依赖，防御性忽略）
+node_modules/
+
+# macOS
+.DS_Store
+
+# 测试中程序化生成、落盘的临时二进制 fixture（生成器源码在 samples/fixtures，不受影响）
+**/__tests__/fixtures/
+!**/__tests__/fixtures/gen.mjs
+
+# 真机验收脚本落盘的临时媒体（scripts/e2e/* 可再生产物，目录内无源码）
+samples/e2e/
+
+# 一次性排查草稿（dbg-*/t7* 等，全仓无引用，保留在本地但不入库）
+.smoke/
+
+# 日志
+*.log
+npm-debug.log*
+
+# 构建产物 / 覆盖率（本项目零构建，防御性忽略）
+dist/
+build/
+coverage/
+.tmp/
+
+# 编辑器
+.vscode/
+.idea/

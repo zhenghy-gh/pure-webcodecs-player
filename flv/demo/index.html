@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLV 解析地基 · PurePlay</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px; font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+         background:#101418; color:#d8dee6; line-height:1.6; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:#7a8593; font-size:13px; margin-bottom:14px; }
+  .notice { background:#241a08; border:1px solid #7c5c10; border-radius:8px; padding:10px 14px;
+            margin-bottom:16px; font-size:13px; color:#fbbf24; }
+  .card { background:#171c22; border:1px solid #232b34; border-radius:10px; padding:16px 20px; margin-bottom:16px; }
+  #dropZone { border:2px dashed #33404e; border-radius:10px; padding:36px; text-align:center; cursor:pointer;
+              transition:border-color .2s,background .2s; }
+  #dropZone.dragover { border-color:#4f9cf9; background:#182233; }
+  input[type="text"] { width:100%; padding:9px 12px; margin-top:10px; background:#0d1117;
+    border:1px solid #2a3441; border-radius:6px; color:#d8dee6; font-size:13px; }
+  button { padding:8px 16px; margin:8px 8px 0 0; background:#2563eb; color:#fff; border:none;
+           border-radius:6px; font-size:13px; cursor:pointer; }
+  button:hover { background:#3b82f6; } button:disabled { background:#333c47; color:#7a8593; cursor:not-allowed; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
+  th,td { text-align:left; padding:6px 10px; border-bottom:1px solid #232b34; }
+  th { color:#7a8593; font-weight:normal; }
+  pre { background:#0d1117; padding:10px; border-radius:6px; overflow-x:auto; font-size:12px;
+        font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .err { color:#f87171; } .warn { color:#fbbf24; } .ok { color:#4ade80; }
+  .hidden { display:none; }
+  kbd { background:#222b35; border-radius:4px; padding:1px 6px; font-size:12px; }
+  video { width:100%; max-width:720px; border-radius:8px; background:#000; margin-top:10px; }
+</style>
+</head>
+<body>
+<h1>flv/ · FLV 解析地基 + 薄播放壳 · PurePlay</h1>
+<div class="sub">
+  契约口径：probe → ProbeResult｜open() → MediaInfo（ms→µs）｜samples(trackId)｜AVCC 原样输出（含 CodecID=12 HEVC 与 Enhanced-FLV FourCC）。
+</div>
+<div class="notice">
+  定位声明：本模块是 <b>FLV 解析地基</b>与 rtmp/WebSocket-FLV 桥接的必选依赖。<b>生产场景请使用 flv.js。</b>
+  本页演示解析能力与薄壳 MSE 播放链路。
+</div>
+
+<div class="card">
+  <div id="dropZone">
+    把 <b>.flv</b> 文件拖到这里，或点击选择文件
+    <input type="file" id="fileInput" accept=".flv" class="hidden">
+    <input type="text" id="urlInput" placeholder="HTTP-FLV 点播地址（回车）；ws:// 直播地址需网关，见下方说明">
+  </div>
+</div>
+
+<div class="card hidden" id="resultCard">
+  <h2 style="font-size:16px;margin-top:0">解析结果</h2>
+  <pre id="summary"></pre>
+  <table id="trackTable"></table>
+  <button id="btnRemux" class="hidden">▶ fMP4 Remux + MSE 播放验证（薄壳链路）</button>
+  <div id="mseArea" class="hidden">
+    <video id="player" controls muted></video>
+    <pre id="mseLog"></pre>
+  </div>
+</div>
+
+<div class="card hidden" id="errorCard"><h2 style="font-size:16px;margin-top:0" class="warn">警告 / 错误</h2><pre id="errors"></pre></div>
+
+<script type="module">
+import { createDemuxer, FlvDemuxer, FlvRemuxer } from '../src/index.js';
+
+const $ = (id) => document.getElementById(id);
+const fmtBytes = (n) => n > 1048576 ? (n / 1048576).toFixed(2) + ' MB' : (n / 1024).toFixed(1) + ' KB';
+const fmtUs = (us) => us == null ? '—' : (us >= 1e6 ? (us / 1e6).toFixed(2) + ' s' : us + ' µs');
+
+let currentFile = null;
+
+$('dropZone').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', (e) => e.target.files[0] && runFile(e.target.files[0]));
+$('urlInput').addEventListener('keydown', (e) => {
+  const v = e.target.value.trim();
+  if (e.key === 'Enter' && v) v.startsWith('ws') ? wsHint(v) : runUrl(v);
+});
+['dragover','dragleave','drop'].forEach((ev) =>
+  $('dropZone').addEventListener(ev, (e) => {
+    e.preventDefault();
+    $('dropZone').classList.toggle('dragover', ev === 'dragover');
+    if (ev === 'drop' && e.dataTransfer.files[0]) runFile(e.dataTransfer.files[0]);
+  }));
+
+function wsHint(url) {
+  showError([
+    `NETWORK_ERROR：WebSocket-FLV（${url}）需要网关支持。`,
+    '本仓库网关：npm run gateway 启动后，经 samples/gateway 的 /publish/<name> 用 ffmpeg 推流：',
+    '  ffmpeg -re -i input.mp4 -c copy -f flv http://127.0.0.1:8090/publish/live',
+    '随后以 ChunkSource 形式把 WS 二进制分块喂给 FlvDemuxer（见 README §快速开始）。',
+  ]);
+}
+
+async function runUrl(url) {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    currentFile = null;
+    await parse(new Uint8Array(await resp.arrayBuffer()));
+  } catch (err) {
+    showError([`NETWORK_ERROR：${err.message}（若为 WebSocket-FLV 直播地址，需要先启动网关）`]);
+  }
+}
+
+async function runFile(file) {
+  currentFile = file;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  await parse(bytes);
+}
+
+async function parse(bytes) {
+  $('resultCard').classList.remove('hidden');
+  $('errorCard').classList.add('hidden');
+  $('summary').textContent = '解析中…';
+
+  // 契约 probe：缺 "FLV" 魔数 → PROBE_FAILED
+  if (!FlvDemuxer.probe(bytes.subarray(0, 64))) {
+    $('summary').innerHTML = '<span class="err">PROBE_FAILED：缺少 "FLV" 魔数，不是合法 FLV 文件。</span>';
+    return;
+  }
+
+  const t0 = performance.now();
+  const demuxer = await createDemuxer(bytes);
+  demuxer.on('error', () => {});
+  const cost = performance.now() - t0;
+
+  // 轨道信息 + 时长/宽高/编码（PRD 验收点）
+  const rows = demuxer.tracks.map((t) => {
+    const detail = t.type === 'video'
+      ? `${t.width ?? '?'}×${t.height ?? '?'} · bitstreamFormat=${t.bitstreamFormat} · description ${(t.description?.length ?? 0)}B`
+      : `${t.sampleRate ?? '?'} Hz · ${t.numberOfChannels ?? '?'}ch`;
+    return `<tr><td>#${t.id}</td><td>${t.type}</td><td><code>${t.codec || '(未知)'}</code></td><td>${detail}</td></tr>`;
+  }).join('');
+  $('trackTable').innerHTML =
+    `<tr><th>轨道</th><th>类型</th><th>codec(§3)</th><th>参数</th></tr>${rows}`;
+  $('summary').textContent =
+    `容器: FLV   时长: ${fmtUs(demuxer.mediaInfo.durationUs)}   seekable: ${demuxer.mediaInfo.seekable}\n` +
+    `onMetaData 键: ${demuxer.metadata ? Object.keys(demuxer.metadata).join(', ') : '（无脚本标签）'}\n` +
+    `数据量: ${fmtBytes(bytes.length)}   解析耗时: ${cost.toFixed(0)} ms`;
+
+  const canMse = typeof MediaSource !== 'undefined'
+    && demuxer.tracks.some((t) => t.codec.startsWith('avc1'));
+  $('btnRemux').classList.toggle('hidden', !canMse);
+}
+
+function showError(list) {
+  $('errorCard').classList.remove('hidden');
+  $('errors').textContent = list.join('\n');
+}
+
+// ---------- fMP4 Remux + MSE（薄壳链路） ----------
+$('btnRemux').addEventListener('click', async () => {
+  if (!currentFile) return;
+  $('mseArea').classList.remove('hidden');
+  const log = (m) => { $('mseLog').textContent += m + '\n'; };
+  try {
+    const bytes = new Uint8Array(await currentFile.arrayBuffer());
+    const demuxer = await createDemuxer(bytes);
+    const remuxer = new FlvRemuxer({ fragmentUs: 500_000 });
+    let init = null;
+    remuxer.on('initSegment', (s) => { init = s; });
+    const segs = [];
+    remuxer.on('mediaSegment', (s) => segs.push(s));
+    log('重新拉取样本并 remux…');
+    await remuxer.drain(demuxer);
+
+    const vTrack = demuxer.tracks.find((t) => t.type === 'video');
+    const aTrack = demuxer.tracks.find((t) => t.type === 'audio' && t.codec.startsWith('mp4a'));
+    const codecs = [vTrack?.codec, aTrack?.codec].filter(Boolean);
+    const mime = 'video/mp4; codecs="' + codecs.join(', ') + '"';
+    log(`MIME: ${mime}`);
+
+    const ms = new MediaSource();
+    $('player').src = URL.createObjectURL(ms);
+    await new Promise((res) => ms.addEventListener('sourceopen', res, { once: true }));
+    const sb = ms.addSourceBuffer(mime);
+    await append(sb, init.data);
+    for (const s of segs) {
+      if (![1, 2].includes(s.trackId)) continue;
+      if (!codecs.length) break;
+      await append(sb, s.data);
+    }
+    if (ms.readyState === 'open') ms.endOfStream();
+    log(`init+${segs.length} 分片已追加，时长 ${($('player').duration || 0).toFixed(2)}s，开始播放`);
+    await $('player').play().catch(() => {});
+  } catch (err) {
+    log('❌ ' + (err.message ?? err));
+  }
+});
+
+function append(sb, data) {
+  return new Promise((res) => {
+    sb.addEventListener('updateend', res, { once: true });
+    sb.appendBuffer(data);
+  });
+}
+</script>
+</body>
+</html>

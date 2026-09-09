@@ -1,0 +1,13 @@
+{
+  "name": "@player/rtmp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WebSocket-FLV（RTMP 桥接形态）播放器客户端：ws-flv:// 与 rtmp→网关地址映射、FLV demux、fMP4 remux → MSE / WebCodecs、断流重连状态机",
+  "scripts": {
+    "test": "node --test --test-force-exit \"__tests__/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HLS 播放器 · 纯前端播放器</title>
+  <link rel="stylesheet" href="../../site/site.css">
+  <style>
+    /* demo 局部补充样式（待 DESIGN.md 定稿后并入 site/） */
+    .hls-panel { max-width: 960px; margin: 0 auto; padding: 16px; }
+    .hls-controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+    .hls-controls input { flex: 1; min-width: 240px; padding: 6px 10px; }
+    button { cursor: pointer; }
+    .stats { font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap;
+             background: var(--pui-surface, #16181d); color: var(--pui-text, #e8eaed);
+             border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+    .banner { border-radius: 8px; padding: 10px 14px; margin: 12px 0; display: none; line-height: 1.6; }
+    .banner.warn { display: block; background: rgba(255, 196, 0, .12); border: 1px solid rgba(255, 196, 0, .4); }
+    .banner.err { display: block; background: rgba(255, 82, 82, .1); border: 1px solid rgba(255, 82, 82, .45); }
+    .levels button.active { outline: 2px solid #7aa7ff; }
+  </style>
+</head>
+<body class="dsk-body">
+  <div data-site-nav data-root="../../"></div>
+
+  <main class="site-page hls-panel">
+    <h1>HLS 播放器（数据源适配层 + 轻量内核）</h1>
+    <p class="muted">
+      m3u8 解析 / 清晰度切换 / fetch 流式分片加载 / TS→fMP4 转封装（复用 ts/ 模块）/ fMP4 直通 MSE。
+      本模块定位为<b>HLS 数据源适配层</b>（生产场景请用 hls.js）；真实拉流需要<b>可达地址 + 服务端开启 CORS</b>；离线或不可达时会给出友好提示，不会崩溃。
+    </p>
+
+    <div id="offline-banner" class="banner"></div>
+
+    <div class="hls-controls">
+      <input id="url" type="text" spellcheck="false"
+             placeholder="输入 m3u8 地址（MASTER 或 MEDIA 清单）">
+      <button id="btn-load">加载</button>
+      <button id="btn-stop">停止</button>
+    </div>
+
+    <div class="hls-controls levels" id="presets">
+      <!-- 内置公开测试流（需外网可达） -->
+      <button data-url="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8">Mux 多码率（外网）</button>
+      <button data-url="https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8">Apple bipbop fMP4（外网）</button>
+      <button data-url="https://test-streams.mux.dev/pts_shift/master.m3u8">Mux DTS 偏移（外网）</button>
+    </div>
+
+    <div class="hls-controls">
+      <span class="muted">对照（可选增强）：</span>
+      <button id="btn-hlsjs">用 hls.js 播放当前地址（CDN 动态加载 · 生产方案对照）</button>
+    </div>
+
+    <div class="stage" style="aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden">
+      <video id="video" controls playsinline style="width:100%;height:100%"></video>
+    </div>
+
+    <div class="hls-controls" style="margin-top:12px">
+      <span class="muted">清晰度：</span>
+      <span id="level-buttons"></span>
+    </div>
+
+    <div class="stats" id="stats">等待加载…</div>
+  </main>
+
+  <script type="module" src="../../site/nav.js"></script>
+  <script type="module">
+    import { HlsPlayer, enableLog } from '../src/index.js';
+
+    const $ = (id) => document.getElementById(id);
+    const banner = $('offline-banner');
+    let player = null;
+
+    // 本地开发默认地址：同目录下若有本地清单可手动填入
+    $('url').value = '';
+
+    function showBanner(kind, html) {
+      banner.className = `banner ${kind}`;
+      banner.innerHTML = html;
+    }
+    function hideBanner() {
+      banner.className = 'banner';
+    }
+
+    function renderStats() {
+      if (!player) return;
+      const s = player.stats;
+      $('stats').textContent =
+        `状态=${s.state}  已加载=${(s.bytesLoaded / 1024).toFixed(0)}KB  分片=${s.segmentsLoaded}` +
+        `  带宽估计=${(s.bandwidthBps / 1e6).toFixed(2)}Mbps  缓冲=${s.bufferSeconds.toFixed(1)}s` +
+        `\n当前档位=${s.levelsSwitched != null ? player.currentLevel : '-'}（0=最高清，-1=自动）`;
+    }
+    setInterval(renderStats, 500);
+
+    function renderLevelButtons() {
+      const box = $('level-buttons');
+      box.innerHTML = '';
+      if (!player || !player.levels || !player.levels.levelCount) return;
+      const auto = document.createElement('button');
+      auto.textContent = '自动';
+      auto.onclick = () => player.setLevel(-1).then(renderActive);
+      box.appendChild(auto);
+      player.levels.levels.forEach((lvl, i) => {
+        const b = document.createElement('button');
+        b.textContent = lvl.label || `${i}`;
+        b.title = `${(lvl.bandwidth / 1e6).toFixed(2)}Mbps ${lvl.codecs || ''}`;
+        b.onclick = () => { try { player.setLevel(i); renderActive(); } catch (e) { showBanner('err', e.message); } };
+        b.dataset.idx = String(i);
+        box.appendChild(b);
+      });
+      renderActive();
+    }
+    function renderActive() {
+      [...$('level-buttons').children].forEach((b) => {
+        const idx = b.dataset.idx === undefined ? 'auto' : Number(b.dataset.idx);
+        const cur = player && player.currentLevel;
+        const active = idx === 'auto' ? cur === -1 || cur == null : idx === cur;
+        b.classList.toggle('active', !!active);
+      });
+    }
+
+    async function load(url) {
+      hideBanner();
+      if (!navigator.onLine) {
+        showBanner('warn', '⚠️ 当前浏览器处于离线状态。真实 HLS 拉流需要网络；你也可以在本地起一个静态服务器播放自建流。');
+        return;
+      }
+      if (player) player.destroy();
+      $('stats').textContent = '加载中…';
+      try {
+        player = new HlsPlayer({ lowLatencyMode: false });
+        player.on('error', (e) => {
+          if (e.type === 'network') {
+            showBanner('err',
+              '🚫 无法访问该地址。常见原因：<br>' +
+              '① 地址不可达或已失效；<br>' +
+              '② 服务端未开启 CORS（跨域）；<br>' +
+              '③ 页面是 https 而流是 http（混合内容被拦截）。<br>' +
+              `详细信息：${e.detail}`);
+          } else if (/SAMPLE-AES/.test(e.detail || '')) {
+            showBanner('warn', '🔒 该流为 SAMPLE-AES/DRM 加密，按契约本期不支持（AES-128 已支持）。');
+          } else if (/加密|AES-128/.test(e.detail || '')) {
+            showBanner('err', '🔒 AES-128 解密失败：' + (e.detail || '') + '<br>常见原因：密钥地址不可达或密钥错误。');
+          } else {
+            showBanner('err', `播放错误：${e.type} — ${e.detail}`);
+          }
+          renderStats();
+        });
+        await player.attach(url, $('video'));
+        renderLevelButtons();
+        renderStats();
+      } catch (err) {
+        showBanner('err', `加载失败：${err.message}<br>提示：请确认地址以 http(s) 开头且服务端允许跨域。`);
+      }
+    }
+
+    $('btn-load').onclick = () => {
+      const url = $('url').value.trim();
+      if (!url) { showBanner('warn', '请先输入 m3u8 地址'); return; }
+      load(url);
+    };
+    $('btn-stop').onclick = () => {
+      if (player) { player.destroy(); player = null; }
+      $('video').removeAttribute('src');
+      $('stats').textContent = '已停止';
+    };
+    // hls.js 对照入口（可选增强：CDN 动态加载，失败优雅降级）
+    $('btn-hlsjs').onclick = async () => {
+      const url = $('url').value.trim();
+      if (!url) { showBanner('warn', '请先输入 m3u8 地址'); return; }
+      if (!navigator.onLine) { showBanner('warn', '离线状态无法加载 CDN 版 hls.js'); return; }
+      try {
+        const mod = await import('https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.mjs');
+        const Hls = mod.default;
+        if (player) { player.destroy(); player = null; }
+        if (!Hls.isSupported()) {
+          showBanner('warn', '当前浏览器不支持 MSE，hls.js 不可用；可尝试原生 HLS（Safari 直接播放该地址）');
+          return;
+        }
+        const hls = new Hls();
+        hls.loadSource(url);
+        hls.attachMedia($('video'));
+        showBanner('warn', 'ℹ️ 当前使用 CDN 版 hls.js 对照播放（生产方案）。刷新页面可回到本模块实现。');
+        window.__hlsjs = hls; // 便于控制台清理
+      } catch (err) {
+        showBanner('warn', 'hls.js CDN 加载失败（离线或网络受限）：对照功能为可选增强，不影响本模块。');
+      }
+    };
+
+    $('presets').addEventListener('click', (ev) => {
+      const btn = ev.target.closest('button[data-url]');
+      if (btn) { $('url').value = btn.dataset.url; load(btn.dataset.url); }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>rtsp.js · WebSocket 中继 RTSP 播放器演示</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: #10141a; color: #d7dee8; padding: 24px;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #7d8aa0; font-size: 13px; margin-bottom: 18px; }
+  .panel {
+    display: grid; grid-template-columns: minmax(320px, 480px) 1fr; gap: 18px; align-items: start;
+  }
+  .card {
+    background: #171d26; border: 1px solid #232c3a; border-radius: 10px; padding: 16px;
+  }
+  .card h2 { font-size: 14px; color: #9fb4d1; margin-bottom: 10px; }
+  label { display: block; font-size: 12px; color: #7d8aa0; margin: 10px 0 4px; }
+  input, select {
+    width: 100%; background: #0d1117; border: 1px solid #2a3444; border-radius: 6px;
+    color: #d7dee8; padding: 8px 10px; font-size: 13px; font-family: ui-monospace, monospace;
+  }
+  .row { display: flex; gap: 10px; margin-top: 14px; }
+  button {
+    flex: 1; border: 0; border-radius: 6px; padding: 9px 0; font-size: 13px; cursor: pointer;
+    background: #2563eb; color: white;
+  }
+  button.secondary { background: #334155; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  video, canvas {
+    width: 100%; aspect-ratio: 16/9; background: black; border-radius: 8px;
+    image-rendering: pixelated; display: block;
+  }
+  #log {
+    height: 180px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 11px;
+    line-height: 1.6; color: #86efac; background: #0d1117; border-radius: 6px; padding: 8px 10px;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  #log .warn { color: #fbbf24; } #log .err { color: #f87171; } #log .info { color: #93c5fd; }
+  .stats { font-size: 12px; color: #7d8aa0; margin-top: 8px; line-height: 1.8; }
+  code { background: #0d1117; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>rtsp.js —— WebSocket 中继 RTSP 播放器（SDP / RTP / H264·H265 depacketize）</h1>
+<div class="sub">
+  前置条件：<code>node samples/gateway/bin/gateway.js</code> 已启动；本页通过静态服务器打开
+  （<code>python3 -m http.server</code> 后访问）。
+</div>
+
+<div class="panel">
+  <div class="card">
+    <h2>连接参数</h2>
+    <label>服务地址（WS URL）</label>
+    <input id="url" value="ws://127.0.0.1:8322/rtsp" />
+    <label>帧协议</label>
+    <select id="framing">
+      <option value="interleaved">interleaved（RTSP/TCP $ 块 + 内联响应，完整握手）</option>
+      <option value="rtp">rtp（纯 RTP-over-WS，带外 SDP：http://…/sdp）</option>
+    </select>
+    <label>渲染方式</label>
+    <select id="renderer">
+      <option value="webcodecs">WebCodecs → Canvas（推荐）</option>
+      <option value="none">仅统计（不渲染）</option>
+    </select>
+    <div class="row">
+      <button id="btnStart">开始播放</button>
+      <button id="btnStop" class="secondary" disabled>停止</button>
+    </div>
+    <div class="stats" id="stats">未连接</div>
+  </div>
+
+  <div class="card">
+    <h2>画面</h2>
+    <canvas id="screen" width="640" height="360"></canvas>
+    <h2 style="margin-top:14px">事件日志</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script type="module">
+import { RtspWsClient } from '../src/index.js';
+
+const $ = (id) => document.getElementById(id);
+const log = (msg, cls = '') => {
+  const el = $('log');
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.prepend(line);
+};
+
+let client = null;
+let decoder = null;
+
+/** 从 SPS 提取 avcC 所需的 codec string（profile/compat/level） */
+function codecStringFromSps(sps) {
+  if (!sps || sps.length < 4) return 'avc1.42c01e';
+  const hex = (n) => n.toString(16).padStart(2, '0');
+  return `avc1.${hex(sps[1])}${hex(sps[2])}${hex(sps[3])}`;
+}
+
+async function setupDecoder(track) {
+  if ($('renderer').value !== 'webcodecs') return null;
+  if (typeof VideoDecoder === 'undefined') {
+    log('当前浏览器无 WebCodecs，回退为仅统计', 'warn');
+    return null;
+  }
+  if (track.codec !== 'h264') {
+    log('H265 的 WebCodecs 解码在部分浏览器不可用，仅尝试 H264', 'warn');
+  }
+  // AnnexB 输入：description 用 AnnexB 形态的参数集（Chrome 支持 annexb 格式）
+  const sps = track.parameterSets.sps?.[0];
+  const pps = track.parameterSets.pps?.[0];
+  let description;
+  if (sps && pps) {
+    const enc = new TextEncoder(); // 占位避免 lint；实际用二进制拼接
+    void enc;
+    const len = sps.length + pps.length;
+    description = new Uint8Array(len);
+    description.set(sps, 0);
+    description.set(pps, sps.length);
+  } else {
+    description = undefined; // 网关流内自带带内参数集时无需外部 description
+  }
+  const d = new VideoDecoder({
+    output: (frame) => {
+      drawFrame(frame);
+      frame.close();
+    },
+    error: (e) => log(`解码器错误: ${e.message}`, 'err'),
+  });
+  d.configure({
+    codec: codecStringFromSps(sps),
+    description,
+    optimizeForLatency: true,
+  });
+  log(`VideoDecoder 就绪 codec=${codecStringFromSps(sps)}`, 'info');
+  return d;
+}
+
+const ctx = $('screen').getContext('2d');
+function drawFrame(frame) {
+  // 保持画布与视频比例一致
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, $('screen').width, $('screen').height);
+  ctx.drawImage(frame, 0, 0, $('screen').width, $('screen').height);
+}
+
+$('btnStart').onclick = async () => {
+  stop();
+  const framing = $('framing').value;
+  const opts = {
+    url: $('url').value,
+    framing,
+    backoff: { baseMs: 800 },
+  };
+  if (framing === 'rtp') {
+    try {
+      const sdpUrl = $('url').value.replace(/^ws/, 'http').replace(/\/rtp.*$/, '/sdp');
+      log(`拉取带外 SDP: ${sdpUrl}`, 'info');
+      opts.sdp = await fetch(sdpUrl).then((r) => r.text());
+    } catch (e) {
+      log(`获取 SDP 失败（纯 RTP 模式需要）：${e.message}`, 'err');
+      return;
+    }
+  }
+
+  client = new RtspWsClient(opts);
+  client.on('state', ({ to }) => log(`状态 → ${to}`, 'info'));
+  client.on('sdp', async ({ track }) => {
+    log(`SDP 协商完成 codec=${track?.codec} pt=${track?.pt} clock=${track?.clock}`, 'info');
+    decoder = await setupDecoder(track);
+  });
+  client.on('frame', (f) => {
+    stats.frames++;
+    if (decoder && decoder.state === 'configured') {
+      try {
+        decoder.decode(new EncodedVideoChunk({
+          type: f.keyframe ? 'key' : 'delta',
+          timestamp: f.ptsUs ?? Math.round((f.ptsMs ?? 0) * 1000),
+          data: f.annexB,
+        }));
+      } catch (e) {
+        stats.decodeErrors++;
+        if (stats.decodeErrors < 4) log(`解码提交失败: ${e.message}`, 'warn');
+      }
+    }
+  });
+  client.on('close', ({ code }) => log(`连接关闭 code=${code}`, 'warn'));
+  client.on('error', (e) => log(`错误: ${e.message}`, 'err'));
+
+  $('btnStart').disabled = true;
+  $('btnStop').disabled = false;
+  try {
+    await client.start();
+    log('已启动', 'info');
+  } catch (e) {
+    log(`启动失败: ${e.message}`, 'err');
+    stop();
+  }
+};
+
+function stop() {
+  if (client) client.stop();
+  client = null;
+  if (decoder) { try { decoder.close(); } catch {} }
+  decoder = null;
+  $('btnStart').disabled = false;
+  $('btnStop').disabled = true;
+}
+$('btnStop').onclick = stop;
+
+const stats = { frames: 0, decodeErrors: 0 };
+setInterval(() => {
+  if (!client) { $('stats').textContent = '未连接'; return; }
+  const s = client.stats;
+  $('stats').textContent =
+    `状态 ${client.state}｜帧 ${s.frames}｜包 ${s.packets}（丢 ${s.lost}）｜重连 ${s.reconnects}｜字节 ${(s.bytes / 1024).toFixed(1)}KB`;
+}, 500);
+
+if (location.protocol === 'file:') {
+  log('请通过 http:// 静态服务器打开本页（ES module 不支持 file://）', 'err');
+}
+</script>
+</body>
+</html>

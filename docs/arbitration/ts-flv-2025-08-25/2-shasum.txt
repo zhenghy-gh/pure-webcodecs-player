@@ -1,0 +1,35 @@
+# 仲裁证据② 关键文件 SHA-1 基线 —— 2026-08-26 13:03:03
+$ shasum ts/src/*.js flv/src/*.js ts/__tests__/*.test.* flv/__tests__/*.test.*
+6670e75a8188f5f4d17297a2a6c54bc4650a39cf  ts/src/aac.js
+6aa531ef0789894a72158a13c5dda15b805b11f3  ts/src/bits.js
+34c8c199f7bd5bb3249f4e5b7a08ffa7bb4f836a  ts/src/emitter.js
+c92cd46944c9daefa25b9c332bb5e8efb573b787  ts/src/index.js
+2c83063588f489072b5c56e2fabfe28079419724  ts/src/nalu.js
+16bb20c52d61027564c1e5feee18ae2a2462fe56  ts/src/pes.js
+00f6678bc69680e213fe3a51eb2c6628eccb8b50  ts/src/psi.js
+80984f6424248d66d250a39927ec57307f9cec62  ts/src/ts-demuxer.js
+5648e15b5fa0f37166bba3d04bf691128b9e354b  ts/src/ts-stream-engine.js
+f3d8e677e09ade178997fa3426ddc3b1a9742e2f  flv/src/amf0.js
+519c1a25def2e66b486cce7652f0552dc2658677  flv/src/bits-lite.js
+af71f5bfab181f9925edbc612c836d98f7767929  flv/src/codec-info.js
+0170ec060e4ca36f3e06c3fad529645d3c7b2d63  flv/src/emitter.js
+e120a713ad88b596cce250f17be5e023c28b4154  flv/src/flv-demuxer.js
+79d1b563bf4e6407bcfac9cebb4a17a23dacb557  flv/src/flv-parser.js
+f17c7a8e98a39b9c73b2303140ea2f9190ed2819  flv/src/fmp4-remuxer.js
+85e1939f194595ff98bacce68da6fad90e003fcd  flv/src/index.js
+a3fc7e706cb0cdec21274d9a1c83e8be09f04e39  flv/src/iso-bmff.js
+89dd91a894623a905e069169279002b02bae0d04  flv/src/tag-stream.js
+e884a962f563814269c13ed0a9bafb24d874c555  ts/__tests__/aac.test.js
+741080e25fba5d9b88d16c1cfecab2e8fc738bec  ts/__tests__/cross-fixtures.test.js
+3e1ea16c22f7573e3b969d0955bacbd424274a71  ts/__tests__/nalu.test.js
+299d410fee679d8666dac623df1c7ded37f5c013  ts/__tests__/pes.test.js
+1228bf75a9af3b7655bf497f5550e9f716cf2d4e  ts/__tests__/psi.test.js
+f2fc58baca20a4bde32580b93b685bff07a66be7  ts/__tests__/ts-demuxer.test.js
+13132de3ca11711b58e1642ee502b184463cc9b9  ts/__tests__/ts-edge.test.js
+4903503d7a604271dbc481940406ffca9bd73965  flv/__tests__/amf0.test.js
+abf322c7d80c154d5f42a1a268d1d5f28c525048  flv/__tests__/cross-fixtures.test.js
+02b94851decfa502c91ae83e56a38e7764b46c84  flv/__tests__/flv-demuxer.test.js
+9ed39cfa5d974be3089182f9f13c188d0c13aa70  flv/__tests__/flv-edge.test.js
+9e14d66e6dc9952d5ed239329518f2754fd64c0e  flv/__tests__/flv-parser.test.js
+ed91f1b20e848d490f1499e0de6244b2799dcd0a  flv/__tests__/remuxer.test.js
+6d8bb16a6094805766af799317185c6b8201e215  flv/__tests__/tag-stream.test.js

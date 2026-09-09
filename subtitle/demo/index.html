@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>subtitle · PurePlay</title>
+  <!-- 皮肤接入第 1 行：pp-* 皮肤（docs/design/视觉规范.md §1.6 双皮肤冻结边界内） -->
+  <link rel="stylesheet" href="../../site/skin.css">
+  <style>
+    /* 本页专属样式（只引用 --pp-* 变量） */
+    .stage-stack { position: relative; width: 100%; }
+    .stage-stack canvas { display: block; width: 100%; height: auto; border-radius: var(--pp-radius-md); }
+    #sub-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  </style>
+</head>
+<body class="pp-scope">
+
+  <!-- 顶栏：品牌 + 模块页签 -->
+  <header class="pp-topbar" data-pp-tabs>
+    <span class="pp-topbar__brand">PurePlay</span>
+    <nav class="pp-tabs">
+      <a class="pp-tabs__item" href="../../site/demo/index.html">总览</a>
+      <a class="pp-tabs__item" href="../../hls/demo/index.html">HLS</a>
+      <a class="pp-tabs__item is-active" href="./index.html">字幕</a>
+    </nav>
+  </header>
+
+  <main class="pp-page" style="padding-top: var(--pp-sp-4);">
+    <section class="pp-main pp-col">
+      <!-- 画布区：底层假视频 + 顶层字幕渲染 -->
+      <div class="stage-stack pp-stage" id="stage" style="aspect-ratio:16/9;">
+        <canvas id="bg-canvas" width="960" height="540"></canvas>
+        <canvas id="sub-canvas" width="960" height="540" aria-label="字幕渲染画布" role="img"></canvas>
+      </div>
+
+      <!-- 拖放区 -->
+      <div class="pp-drop" id="drop" tabindex="0" role="button"
+           aria-label="拖入或点击选择字幕文件（.srt/.vtt/.ass/.ssa）">
+        <span class="pp-drop__icon">🎬</span>
+        <span>拖入本地字幕文件到此处，或点击选择</span>
+        <span class="pp-drop__hint">支持 .srt / .vtt / .ass / .ssa · 解析在本地完成，不上传</span>
+      </div>
+      <input type="file" id="file-input" accept=".srt,.vtt,.ass,.ssa,.txt"
+             style="display:none" aria-hidden="true">
+
+      <!-- 时间轴控制条 -->
+      <div class="pp-row">
+        <button class="pp-btn pp-btn--icon" id="play-btn" aria-label="播放/暂停" title="空格">▶</button>
+        <span class="pp-mono" id="cur-label" style="font-size:var(--pp-fs-sm);color:var(--pp-text-dim)">00:00</span>
+        <input class="pp-range pp-grow" id="timeline" type="range" min="0" max="1000" value="0"
+               step="1" aria-label="字幕时间轴">
+        <span class="pp-mono" id="dur-label" style="font-size:var(--pp-fs-sm);color:var(--pp-text-faint)">00:00</span>
+      </div>
+
+      <!-- 内置样例 -->
+      <div class="pp-row">
+        <button class="pp-btn pp-btn--ghost" data-sample="ass">载入 ASS 样例（定位/特效）</button>
+        <button class="pp-btn pp-btn--ghost" data-sample="srt">载入 SRT 样例</button>
+        <button class="pp-btn pp-btn--ghost" data-sample="vtt">载入 VTT 样例</button>
+      </div>
+    </section>
+
+    <!-- 信息面板：格式 / 统计 / 样式 / 未支持标签 -->
+    <aside class="pp-aside pp-col">
+      <div class="pp-panel">
+        <h2 class="pp-panel__title">文件信息</h2>
+        <div class="pp-kv"><span class="pp-kv__key">检测格式</span><span class="pp-kv__val" id="i-format">—</span></div>
+        <div class="pp-kv"><span class="pp-kv__key">codec 串</span><span class="pp-kv__val" id="i-codec">—</span></div>
+        <div class="pp-kv"><span class="pp-kv__key">台词数</span><span class="pp-kv__val" id="i-cues">—</span></div>
+        <div class="pp-kv"><span class="pp-kv__key">时长</span><span class="pp-kv__val" id="i-dur">—</span></div>
+        <div class="pp-kv"><span class="pp-kv__key">跳过坏块</span><span class="pp-kv__val" id="i-skipped">—</span></div>
+        <div class="pp-kv"><span class="pp-kv__key">当前文件</span><span class="pp-kv__val" id="i-name">内置样例</span></div>
+      </div>
+
+      <div class="pp-panel">
+        <h2 class="pp-panel__title">样式表（ASS）</h2>
+        <div id="style-list"><span style="color:var(--pp-text-faint);font-size:var(--pp-fs-sm)">无样式信息</span></div>
+      </div>
+
+      <div class="pp-panel">
+        <h2 class="pp-panel__title">未支持标签清单</h2>
+        <div class="chips" id="unsupported"><span class="pp-badge">无</span></div>
+      </div>
+    </aside>
+  </main>
+
+  <script type="module">
+    /* ====== 第 3 行接入：初始化皮肤 ====== */
+    import { initSkin, bindDrop, bindRange, toast, formatClockUs } from '../../site/skin.js';
+    import { parseAuto, SubtitleCanvasRenderer, SubtitleError } from '../src/index.js';
+
+    const $ = (id) => document.getElementById(id);
+    const disposers = [initSkin({ brand: 'PurePlay' })];
+
+    /* ---- 假视频背景（演示用静态渐变 + 网格，与播放器无关） ---- */
+    {
+      const bg = $('bg-canvas').getContext('2d');
+      const g = bg.createLinearGradient(0, 0, 960, 540);
+      g.addColorStop(0, '#16233b'); g.addColorStop(.5, '#0d1524'); g.addColorStop(1, '#1c1230');
+      bg.fillStyle = g; bg.fillRect(0, 0, 960, 540);
+      bg.strokeStyle = 'rgba(255,255,255,.05)'; bg.lineWidth = 1;
+      for (let x = 0; x <= 960; x += 48) { bg.beginPath(); bg.moveTo(x, 0); bg.lineTo(x, 540); bg.stroke(); }
+      for (let y = 0; y <= 540; y += 48) { bg.beginPath(); bg.moveTo(0, y); bg.lineTo(960, y); bg.stroke(); }
+      bg.fillStyle = 'rgba(255,255,255,.25)';
+      bg.font = '14px sans-serif'; bg.fillText('PurePlay · subtitle 渲染预览（假画面）', 24, 32);
+    }
+
+    /* ---- 渲染器与时钟 ---- */
+    const renderer = new SubtitleCanvasRenderer($('sub-canvas'), { playRes: { w: 640, h: 360 } });
+    let durationUs = 0;
+    let currentUs = 0;
+    let playing = false;
+    let /** @type {number} */ rafId = 0;
+    let lastTick = 0;
+
+    /** 时钟推进循环（1x 实时；到尾自动停） */
+    function loop(tick) {
+      if (!playing) return;
+      currentUs = Math.min(durationUs, currentUs + (tick - lastTick) * 1000);
+      lastTick = tick;
+      if (currentUs >= durationUs) { setPlaying(false); }
+      syncUI();
+      rafId = requestAnimationFrame(loop);
+    }
+
+    function setPlaying(on) {
+      playing = on && durationUs > 0;
+      $('play-btn').textContent = playing ? '⏸' : '▶';
+      $('play-btn').setAttribute('aria-pressed', String(playing));
+      cancelAnimationFrame(rafId);
+      if (playing) { lastTick = performance.now(); rafId = requestAnimationFrame(loop); }
+    }
+
+    function seekTo(us) {
+      currentUs = Math.max(0, Math.min(durationUs, us));
+      syncUI();
+    }
+
+    function syncUI() {
+      renderer.renderAt(currentUs);
+      $('timeline').value = String(durationUs > 0 ? Math.round(currentUs / durationUs * 1000) : 0);
+      $('timeline').style.setProperty('--p', String(durationUs > 0 ? currentUs / durationUs * 100 : 0));
+      $('cur-label').textContent = formatClockUs(currentUs);
+      if (!$('timeline').matches(':active')) {
+        // 拖动中不覆盖用户输入
+      }
+    }
+
+    /* ---- 装载并解析 ---- */
+    function loadText(text, name) {
+      try {
+        const parsed = parseAuto(text);
+        renderer.setCues(parsed);
+        durationUs = parsed.durationUs || Math.max(1000, ...parsed.cues.map((c) => c.endUs));
+        currentUs = 0;
+        setPlaying(false);
+
+        $('i-format').textContent = parsed.format.toUpperCase() +
+          (parsed.stats.skippedBlocks ? `（跳过 ${parsed.stats.skippedBlocks} 个坏块）` : '');
+        $('i-format').className = 'pp-kv__val ' + (parsed.stats.skippedBlocks ? 'pp-kv__val--warn' : '');
+        $('i-codec').textContent = parsed.codec;
+        $('i-cues').textContent = String(parsed.cues.length);
+        $('i-dur').textContent = formatClockUs(durationUs, { total: true });
+        $('i-skipped').textContent = `${parsed.stats.skippedBlocks}（警告 ${parsed.stats.warnings.length} 条）`;
+        $('i-skipped').className = 'pp-kv__val ' + (parsed.stats.skippedBlocks ? 'pp-kv__val--warn' : 'pp-kv__val--ok');
+        $('i-name').textContent = name;
+
+        // 样式表面板
+        const styles = /** @type {any[]} */ (parsed.styles ?? []);
+        $('style-list').innerHTML = '';
+        if (!styles.length) {
+          $('style-list').innerHTML = '<span style="color:var(--pp-text-faint);font-size:var(--pp-fs-sm)">无样式信息（SRT/VTT 使用默认样式）</span>';
+        } else {
+          for (const s of styles) {
+            const row = document.createElement('div');
+            row.className = 'pp-kv';
+            const k = document.createElement('span'); k.className = 'pp-kv__key'; k.textContent = s.name;
+            const v = document.createElement('span'); v.className = 'pp-kv__val';
+            v.textContent = `${s.fontname} ${Math.round(s.fontsize)}px an${s.alignment}`;
+            row.append(k, v);
+            $('style-list').appendChild(row);
+          }
+        }
+
+        // 未支持标签 chips
+        const un = /** @type {string[]} */ (parsed.unsupportedTags ?? []);
+        $('unsupported').innerHTML = '';
+        if (!un.length) {
+          $('unsupported').innerHTML = '<span class="pp-badge">无</span>';
+        } else {
+          for (const tag of un) {
+            const el = document.createElement('span');
+            el.className = 'pp-badge pp-badge--warn';
+            el.textContent = '\\' + tag;
+            $('unsupported').appendChild(el);
+          }
+        }
+
+        $('dur-label').textContent = formatClockUs(durationUs, { total: true });
+        $('timeline').max = '1000';
+        syncUI();
+        toast({ type: 'ok', title: `已解析 ${name}`, detail: `${parsed.cues.length} 条台词 · ${parsed.codec}` });
+      } catch (err) {
+        const code = err instanceof SubtitleError ? err.code : 'UNKNOWN';
+        toast({ type: 'danger', title: '解析失败', detail: `[${code}] ${/** @type {Error} */ (err).message}` });
+      }
+    }
+
+    /* ---- 交互绑定 ---- */
+    $('play-btn').addEventListener('click', () => {
+      if (durationUs <= 0) return;
+      if (!playing && currentUs >= durationUs) currentUs = 0;
+      setPlaying(!playing);
+    });
+    $('timeline').addEventListener('input', (ev) => {
+      setPlaying(false);
+      seekTo(Math.round(Number(/** @type {HTMLInputElement} */ (ev.target).value) / 1000 * durationUs));
+    });
+
+    // 拖放区：点击选择 + 拖拽
+    $('drop').addEventListener('click', () => $('file-input').click());
+    $('drop').addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); $('file-input').click(); }
+    });
+    $('file-input').addEventListener('change', async (ev) => {
+      const file = /** @type {HTMLInputElement} */ (ev.target).files?.[0];
+      if (file) loadText(await file.text(), file.name);
+    });
+    disposers.push(bindDrop($('drop'), {
+      onFiles: async (files) => {
+        const f = files.find((x) => /\.(srt|vtt|ass|ssa|txt)$/i.test(x.name)) ?? files[0];
+        if (f) loadText(await f.text(), f.name);
+      },
+    }));
+
+    // 快捷键：空格播放暂停、←→ ±1s
+    document.addEventListener('keydown', (ev) => {
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(/** @type {HTMLElement} */ (ev.target).tagName)) return;
+      if (ev.code === 'Space') { ev.preventDefault(); $('play-btn').click(); }
+      if (ev.key === 'ArrowLeft') { setPlaying(false); seekTo(currentUs - 1_000_000); }
+      if (ev.key === 'ArrowRight') { setPlaying(false); seekTo(currentUs + 1_000_000); }
+    });
+
+    /* ---- 内置样例 ---- */
+    const SAMPLES = {
+      srt: [
+        '1', '00:00:00,500 --> 00:00:03,000', '你好，PurePlay！', '',
+        '2', '00:00:03,500 --> 00:00:07,000', '这是 SRT 样例的第二条', '支持多行文本', '',
+        '3', '00:00:07,500 --> 00:00:10,000', '拖动下方时间轴查看切换',
+      ].join('\n'),
+      vtt: [
+        'WEBVTT', '', 'NOTE 内置 VTT 样例', '',
+        'intro', '00:00:00.500 --> 00:00:03.500 align:center', 'WebVTT 台词（带 settings）', '',
+        '00:00:04.000 --> 00:00:08.000', '<v 张三>语音标签</v>也能解析', '',
+        '00:00:08.500 --> 00:00:12.000', '结尾一条',
+      ].join('\n'),
+      ass: [
+        '[Script Info]', 'PlayResX: 640', 'PlayResY: 360', '',
+        '[V4+ Styles]',
+        'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+        'Style: Default,sans-serif,42,&H00FFFFFF,&H000000FF,&H00101010,&H7F000000,-1,0,0,0,100,100,0,0,1,2,2,2,20,20,30,1',
+        'Style: Top,serif,28,&H0020E0FF,&H000000FF,&H00000000,&H00000000,0,-1,0,0,100,100,1,0,1,1,0,8,10,10,16,1',
+        '',
+        '[Events]',
+        'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+        'Dialogue: 0,0:00:00.50,0:00:04.00,Default,,0,0,0,,ASS 默认样式：底部居中',
+        'Dialogue: 1,0:00:04.50,0:00:08.00,Top,,0,0,0,,{\\fad(300,300)}顶部样式 + 淡入淡出',
+        'Dialogue: 0,0:00:08.50,0:00:12.00,Default,,0,0,0,,{\\pos(320,180)\\an5\\fscx120\\frz-6}\\pos 居中 + 放大 + 旋转',
+        'Dialogue: 0,0:00:12.50,0:00:16.00,Default,,0,0,0,,{\\move(80,320,560,320)}全程从左移到右\\N第二行文本',
+        'Dialogue: 0,0:00:16.50,0:00:20.00,Default,,0,0,0,,{\\fs+10\\fsp3\\k15}{\\b1}粗体{\\b0}与未知标签 \\k 共存',
+        '',
+      ].join('\n'),
+    };
+    document.querySelectorAll('[data-sample]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const kind = /** @type {HTMLElement} */ (btn).dataset.sample ?? 'srt';
+        loadText(SAMPLES[kind], `内置${kind.toUpperCase()}样例`);
+      });
+    });
+
+    void bindRange; // 按需使用；本页时间轴为自绘 range
+
+    /* 初始装载 ASS 样例，页面打开即可玩 */
+    loadText(SAMPLES.ass, '内置ASS样例');
+  </script>
+</body>
+</html>

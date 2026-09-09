@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>@player/core 演示 —— 能力探测 / 渲染器 / AudioWorklet / 时钟同步</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
+         background: #0d1117; color: #e6edf3; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px; }
+  h1 { font-size: 20px; margin: 0; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; width: min(900px, 94vw); }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 14px; flex: 1; min-width: 260px; }
+  .card h2 { font-size: 14px; margin: 0 0 8px; color: #58a6ff; }
+  canvas, video { width: 100%; aspect-ratio: 4/3; background: #000; border-radius: 8px; }
+  button { background: #238636; color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; margin-right: 6px; }
+  pre { font-size: 11px; white-space: pre-wrap; margin: 0; max-height: 180px; overflow: auto; }
+</style>
+</head>
+<body>
+<h1>@player/core · 公共内核能力演示</h1>
+
+<div class="row">
+  <div class="card">
+    <h2>① 能力探测 detectCapabilities()</h2>
+    <pre id="cap">探测中…</pre>
+    <button id="probeAvc">探测 AVC 解码</button>
+  </div>
+  <div class="card">
+    <h2>② VideoFrameRenderer（合成帧直渲）</h2>
+    <canvas id="stage" width="320" height="240"></canvas>
+    <button id="renderToggle">开始渲染</button>
+    <pre id="renderInfo"></pre>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card">
+    <h2>③ AudioWorkletPlayer（440Hz 正弦音）</h2>
+    <button id="audioToggle">播放 / 停止</button>
+    <pre id="audioInfo">未初始化</pre>
+  </div>
+  <div class="card">
+    <h2>④ AvSyncController 决策流</h2>
+    <pre id="syncInfo">等待音频启动</pre>
+  </div>
+</div>
+
+<script type="module">
+import {
+  detectCapabilities,
+  VideoFrameRenderer,
+  AudioWorkletPlayer,
+  AvSyncController,
+  Stats,
+} from '../src/index.js';
+
+/* ---------- ① 能力探测 ---------- */
+const capEl = document.getElementById('cap');
+const report = await detectCapabilities({ videoCodec: 'avc1.42E01E', audioCodec: 'mp4a.40.2' });
+capEl.textContent = JSON.stringify(report, null, 2);
+document.getElementById('probeAvc').addEventListener('click', () => {
+  location.reload();
+});
+
+/* ---------- ② 渲染器：合成 VideoFrame 走 WebGL/2D 路径 ---------- */
+const stats = new Stats();
+let renderer = null;
+let raf = 0;
+let frameSeq = 0;
+
+function startRender() {
+  const canvas = document.getElementById('stage');
+  renderer = new VideoFrameRenderer(canvas, { mode: 'auto' });
+  document.getElementById('renderInfo').textContent = `生效路径：${renderer.mode}`;
+  const draw = (t) => {
+    // 合成一个 160x120 的移动色块画面，构造 VideoFrame 走真实管线
+    const off = new OffscreenCanvas(160, 120);
+    const ctx = off.getContext('2d');
+    ctx.fillStyle = '#101418';
+    ctx.fillRect(0, 0, 160, 120);
+    ctx.fillStyle = `hsl(${(t / 10) % 360} 80% 55%)`;
+    ctx.fillRect((t / 5) % 140 + 10, 45, 30, 30);
+    if (typeof VideoFrame !== 'undefined') {
+      const frame = new VideoFrame(off, {
+        timestamp: t * 1000,
+        duration: 33333,
+      });
+      renderer.draw(frame); // 所有权移交渲染器（内部 finally close）
+      stats.markVideoRendered();
+      document.getElementById('renderInfo').textContent =
+        `路径=${renderer.mode} 帧=${++frameSeq} fps≈${stats.snapshot().fps}`;
+      raf = requestAnimationFrame(draw);
+    } else {
+      // 无 WebCodecs 时退化为直接 drawImage
+      renderer.draw(off);
+      raf = requestAnimationFrame(draw);
+    }
+  };
+  raf = requestAnimationFrame(draw);
+}
+
+document.getElementById('renderToggle').addEventListener('click', (e) => {
+  if (raf) { cancelAnimationFrame(raf); raf = 0; e.target.textContent = '开始渲染'; }
+  else { startRender(); e.target.textContent = '停止'; }
+});
+
+/* ---------- ③ 音频 + ④ 音画同步 ---------- */
+let player = null;
+let toneTimer = null;
+const sync = new AvSyncController();
+
+document.getElementById('audioToggle').addEventListener('click', async (e) => {
+  const info = document.getElementById('audioInfo');
+  if (!player) {
+    player = new AudioWorkletPlayer({ sampleRate: 48000, channelCount: 2 });
+    player.on('underrun', () => stats.markAudioUnderrun());
+    await player.init();
+    player.play();
+    sync.attachMaster(() => player.currentTimeSec());
+    // 每秒推入 0.25s 的 440Hz 正弦
+    let phase = 0;
+    const pushTone = () => {
+      const n = 12000;
+      const ch = new Float32Array(n);
+      for (let i = 0; i < n; i++, phase++) {
+        ch[i] = 0.15 * Math.sin((2 * Math.PI * 440 * phase) / 48000) * Math.min(1, phase / 480);
+      }
+      player.push([ch, ch]);
+    };
+    pushTone();
+    toneTimer = setInterval(pushTone, 250);
+    e.target.textContent = '停止';
+    info.textContent = '已启动（48kHz 立体声）';
+  } else {
+    clearInterval(toneTimer);
+    player.destroy();
+    player = null;
+    e.target.textContent = '播放 / 停止';
+    info.textContent = '已停止';
+  }
+});
+
+// 模拟视频帧 pts 流，展示同步决策
+setInterval(() => {
+  if (!player || !player.playing) return;
+  const info = document.getElementById('syncInfo');
+  const fakePts = player.currentTimeSec() + 0.02; // 模拟视频比主钟超前 20ms
+  const { action, drift } = sync.suggestVideoAction(fakePts);
+  info.textContent =
+    `主钟=${player.currentTimeSec().toFixed(3)}s\n模拟帧 pts=${fakePts.toFixed(3)}s\n` +
+    `drift=${(drift * 1000).toFixed(1)}ms → ${action}\n` +
+    `缓冲水位=${player.bufferedSec.toFixed(2)}s underrun=${stats.snapshot().audioUnderruns}`;
+}, 200);
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "@player/subtitle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "subtitle 模块（PurePlay）：纯 ESM 零构建，测试用 node --test 显式 glob 形式",
+  "scripts": {
+    "test": "node --test --test-force-exit \"__tests__/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

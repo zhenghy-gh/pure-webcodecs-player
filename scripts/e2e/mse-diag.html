@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>MSE init segment 诊断</title>
+<style>:root{color-scheme:dark}body{background:#0d1117;color:#e6edf3;font-family:system-ui;padding:20px}pre{white-space:pre-wrap;font-size:11px;background:#161b22;padding:10px;border-radius:8px}</style>
+</head><body>
+<h3>MSE init segment 诊断</h3>
+<video id="v" muted></video>
+<pre id="out">…</pre>
+<script type="module">
+import { registerDemuxer, createDemuxerAuto, HttpRangeDataSource } from '../../core/src/index.js';
+import * as mp4Mod from '../../mp4/src/index.js';
+import { Fmp4Remuxer } from '../../mp4/src/remuxer.js';
+registerDemuxer(mp4Mod);
+const $ = document.getElementById('out');
+const lines = [];
+const say = (s) => { lines.push(s); $.textContent = lines.join('\n'); };
+
+window.__E2E_RUN__ = async () => {
+  const MEDIA = new URLSearchParams(location.search).get('media') || '/samples/e2e/sintel-trailer.mp4';
+  const src = new HttpRangeDataSource(MEDIA);
+  const d = await createDemuxerAuto(src);
+  const info = await d.open();
+  say('tracks: ' + JSON.stringify(info.tracks.map(t => ({ id: t.id, type: t.type, codec: t.codec, w: t.width, h: t.height, sr: t.sampleRate, ch: t.numberOfChannels }))));
+  const r = new Fmp4Remuxer();
+  const video = document.getElementById('v');
+  const ms = new MediaSource();
+  video.src = URL.createObjectURL(ms);
+  await new Promise((res) => ms.addEventListener('sourceopen', res, { once: true }));
+  say('MediaSource open, readyState=' + ms.readyState);
+
+  for (const t of info.tracks.filter((x) => x.type === 'video' || x.type === 'audio')) {
+    const mime = t.type === 'video' ? `video/mp4; codecs="${t.codec}"` : `audio/mp4; codecs="${t.codec}"`;
+    say(`\n--- ${t.type} ${mime} isTypeSupported=${MediaSource.isTypeSupported(mime)}`);
+    say(`   [状态] ms.readyState=${ms.readyState} sourceBuffers=${ms.sourceBuffers.length} videoReadyState=${video.readyState} videoErr=${video.error?.code ?? 'none'}`);
+    let sb;
+    try { sb = ms.addSourceBuffer(mime); } catch (e) { say('addSourceBuffer 抛错: ' + e.name + ' ' + e.message); continue; }
+    const init = r.createInitSegment(t);
+    say('init segment: ' + init.byteLength + ' bytes');
+    const err = await new Promise((resolve) => {
+      const onErr = () => { cleanup(); resolve('error 事件: name=' + (sb.error ?? 'n/a')); };
+      const onEnd = () => { cleanup(); resolve(null); };
+      const cleanup = () => { sb.removeEventListener('error', onErr); sb.removeEventListener('updateend', onEnd); };
+      sb.addEventListener('error', onErr);
+      sb.addEventListener('updateend', onEnd);
+      try { sb.appendBuffer(init); } catch (e) {
+        cleanup(); resolve('同步抛错: ' + e.name + ' / ' + e.message);
+      }
+      setTimeout(() => { cleanup(); resolve('超时无事件'); }, 4000);
+    });
+    say('append init => ' + (err ?? 'OK'));
+
+    if (!err) {
+      // 试推第一个 media segment
+      let n = 0;
+      let seg = null;
+      for (let i = 0; i < 40 && !seg; i++) {
+        const s = await d.readSample(t.id);
+        if (!s) break;
+        n++;
+        seg = r.pushSample?.(s) ?? null;
+      }
+      say('读入样本 ' + n + ' 个, 产出 segment=' + (seg ? seg.data?.byteLength + ' bytes' : 'none'));
+      if (seg?.data) {
+        const err2 = await new Promise((resolve) => {
+          const onErr = () => { cleanup(); resolve('error 事件'); };
+          const onEnd = () => { cleanup(); resolve(null); };
+          const cleanup = () => { sb.removeEventListener('error', onErr); sb.removeEventListener('updateend', onEnd); };
+          sb.addEventListener('error', onErr); sb.addEventListener('updateend', onEnd);
+          try { sb.appendBuffer(seg.data); } catch (e) { cleanup(); resolve('同步抛错: ' + e.name + ' / ' + e.message); }
+          setTimeout(() => { cleanup(); resolve('超时无事件'); }, 4000);
+        });
+        say('append media => ' + (err2 ?? 'OK'));
+      }
+    }
+  }
+  // SB 配额探测：新开一个干净 MediaSource，按不同顺序各建 video/audio SB
+  const v2 = document.createElement('video');
+  document.body.appendChild(v2);
+  const ms2 = new MediaSource();
+  v2.src = URL.createObjectURL(ms2);
+  await new Promise((res) => ms2.addEventListener('sourceopen', res, { once: true }));
+  const tryAdd = (mime) => { try { ms2.addSourceBuffer(mime); return 'OK'; } catch (e) { return e.name + ': ' + e.message.slice(0, 80); } };
+  say('\n--- SourceBuffer 配额探测（干净 MediaSource）');
+  say('  #1 video/mp4 avc1  => ' + tryAdd('video/mp4; codecs="avc1.64001E"'));
+  say('  #2 audio/mp4 mp4a  => ' + tryAdd('audio/mp4; codecs="mp4a.40.2"'));
+  const v3 = document.createElement('video');
+  document.body.appendChild(v3);
+  const ms3 = new MediaSource();
+  v3.src = URL.createObjectURL(ms3);
+  await new Promise((res) => ms3.addEventListener('sourceopen', res, { once: true }));
+  const tryAdd3 = (mime) => { try { ms3.addSourceBuffer(mime); return 'OK'; } catch (e) { return e.name + ': ' + e.message.slice(0, 80); } };
+  say('  #A audio/mp4 mp4a  => ' + tryAdd3('audio/mp4; codecs="mp4a.40.2"'));
+  say('  #B video/mp4 avc1  => ' + tryAdd3('video/mp4; codecs="avc1.64001E"'));
+  say('  #C muxed video+audio => ' + tryAdd3('video/mp4; codecs="avc1.64001E, mp4a.40.2"'));
+
+  // 完整两轨流程：先建齐 SB 再写 init（验证 Chrome 配额限制下可行的顺序）
+  say('\n--- 完整两轨流程（先建齐 SB 再 append init）');
+  const v4 = document.createElement('video');
+  v4.muted = true; v4.playsInline = true; document.body.appendChild(v4);
+  const ms4 = new MediaSource();
+  v4.src = URL.createObjectURL(ms4);
+  await new Promise((res) => ms4.addEventListener('sourceopen', res, { once: true }));
+  const d4 = await createDemuxerAuto(new HttpRangeDataSource(MEDIA));
+  const info4 = await d4.open();
+  const rm4 = new Fmp4Remuxer();
+  const sbs = {};
+  for (const t of info4.tracks.filter((x) => x.type === 'video' || x.type === 'audio')) {
+    const mime = t.type === 'video' ? `video/mp4; codecs="${t.codec}"` : `audio/mp4; codecs="${t.codec}"`;
+    try { sbs[t.type] = ms4.addSourceBuffer(mime); say(`  建 SB ${t.type} => OK`); }
+    catch (e) { say(`  建 SB ${t.type} => ${e.name}: ${e.message.slice(0, 60)}`); }
+  }
+  say(`  [建齐后] ms.readyState=${ms4.readyState} sourceBuffers=${ms4.sourceBuffers.length}`);
+  const push = (sb, data, tag) => new Promise((resolve) => {
+    const done = (why) => { sb.removeEventListener('updateend', onEnd); sb.removeEventListener('error', onErr); resolve(why); };
+    const onEnd = () => done(null);
+    const onErr = () => done('error');
+    sb.addEventListener('updateend', onEnd); sb.addEventListener('error', onErr);
+    try { sb.appendBuffer(data); } catch (e) { done('throw:' + e.name); }
+    setTimeout(() => done('timeout'), 5000);
+  });
+  for (const t of info4.tracks.filter((x) => x.type === 'video' || x.type === 'audio')) {
+    const sb = sbs[t.type];
+    if (!sb) continue;
+    const e1 = await push(sb, rm4.createInitSegment(t), 'init');
+    say(`  append init ${t.type} => ${e1 ?? 'OK'}`);
+  }
+  // 各推 30 个样本成段
+  const per = {};
+  for (const t of info4.tracks.filter((x) => x.type === 'video' || x.type === 'audio')) {
+    per[t.type] = [];
+    for (let i = 0; i < 30; i++) { const s = await d4.readSample(t.id); if (!s) break; per[t.type].push(s); }
+  }
+  for (const t of info4.tracks.filter((x) => x.type === 'video' || x.type === 'audio')) {
+    const sb = sbs[t.type];
+    if (!sb || !per[t.type].length) continue;
+    const seg = rm4.createMediaSegment(t, per[t.type]);
+    const e2 = await push(sb, seg.data, 'media');
+    say(`  append media ${t.type} (${seg.data.byteLength}B, ${per[t.type].length} 样本) => ${e2 ?? 'OK'}`);
+  }
+  try { v4.play(); } catch { /* 忽略 */ }
+  await new Promise((r) => setTimeout(r, 1500));
+  say(`  video4: videoWidth=${v4.videoWidth} readyState=${v4.readyState} currentTime=${v4.currentTime.toFixed(2)} ms=${ms4.readyState}`);
+  say(`  [结果] 先建齐 SB 顺序 ${v4.videoWidth > 0 ? '可行（有画面）' : '仍无画面'}`);
+
+  return { ok: false, results: lines.map((l) => ({ name: l, pass: true })) };
+};
+</script>
+</body></html>

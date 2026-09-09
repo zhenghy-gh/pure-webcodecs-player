@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>@player/mov 演示 —— QuickTime 兼容播放</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
+         background: #0d1117; color: #e6edf3; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px; }
+  h1 { font-size: 20px; margin: 0; }
+  #drop { width: min(880px, 94vw); border: 2px dashed #30363d; border-radius: 12px;
+          padding: 28px; text-align: center; transition: border-color .15s; cursor: pointer; }
+  #drop.over { border-color: #f0883e; }
+  video { width: min(880px, 94vw); max-height: 60vh; background: #000; border-radius: 12px; }
+  pre { width: min(880px, 94vw); background: #161b22; border-radius: 8px; padding: 12px;
+        font-size: 12px; overflow: auto; max-height: 260px; }
+</style>
+</head>
+<body>
+<h1>@player/mov · QuickTime atom 兼容层 → fMP4 Remux → MSE</h1>
+
+<div id="drop">把 .mov 文件拖到这里（或点击选择）<br /><small>自动识别 QT 品牌 / wide / pnot；cmov 压缩 moov 会给出明确提示</small></div>
+
+<video id="video" controls playsinline></video>
+<pre id="log">等待输入…</pre>
+
+<script type="module">
+import { MovDemuxer } from '../src/index.js';
+import { Mp4Demuxer, remuxDemuxer, attachFileDrop, pickFile } from '../../mp4/src/index.js';
+import { BlobDataSource, MseHelper } from '../../core/src/index.js';
+
+const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
+const video = document.getElementById('video');
+
+async function playSource(source) {
+  // 自动选路：QuickTime 特征 vs 通用 ISO-BMFF
+  const head = await source.read(0, Math.min(64, source.size));
+  const Demuxer = MovDemuxer.probe(head) >= Mp4Demuxer.probe(head) ? MovDemuxer : Mp4Demuxer;
+  log(`选路：${Demuxer === MovDemuxer ? 'MovDemuxer' : 'Mp4Demuxer'}`);
+
+  const demuxer = new Demuxer();
+  demuxer.attach(source);
+  const info = await demuxer.init();
+  if (Object.keys(info.qtTags ?? {}).length) log(`QT 元数据：${JSON.stringify(info.qtTags)}`);
+  for (const t of info.tracks) {
+    const extra = t.emptyEdit ? ' [空编辑 elst]' : '';
+    log(`轨道 #${t.id} ${t.type} codec=${t.codec || '(未知)'}${extra}`);
+  }
+
+  const mse = new MseHelper(video);
+  await mse.open();
+  const remuxed = await remuxDemuxer(demuxer);
+  for (const { track, init, segments } of remuxed) {
+    const key = `track${track.id}`;
+    const mime = `${track.type === 'audio' ? 'audio' : 'video'}/mp4; codecs="${track.codec}"`;
+    try {
+      await mse.addTrack(key, mime);
+    } catch (err) {
+      log(`跳过不支持的轨：${mime}`);
+      continue;
+    }
+    await mse.append(key, init);
+    for (const seg of segments) await mse.append(key, seg.data);
+  }
+  video.play().catch(() => log('自动播放被拦截，请手动点击播放。'));
+}
+
+const drop = document.getElementById('drop');
+attachFileDrop(drop, (source) => {
+  playSource(source).catch((e) => log(`错误 [${e.code ?? '?'}]：${e.message}`));
+}, { accept: ['.mov', '.mp4'] });
+drop.addEventListener('click', () => {
+  pickFile('.mov,.mp4').then((file) => {
+    if (file) playSource(new BlobDataSource(file)).catch((e) => log(`错误 [${e.code ?? '?'}]：${e.message}`));
+  });
+});
+</script>
+</body>
+</html>

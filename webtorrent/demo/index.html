@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PurePlay · webtorrent —— P2P 边下边播演示</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --text:#e6e9ef; --dim:#8a93a5; --acc:#4f8cff; --ok:#3fb96f; --warn:#e2a33c; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--dim); margin-bottom:20px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  input[type="text"] { width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); outline:none; margin-top:10px; }
+  button { padding:7px 14px; border-radius:8px; border:1px solid var(--line); background:#1d2330; color:var(--text); cursor:pointer; margin-right:8px; margin-top:10px; }
+  button:hover:not(:disabled) { border-color:var(--acc); color:var(--acc); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; }
+  th,td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--line); font-size:13px; }
+  th { color:var(--dim); font-weight:500; }
+  .banner { border-radius:8px; padding:10px 12px; margin-bottom:12px; display:none; white-space:pre-wrap; }
+  .banner.warn { background:#3a2c15; color:var(--warn); display:block; }
+  .banner.ok { background:#15301f; color:var(--ok); display:block; }
+  .stat { display:inline-block; margin:4px 18px 4px 0; color:var(--dim); }
+  .stat b { color:var(--text); }
+  #heat { display:grid; grid-template-columns:repeat(32, 1fr); gap:2px; margin-top:10px; max-width:560px; }
+  #heat i { aspect-ratio:1; border-radius:2px; background:#1d2330; display:block; }
+  #heat i.dl { background:#3f6fd8; } #heat i.ok { background:#3fb96f; } #heat i.wait { background:#e2a33c; }
+  pre { overflow:auto; background:var(--bg); padding:10px; border-radius:8px; font-size:12px; max-height:240px; }
+  .err { color:#ff7b72; white-space:pre-wrap; }
+  code { color:#9ecbff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PurePlay · webtorrent —— P2P 边下边播演示</h1>
+  <div class="sub">传输接入层：torrent → piece 装配 → DataSource → MKV demuxer。webtorrent 库为可选增强依赖，未加载时优雅降级。</div>
+
+  <div id="banner" class="banner"></div>
+
+  <div class="panel">
+    <label style="color:var(--dim)">真实 swarm（需网络与 tracker/WebRTC 环境）</label><br />
+    <button id="btnReal" disabled title="演示环境默认灰显：真实 swarm 需要外网、tracker 可达且浏览器支持 WebRTC；如需体验请本地起服务并引入 webtorrent CDN 后刷新">连接真实种子（环境受限，灰显）</button>
+    <input type="text" id="tid" placeholder="magnet:?xt=urn:btih:… 或 https://…/sample.torrent（启用真实模式后可用）" />
+    <input type="file" id="fileTorrent" accept=".torrent" hidden />
+    <button id="btnLocalTorrent">选择 .torrent 文件（离线模拟装配）</button>
+    <button id="btnSimPause" disabled>模拟断流</button>
+    <button id="btnSimResume" disabled>恢复续传</button>
+    <span style="color:var(--dim)">｜或拖入本地 .mkv/.webm 直接体验 demux：</span>
+    <input type="file" id="fileMedia" accept=".mkv,.webm,.mka" hidden />
+    <button id="btnLocalMedia">选择本地媒体文件</button>
+  </div>
+
+  <div class="panel" id="statsPanel" hidden>
+    <span class="stat">状态 <b id="sState">-</b></span>
+    <span class="stat">进度 <b id="sProgress">-</b></span>
+    <span class="stat">前缀字节 <b id="sPrefix">-</b></span>
+  </div>
+
+  <div class="panel" id="filesPanel" hidden>
+    <div style="color:var(--dim)">文件树（来自 .torrent 元数据）</div>
+    <table><thead><tr><th>路径</th><th>大小</th><th>选中</th></tr></thead><tbody id="fileRows"></tbody></table>
+    <div style="color:var(--dim);margin-top:10px">piece 热力图（绿=已装配 / 蓝=在途 / 橙=等待续传）</div>
+    <div id="heat"></div>
+    <button id="btnScan" style="margin-top:10px">流式解析全部样本（验证 DataSource 契约）</button>
+    <pre id="scanOut" hidden></pre>
+  </div>
+
+  <div class="panel err" id="errBox" hidden></div>
+</div>
+
+<script type="module">
+import {
+  createSource, parseTorrent, buildSingleFileTorrent,
+  planSequentialPieces,
+} from '../src/index.js';
+import { createDemuxer } from '../../mkv/src/index.js';
+
+const $ = (id) => document.getElementById(id);
+const banner = $('banner');
+
+function showBanner(type, text) { banner.className = 'banner ' + type; banner.textContent = text; }
+function hideBanner() { banner.className = 'banner'; }
+function showErr(e) {
+  const box = $('errBox');
+  box.hidden = false;
+  box.textContent = '错误：' + (e?.code ? `[${e.code}] ` : '') + (e?.message ?? String(e));
+}
+
+// ── 真实 swarm：默认灰显（PRD 验收口径）────────────────
+// 环境探测：无外网/无安全上下文时保持禁用并注明原因
+if (window.isSecureContext && navigator.onLine) {
+  $('btnReal').disabled = false;
+  $('btnReal').title = '点击后按 README「可选依赖」加载 webtorrent 库并连接';
+}
+$('btnReal').addEventListener('click', async () => {
+  const torrentId = $('tid').value.trim();
+  if (!torrentId) return;
+  hideBanner(); $('errBox').hidden = true;
+  try {
+    const { source, meta, player } = await createSource(torrentId);
+    showBanner('ok', `已连接：${meta.name}（网络模式）`);
+    renderFiles(meta.files.map((f) => ({ path: f.path, length: f.length })),
+      meta.selected.path, source, null);
+    window.__p2pPlayer = player;
+  } catch (e) {
+    if (e?.detail?.reason === 'NO_CLIENT') {
+      showBanner('warn', '【降级提示】webtorrent 库未能加载（离线 / CDN 不可达）。P2P 功能不可用。\n'
+        + '启用方式见 README「可选依赖」：<script src="https://cdn.jsdelivr.net/npm/webtorrent@2/dist/webtorrent.min.js"> 后刷新。');
+    } else showErr(e);
+  }
+});
+
+// ── 离线路径：.torrent 文件 → 模拟下载 → demux ─────────
+let sim = null; // { assembler, plan, timer, idx }
+
+$('btnLocalTorrent').addEventListener('click', () => $('fileTorrent').click());
+$('fileTorrent').addEventListener('change', async () => {
+  const f = $('fileTorrent').files[0];
+  if (!f) return;
+  $('errBox').hidden = true; hideBanner();
+  try {
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    await startOffline(bytes);
+  } catch (e) { showErr(e); }
+});
+
+// 无 .torrent 文件时提供内置样例（确定性生成，离线可复现）
+(async function offerBuiltinSample() {
+  const bytes = buildSingleFileTorrent({ name: 'builtin-sample.webm', length: 4096, pieceLength: 256 });
+  $('btnLocalTorrent').title = '也可以直接运行下方「内置样例」';
+  const btn = document.createElement('button');
+  btn.textContent = '使用内置样例（确定性 fixture）';
+  btn.onclick = () => startOffline(bytes).catch(showErr);
+  $('btnLocalTorrent').after(btn);
+})();
+
+async function startOffline(torrentBytes) {
+  stopSim();
+  const { source, meta } = await createSource(torrentBytes);
+  showBanner('ok', `离线装配就绪：${meta.name}（${meta.numPieces} 片 × ${meta.pieceLength}B）`);
+  renderFiles(meta.files, meta.selected.path, source, meta.assembler);
+}
+
+function renderFiles(files, selectedPath, source, assembler) {
+  hideBanner();
+  $('filesPanel').hidden = false;
+  const rows = $('fileRows');
+  rows.innerHTML = '';
+  for (const f of files) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${f.path}</td><td>${f.length} B</td>` +
+      `<td>${f.path === selectedPath ? '<span class="banner ok" style="display:inline;padding:1px 8px">✓ 已选</span>' : ''}</td>`;
+    rows.appendChild(tr);
+  }
+  setupHeatmap(source, assembler, files.find((f) => f.path === selectedPath));
+}
+
+let heatCtxState = null;
+function setupHeatmap(source, assembler, selected) {
+  const numPieces = assembler ? assembler.numPieces : 16;
+  const heat = $('heat');
+  heat.innerHTML = '';
+  heatCtxState = { cells: [], done: new Set(), waiting: new Set() };
+  for (let i = 0; i < numPieces; i++) {
+    const cell = document.createElement('i');
+    heat.appendChild(cell);
+    heatCtxState.cells.push(cell);
+  }
+  if (assembler) {
+    assembler.on('piece', ({ index }) => {
+      heatCtxState.done.add(index);
+      paint(index, 'ok');
+      if (source.__pendingWait) paintWaiting();
+    });
+  }
+
+  // 模拟下载控制（离线模式）：按确定性顺序喂片，可暂停/恢复
+  $('btnSimPause').disabled = !assembler;
+  $('btnSimResume').disabled = true;
+  if (assembler) {
+    const plan = planSequentialPieces({ numPieces });
+    let idx = 0;
+    const pieceLen = assembler.pieceLength;
+    const mkPiece = (i) => new Uint8Array(
+      Math.min(pieceLen, assembler.size - i * pieceLen),
+    ).fill((i % 251) + 1);
+    const step = () => {
+      if (idx >= plan.length) { stopSim(true); return; }
+      assembler.writePiece(plan[idx], mkPiece(plan[idx]));
+      idx++;
+      $('sProgress').textContent = `${assembler.progress * 100 | 0}%`;
+      $('sPrefix').textContent = assembler.prefixBytes + ' B';
+    };
+    sim = { timer: setInterval(step, 60), step };
+    $('sState').textContent = 'simulating';
+    $('statsPanel').hidden = false;
+  }
+}
+function paint(i, cls) { heatCtxState?.cells[i]?.classList.add(cls); }
+function paintWaiting() {
+  for (const i of heatCtxState.waiting) paint(i, 'wait');
+}
+
+function stopSim(finished = false) {
+  if (sim?.timer) clearInterval(sim.timer);
+  sim = null;
+  $('btnSimPause').disabled = true;
+  $('btnSimResume').disabled = true;
+  if (finished) $('sState').textContent = 'complete';
+}
+
+$('btnSimPause').addEventListener('click', () => {
+  if (sim) { clearInterval(sim.timer); $('btnSimResume').disabled = false; $('sState').textContent = 'paused(等待续传)'; }
+});
+$('btnSimResume').addEventListener('click', () => {
+  if (sim) { sim.timer = setInterval(sim.step, 60); $('btnSimResume').disabled = true; $('sState').textContent = 'simulating'; }
+});
+
+// ── 本地媒体直连 demux（同一契约管线）───────────────────
+$('btnLocalMedia').addEventListener('click', () => $('fileMedia').click());
+$('fileMedia').addEventListener('change', async () => {
+  const f = $('fileMedia').files[0];
+  if (!f) return;
+  $('errBox').hidden = true; hideBanner();
+  try { await wireDemuxer(await createDemuxer(f)); } catch (e) { showErr(e); }
+});
+
+async function wireDemuxer(demuxer) {
+  const mi = demuxer.mediaInfo;
+  $('scanOut').hidden = true;
+  $('btnScan').onclick = async () => {
+    let count = 0;
+    const t0 = performance.now();
+    try {
+      for (const t of mi.tracks) {
+        for (;;) {
+          const s = await demuxer.readSample(t.id);
+          if (s === null) break;
+          count += 1;
+        }
+      }
+    } catch (e) { showErr(e); return; }
+    const out = $('scanOut');
+    out.hidden = false;
+    out.textContent = `样本总数：${count}，耗时 ${(performance.now() - t0).toFixed(0)} ms\n`
+      + '（数据经 piece 装配的 DataSource 按序读出 → EBML/Demux 解析成功即证明传输层契约互通）';
+  };
+}
+</script>
+</body>
+</html>
