@@ -342,6 +342,39 @@ describe('WavDemuxer.parseInit/samples/seek', () => {
  * 波形层（mock 2D context）
  * ============================================================ */
 
+// ── §2.4：直播推送控制（pause/resume）与 initTimeoutMs 超时保护 ──
+describe('WavDemuxer §2.4 推送控制与解析超时', () => {
+  test('pause/resume 维护 pausedFlag 并 emit 事件', async () => {
+    const dem = new WavDemuxer(memorySource(buildWav({ frames: 10 })));
+    await dem.open();
+    const fired = [];
+    dem.on('pause', () => fired.push('pause'));
+    dem.on('resume', () => fired.push('resume'));
+    assert.equal(dem.pausedFlag, false);
+    dem.pause();
+    assert.equal(dem.pausedFlag, true);
+    dem.resume();
+    assert.equal(dem.pausedFlag, false);
+    assert.deepEqual(fired, ['pause', 'resume']);
+  });
+
+  test('parseInit 超时 reject TIMEOUT（initTimeoutMs 生效）', async () => {
+    const never = {
+      size: 65536,
+      read: () => new Promise(() => {}), // 永不 resolve，模拟卡死源
+      close: () => {},
+    };
+    // 同 mkv：超时定时器 unref，测试须自行保活事件循环
+    const keepAlive = setInterval(() => {}, 5);
+    try {
+      const dem = new WavDemuxer(never, { initTimeoutMs: 30 });
+      await assert.rejects(() => dem.parseInit(), (err) => err?.code === 'TIMEOUT');
+    } finally {
+      clearInterval(keepAlive);
+    }
+  });
+});
+
 describe('computePeaks/drawWaveform', () => {
   function mockCtx() {
     const calls = [];

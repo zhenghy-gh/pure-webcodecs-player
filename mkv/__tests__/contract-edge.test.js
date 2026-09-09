@@ -193,6 +193,39 @@ test('destroy 关闭底层数据源（close 恰一次）', async () => {
   assert.equal(closed, 1);
 });
 
+// ── §2.4：本类覆写 open() 自行编排，须等价补齐基类自带的超时保护与旧名双发 ──
+
+test('open() 超时 reject TIMEOUT（initTimeoutMs 生效）', async () => {
+  const never = {
+    size: 65536,
+    read: () => new Promise(() => {}), // 永不 resolve，模拟卡死源
+    close: () => {},
+  };
+  // 实现里超时定时器 unref 了（与 core 基类同款，不阻塞进程退出），
+  // 而永不 settle 的 promise 不持有事件循环，故测试须自行保活，
+  // 否则 loop 提前排空会让 timeout 永不触发。
+  const keepAlive = setInterval(() => {}, 5);
+  try {
+    const d = new MkvDemuxer(never, { initTimeoutMs: 30 });
+    await assert.rejects(() => d.open(), (err) => err?.code === 'TIMEOUT');
+    // 超时后回退到 idle，允许调用方换源重试
+    assert.equal(d.state, 'idle');
+  } finally {
+    clearInterval(keepAlive);
+  }
+});
+
+test('open() 双发 media-info 与过渡期旧名 mediaInfo', async () => {
+  const d = new MkvDemuxer(new BufferSource(makeMinimalWebm().bytes));
+  const seen = [];
+  d.on('media-info', (info) => seen.push(['media-info', info]));
+  d.on('mediaInfo', (info) => seen.push(['mediaInfo', info]));
+  await d.open();
+  assert.deepEqual(seen.map(([name]) => name).sort(), ['media-info', 'mediaInfo']);
+  // 两个事件名投递的是同一个 MediaInfo 对象
+  assert.equal(seen[0][1], seen[1][1]);
+});
+
 // ── EBML 层边界 ─────────────────────────────────────────
 
 test('readSize：强制 8 字节宽度编码往返（非全 1 非未知）', () => {

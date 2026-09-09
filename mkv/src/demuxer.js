@@ -243,17 +243,38 @@ export class MkvDemuxer extends Demuxer {
       throw new PlayerError('STATE_ERROR', 'open() 进行中，禁止重入');
     }
     this.stateValue = 'opening';
+    // §2.4：initTimeoutMs 超时 reject TIMEOUT。基类 open() 自带该保护，但本类覆写了
+    // open() 自行编排状态机，必须等价补齐——否则慢源/卡死源会让 open() 永久挂起。
+    // 注意 mkv 构造函数用原始 options 覆盖了基类默认值，故此处需回落缺省。
+    const initTimeoutMs = this.options?.initTimeoutMs ?? 10000;
+    let timer = null;
+    const guard = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new PlayerError('TIMEOUT', `open() timed out after ${initTimeoutMs}ms`));
+      }, initTimeoutMs);
+      // 不阻塞进程退出
+      if (typeof timer?.unref === 'function') timer.unref();
+    });
     try {
-      await this.#scanHeaders();
-      this._mediaInfo = this.#buildMediaInfo();
+      await Promise.race([
+        (async () => {
+          await this.#scanHeaders();
+          this._mediaInfo = this.#buildMediaInfo();
+        })(),
+        guard,
+      ]);
       this.stateValue = 'ready';
+      // 契约事件名 + 过渡期旧名双发（与 core Demuxer.open() 保持一致）
       this.emit('media-info', this._mediaInfo);
+      this.emit('mediaInfo', this._mediaInfo);
       return this._mediaInfo;
     } catch (err) {
       this.stateValue = 'idle';
       const pe = err instanceof PlayerError ? err : new PlayerError('PARSE_ERROR', err?.message ?? String(err));
       this.emit('error', pe);
       throw pe;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 

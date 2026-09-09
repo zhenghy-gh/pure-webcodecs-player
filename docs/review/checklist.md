@@ -86,6 +86,10 @@
 
 ### 2.4 契约对齐（demuxer 外表面，方法名以 CONTRACTS 定稿为准）
 
+> **第五十波（2026-09-09）结构层全模块核对**（见台账 §50）：新增 `scripts/audit/contract-2-4-audit.mjs`，对 16 模块核对类名/继承/静态 probe（同步·不抛·垃圾输入返 null）/定稿方法面/迁移别名/default 导出。**mp4/mov/ts/flv/flac 全项通过**；**cmaf/hls/subtitle** 经核实并非 demuxer 类模块（分别导出函数式 probe、HlsPlayer 整播放器、文本解析+渲染器），§2.4 不适用，属此前 scope 误划；**ape(probe-only)、webtorrent/webrtc/rtsp(source)** 符合定位；**wav** 未继承基类属文件头留档的「共享看板约定」批准适配壳，豁免。
+> 本波修复两处**真实缺口**：①**mkv** 覆写 `open()` 绕过基类编排 → `initTimeoutMs` 超时保护缺失（卡死源会永久挂起）且只发 'media-info'、未双发过渡期旧名 'mediaInfo'（与 core Demuxer 及其他模块事件面不一致）；②**wav** 缺 `pause()/resume()`（§2.4 第 6 项，start() 才标【可选】）且 `parseInit()` 无 `initTimeoutMs` 超时。新增 4 例防回归（mkv 超时+旧名双发、wav pause/resume+超时），全仓 1015/1015、fail=0、cancelled=0。
+> 未完成：第 4/5/7/8 项（未 open 抛 STATE_ERROR、seek 无索引 SEEK_UNSUPPORTED、事件名恰为五者、时间戳整数 µs）的**逐模块运行时**核对——部分由既有测试覆盖，未做全矩阵现盘验证，留待下一波。
+
 - [ ] 类名 `<Format>Demuxer` 且继承 core `Demuxer` 基类（基类提供事件/状态机/迭代器骨架；或经 captain 批准的适配壳）；
 - [ ] `static probe(bytes)`：同步、无副作用、不抛异常、未命中返回 null；
 - [ ] **`open()`** 打开并解析初始化段，resolve 后 this.mediaInfo/.tracks/.metadata 可用并 emit('media-info')；initTimeoutMs 超时 reject TIMEOUT（迁移期别名 parseInit()/init()+attach() 按 §2.4 别名表接受）；

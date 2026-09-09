@@ -7,7 +7,7 @@
  * 对外接口（probe/parseInit/samples/seek/stop）保持不变。
  */
 import { parseWavHeader } from './riff-parser.js';
-import { stateError, sourceError } from './errors.js';
+import { stateError, sourceError, timeoutError } from './errors.js';
 
 /** 每次迭代产出的采样块大小（帧）：粒度与内存开销的平衡点。 */
 const CHUNK_FRAMES = 4096;
@@ -31,7 +31,7 @@ const CHUNK_FRAMES = 4096;
  * @property {{title?:string, [k:string]:string}} [metadata]
  */
 
-/** 迷你事件发射器（'error'|'media-info'|'end'） */
+/** 迷你事件发射器（'error'|'media-info'|'end'|'pause'|'resume'） */
 class MiniEmitter {
   #m = new Map();
   on(e, f) { let l = this.#m.get(e); if (!l) this.#m.set(e, (l = [])); l.push(f); return () => this.off(e, f); }
@@ -60,11 +60,15 @@ export class WavDemuxer {
   /**
    * @param {{size:number|null, read:function(number,number):Promise<Uint8Array>,
                 close?:function():Promise<void>}} source ByteSource（File/Blob/Memory 可适配）
-   * @param {{chunkFrames?:number}} [options]
+   * @param {{chunkFrames?:number, initTimeoutMs?:number}} [options]
    */
   constructor(source, options = undefined) {
     this.#source = source;
     this.#chunkFrames = options?.chunkFrames ?? CHUNK_FRAMES;
+    /** §2.4：open()/parseInit() 的解析超时上界，超时 reject TIMEOUT */
+    this.#initTimeoutMs = options?.initTimeoutMs ?? 10000;
+    /** §2.4 暂停标记（直播推送语义；wav 为点播，仅维护标记与事件一致性） */
+    this.pausedFlag = false;
     /** 生命周期状态机：idle → parsing → ready ⇄ seeking → ended | error */
     this.state = 'idle';
     /** @type {MediaInfo|null} parseInit 成功后的媒体信息 */
@@ -74,12 +78,13 @@ export class WavDemuxer {
 
   #source;
   #chunkFrames;
+  #initTimeoutMs;
   /** @type {ReturnType<typeof parseWavHeader>|null} */
   #header = null;
   /** 下一次 samples() 迭代的起始帧（seek 后非 0） */
   #startFrame = 0;
 
-  /** 订阅事件：'error'(PlayerError) | 'media-info'(MediaInfo) | 'end'({reason}) */
+  /** 订阅事件：'error'(PlayerError) | 'media-info'(MediaInfo) | 'end'({reason}) | 'pause' | 'resume' */
   on(event, fn) { return this.emitter.on(event, fn); }
 
   /**
@@ -90,10 +95,24 @@ export class WavDemuxer {
     if (this.state === 'destroyed') throw stateError('demuxer 已销毁，不可复用');
     if (this.state !== 'idle') throw stateError(`parseInit 需处于 idle 态，当前 ${this.state}`);
     this.state = 'parsing';
+    // §2.4：initTimeoutMs 超时 reject TIMEOUT（防护慢源/卡死源让解析永久挂起）
+    let timer = null;
+    const guard = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(timeoutError(`parseInit() timed out after ${this.#initTimeoutMs}ms`));
+      }, this.#initTimeoutMs);
+      // 不阻塞进程退出
+      if (typeof timer?.unref === 'function') timer.unref();
+    });
     try {
       // 头部通常 < 100KB；读前 64KB 已足够定位 fmt 与 data 偏移
-      const headLen = Math.min(65536, this.#source.size ?? 65536);
-      const head = await this.#source.read(0, headLen);
+      const head = await Promise.race([
+        (async () => {
+          const headLen = Math.min(65536, this.#source.size ?? 65536);
+          return this.#source.read(0, headLen);
+        })(),
+        guard,
+      ]);
       this.#header = parseWavHeader(head);
 
       const f = this.#header.format;
@@ -120,6 +139,8 @@ export class WavDemuxer {
       this.state = 'error';
       this.emitter.emit('error', e);
       throw e;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -228,6 +249,20 @@ export class WavDemuxer {
   #reader = null;
   #readerActive = false;
   #endEmitted = false;
+
+  /* ---- §2.4 直播推送控制：wav 为点播容器，仅维护标记与事件语义一致 ---- */
+
+  /** 暂停吐包（缓冲继续累积） */
+  pause() {
+    this.pausedFlag = true;
+    this.emitter.emit('pause', undefined);
+  }
+
+  /** 恢复推送 */
+  resume() {
+    this.pausedFlag = false;
+    this.emitter.emit('resume', undefined);
+  }
 
   /** 定稿名：销毁（幂等）；之后一切调用抛 STATE_ERROR */
   async destroy() {

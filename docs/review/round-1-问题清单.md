@@ -1429,3 +1429,74 @@ wav#1 worklet 溢出 → mkv#1 demo 挂页 → ts#1/#2 适配壳+µs → core#1 
 - 全仓回归 **fail=0**（hls 模块 9/9；`--test-force-exit` 下非致命 cancelled 来自其他耗时套件，非本波引入）。
 
 **基建沉淀**：scripts/e2e/{transmux-diag,hls-ts-e2e,dump-init,dump-media}.mjs（transmux 防回归）+ samples/e2e/ts-hls/{playlist.m3u8,seg-000.ts}（TS 形态验收素材）+ docs/review/i3/hls-ts-transmux.png（端到端截图）。
+
+---
+
+## §50 第五十波（2026-09-09）：§2.4 契约对齐全 16 模块结构层核对 + 版本管理首次纳入 git
+
+### 背景
+
+`docs/review/checklist.md` §2.4「契约对齐（demuxer 外表面）」八项自建清单起从未被任何波次正式核对（PRD 第 3 项即为该 reviewer 任务：CONTRACTS §2.5 对齐清单逐模块核对，含 §2.4 别名表迁移期核对）。前 49 波覆盖的是 I1~I6 与 M3，**§2.4 复选框全部保持未勾选状态**。本波补上。
+
+### 审计基建
+
+新增 `scripts/audit/contract-2-4-audit.mjs`：对 16 模块逐个 `import` index，筛出真 class（排除 `registerDemuxer` 等同名函数），核对：
+
+- 类名 `<Format>Demuxer` + 是否继承 core `Demuxer`（`prototype instanceof`）
+- `static probe` 是否**自实现**（仅继承基类恒 null 不算）、同步（不返 Promise）、对 0/8/64/4096B 固定伪随机垃圾**不抛**且**返 null**
+- 是否实现 `_doOpen`（走基类 open 编排的前提）
+- 定稿方法面 open/readSample/samples/seek/pause/resume/destroy + 可选 start
+- 迁移别名 parseInit/init/attach/stop
+- 是否存在 default 导出（G3）
+
+初版启发式三处误报已修：类名正则需允许数字（`Mp4Demuxer`）、只认真 class、base/source scope 不应套 demuxer 口径。
+
+### 现盘结论
+
+| 模块 | 结论 |
+|---|---|
+| mp4 / mov / ts / flv / flac | ✅ 全项通过 |
+| mkv | ⚠️ 继承基类但**覆写 `open()` 而非实现 `_doOpen`** → 两处真实缺口（见下） |
+| wav | ⚠️ 未继承基类（文件头留档「共享看板约定」批准适配壳，豁免）+ 两处真实缺口 |
+| cmaf / hls / subtitle | 非 demuxer 类模块：cmaf 只导出 `probe` 等函数、hls 导出 `HlsPlayer` 整播放器、subtitle 导出文本解析+渲染器 → **§2.4 不适用**（此前 scope 误划，非代码缺陷） |
+| ape | probe-only（Phase 3 仅 probe+MediaInfo），符合定位 |
+| webtorrent / webrtc / rtsp | source-only，只产 Source，符合定位 |
+| rtmp | 自含 `FlvDemuxer`（传输联调用，接口对齐 flv 适配壳），scope=source，基本 N/A |
+| core | 基类自身，不适用 |
+
+### 两处真实根因与修复
+
+**D1 mkv —— 覆写 `open()` 绕过基类编排（`mkv/src/demuxer.js`）**
+
+1. **无 `initTimeoutMs` 超时保护**：mkv 构造函数 `this.options = options`（:121）用原始 options 覆盖了基类默认值，且自行编排的 `open()` 没有 `Promise.race` 超时 → 慢源/卡死源下 `open()` 会**永久挂起**，§2.4 第 3 项「initTimeoutMs 超时 reject TIMEOUT」不生效。全仓仅 mkv 如此（其余 demuxer 走基类 `open()` 自带该保护）。
+2. **只发 'media-info'，未双发过渡期旧名 'mediaInfo'**：基类 `Demuxer.open()` 双发（core/src/demuxer.js:151-152），`mkv-base-class-alignment.md` D8 裁决亦为「增发旧名（§2.4 过渡期双发为设计内）」，但该裁决未落地 → 跨模块事件面不一致。
+
+修复：`open()` 内补 `Promise.race` 超时守卫（`new PlayerError('TIMEOUT', ...)`，回落缺省 10000ms，`finally` clearTimeout），超时回退 idle 允许换源重试；成功后双发 `media-info` + `mediaInfo`。
+
+**D2 wav —— 缺推送控制与解析超时（`wav/src/demuxer.js`）**
+
+1. **缺 `pause()/resume()`**：§2.4 第 6 项明确要求（仅 `start()` 标【可选】），`WavDemuxer` 此前只有 player.js 侧的暂停，demuxer 外表面无此二方法。
+2. **`parseInit()` 无 `initTimeoutMs` 超时**：头部读取直接 `await`，卡死源同样永久挂起。
+
+修复：构造函数接收 `initTimeoutMs`（缺省 10000）与 `pausedFlag`；`parseInit()` 头部读取包 `Promise.race` 超时守卫（`timeoutError`，`finally` clearTimeout）；新增 `pause()/resume()`（置标记 + emit 'pause'/'resume'），同步更新 MiniEmitter 与 `on()` 的事件面 JSDoc。
+
+### 验证
+
+- 新增 4 例防回归：mkv「open() 超时 reject TIMEOUT」「open() 双发 media-info 与旧名 mediaInfo」、wav「pause/resume 维护 pausedFlag 并 emit 事件」「parseInit 超时 reject TIMEOUT」。
+- mkv 24/24、wav 27/27、全仓 **1015/1015、fail=0、cancelled=0**（`--test-concurrency=4`）。
+
+### 踩坑（测试侧）
+
+超时定时器按 core 同款做了 `unref()`（不阻塞进程退出），而永不 settle 的 read promise **不持有事件循环** → 首版用例「永不 resolve 的源 + 30ms 超时」下 loop 提前排空，timeout 根本没机会触发，报 `Promise resolution is still pending but the event loop has already resolved`，并**级联 cancelled 后续 15 个用例**。实现保持不变（与 core 基类同款，生产环境有其它任务保活），**测试侧**自行 `setInterval` 保活后全绿。
+
+### 未完成（下一波）
+
+§2.4 第 4/5/7/8 项的**逐模块运行时**核对：未 open 调 `readSample` 抛 STATE_ERROR、`seek` 无索引/直播 reject SEEK_UNSUPPORTED、事件名恰为 error/media-info/sample/progress/end、时间戳对外全为整数 µs（不外泄原生 tick）。部分由既有测试覆盖，尚未做全矩阵现盘验证。
+
+### 附：版本管理首次纳入 git
+
+本波中途核实发现**该项目此前从未初始化 git**（只有 `.gitignore`，无 `.git`，向上至 `/` 无仓库），前 49 波改动从未提交/推送。经确认后执行：
+
+- `.gitignore` 补 `samples/e2e/`（脚本可再生媒体，32MB，目录内无源码）与 `.smoke/`（8/26 一次性排查草稿 14 个，磁盘保留仅排除入库）
+- `git init` → 首提交 `4dc220d`（main）· 435 files / 71624 insertions；**未推送**（按规矩 push 须显式确认）
+- 注意：`git add -A` 后再补忽略规则不会自动清出索引，须 `git rm -r --cached <dir>`（只退暂存、不动磁盘）
