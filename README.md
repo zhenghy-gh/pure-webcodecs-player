@@ -36,11 +36,17 @@ npm run gateway  # 本地 WS 测试网关（rtmp/rtsp 桥接联调用）
 ### 1. 浏览器直接体验（推荐先跑这个）
 
 ```bash
-npm run demo   # 启动零依赖静态服务器 http://localhost:8080
+git clone https://github.com/zhenghy-gh/pure-webcodecs-player.git
+cd pure-webcodecs-player
+npm run demo        # 启动零依赖静态服务器（支持中文路径 / HTTP Range / 目录列表）
 ```
 
-- 打开 <http://localhost:8080/site/demo/> 进入**演示站**，16 个模块的 demo 入口卡片
-- 例：<http://localhost:8080/mp4/demo/> 把本地 `.mp4` 拖进页面即可播放——**数据不离开浏览器**，全部本地解复用 + 重封装 + MSE 解码
+> `npm run demo` 启动的是**你本机**的服务器，下面出现的 `localhost` 地址只在你自己的浏览器里有效——它不是外网演示链接，别人无法直接访问你的机器。
+
+然后在**本机浏览器**打开：
+
+- `http://localhost:8080/site/demo/` —— **演示站**，16 个模块的 demo 入口卡片
+- 例：`http://localhost:8080/mp4/demo/` 把本地 `.mp4` 拖进页面即可播放——**数据不离开浏览器**，全部本地解复用 + 重封装 + MSE 解码
 - 音频（wav / flac / ape）、字幕、HLS、WebTorrent 等同理，入口见演示站
 
 ### 2. 代码集成：`createPlayer` 一条龙（推荐）
@@ -103,6 +109,8 @@ node scripts/e2e/run.mjs --media=/samples/e2e/sintel-trailer.mp4 --seekUs=200000
 
 真实系统 Chrome + 真实 WebCodecs 跑完 `load → 首帧 → 播放推进 → seek → stats → destroy` 全链路。
 
+> 素材说明：`samples/e2e/`（约 32MB 媒体文件）**不入库**，克隆后默认路径为空。可把自己的 `.ts` / `.mp4` / `.flac` / `.mkv` 文件放进 `samples/e2e/` 后用 `--media=/samples/e2e/文件名` 指定（TS 无索引会按契约判不可 seek，属预期行为）。
+
 ## 统一管线
 
 ```
@@ -164,9 +172,9 @@ node scripts/e2e/run.mjs --media=/samples/e2e/sintel-trailer.mp4 --seekUs=200000
 - **契约审计**：[`scripts/audit/contract-2-4-audit.mjs`](scripts/audit/contract-2-4-audit.mjs)（结构层 §2.4，应为 0 问题）+ [`runtime-2-4-audit.mjs`](scripts/audit/runtime-2-4-audit.mjs)（7 个 demuxer 运行时矩阵），对齐 [docs/CONTRACTS.md](docs/CONTRACTS.md) §2.4 八项契约。
 - **迭代扫描器**：[`scripts/audit/iteration-scan.mjs`](scripts/audit/iteration-scan.mjs)（聚合 git / lint / check / 双契约审计 / 覆盖率 / backlog，末行自动建议下一波），驱动「每波一项、数据驱动、跨会话可续」的长期优化。
 
-### 测试与覆盖率现状（2026-09-09，第六十一波基线）
+### 测试与覆盖率现状（2026-09-09，第六十三波基线）
 
-全仓 `npm test`（Node ≥ 22，`--test-concurrency=4`）**1142/1142 绿，fail=0、cancelled=0**。
+全仓 `npm test`（Node ≥ 22，`--test-concurrency=4`）**1144/1144 绿，fail=0、cancelled=0**。
 
 | 层 | 文件数 | 行覆盖均值 | 门槛 | 状态 |
 |----|-------|-----------|------|------|
