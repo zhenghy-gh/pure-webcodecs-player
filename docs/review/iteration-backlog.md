@@ -83,7 +83,8 @@
 | 60 | core exp-golomb 分支补测 | `core/src/exp-golomb.js` 82.2%→达标（+7 例）：high profile scaling list 消费、chroma_format_idc=3(4:4:4)/0(mono) 的 CropUnitX/Y 分支、frame_mbs_only=0 高度翻倍、pic_order_cnt_type=1 循环、非 SPS PARSE_ERROR、stripEmulationPrevention、BitReader 复用 | 本波 |
 | 61 | core data-source 补测（逻辑层清零） | `core/src/data-source.js` 84.8%→达标（+8 例）：`MemoryDataSource`/`BlobDataSource`/`asDataSource` 三个导出此前**零直接测试**；含 ArrayBuffer 入参、File 名回退、尾部截断 vs 越界、无 Blob 环境降级、鸭子类型 TypeError | `9c577f9` |
 | 62 | README 工程化章节刷新 | 新增「质量门禁与工程化」章节（单仓库 monorepo / CI 五段 / 分层覆盖率门禁 / §2.4 双契约审计 / 迭代扫描器）+ 测试与覆盖率现状表（1142/1142 绿；core 96.3% / parser 95.3% / env 61.8% 豁免）；模块状态表脚注日期→2026-09-09 | `98e3af4` |
-| 63 | withTimeout 死代码转正（owner「继续」授权） | 裁决=**导出**而非删除：`index.js` 导出 `withTimeout`（增量合规 §12.3）；`loader.js` 删自写 `raceTimeout` 改用 `withTimeout`（超时错误原被循环内 `catch{}` 吞掉，替换为零可观察差异，实为消费者转正）；新增 2 例超时分支回归（永不 settle 的 CDN 模块按 timeoutMs 放弃返回 null、超时后回退下一源）；全仓 1144/1144 | 本波 |
+| 63 | withTimeout 死代码转正（owner「继续」授权） | 裁决=**导出**而非删除：`index.js` 导出 `withTimeout`（增量合规 §12.3）；`loader.js` 删自写 `raceTimeout` 改用 `withTimeout`（超时错误原被循环内 `catch{}` 吞掉，替换为零可观察差异，实为消费者转正）；新增 2 例超时分支回归（永不 settle 的 CDN 模块按 timeoutMs 放弃返回 null、超时后回退下一源）；全仓 1144/1144 | `8e89068` |
+| 64 | README 效果演示 + 使用方式（owner 指出缺口） | 新增「效果演示」：playwright 驱动真实 Chrome 播放实拍——WebCodecs 主路线动图（bbb480_30s.ts + 15 步断言日志）+ MP4/MSE 实拍 + 演示站全景（`docs/demo/` 三件约 660KB）；新增「使用方式」四级（demo 体验 / createPlayer 集成 / 底层 Demuxer API / 真机 e2e）；修 mp4/demo 环境日志陈旧字段 `.available`→`.supported`（截图暴露） | `4d90c61` |
 
 ---
 
@@ -105,6 +106,7 @@
 - [x] **P1** 死代码处置：`withTimeout` **导出**（owner「继续」授权，第六十三波）——`index.js` 增导出 + `loader.js` 删自写 `raceTimeout` 改用它（消费者转正，行为零差异）+ 2 例超时回归
 
 ### 待办（按优先级，下一波取 P1 第一条）
+- [ ] **P2** 演示站 hub 徽章陈旧（第六十四波截图发现）：`site/nav.js` MODULES 状态显示全部「建设中」，与实际（16 模块已完成）不符，误导访客；同步各模块卡片的真实状态与入口
 - [ ] **P2** 真机 e2e 回归脚本化：把 `docs/review/i3/` 的手工验证固化成可重跑脚本
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
