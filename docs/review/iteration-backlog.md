@@ -30,7 +30,7 @@
 | 运行时契约审计 | `node scripts/audit/runtime-2-4-audit.mjs` | 7 demuxer 运行时矩阵 |
 | 风格检查 | `npm run lint` | 应为 0 警告 |
 | 模块门槛 | `npm run check` | 16/16 模块达标 |
-| 全仓测试 | `npm test` | 1030/1030，fail=0、cancelled=0 |
+| 全仓测试 | `npm test` | 1079/1079，fail=0、cancelled=0（第五十六波基线） |
 
 ---
 
@@ -62,7 +62,8 @@
 | 52 | 治理文档化 | `wav-base-class-alignment.md` 新建；flac 现状并入 mkv §2.4 | `8844813` |
 | 53 | wav 案 C 子类化 | `WavDemuxer extends Demuxer`，删 MiniEmitter、解析体入 `_doOpen` | `b73a6a4` |
 | 54 | 审计误报清零 + CI | 结构层问题 7→0（scope 修正 + DECIDED 白名单）；`npm test` 固化并发参数；`.github/workflows/ci.yml` | `7c9fc1b` |
-| 55 | 分层覆盖率门禁 + 补测 | `coverage-gate.mjs`（env 豁免 / core 85% / parser 80%）接入 CI；`rtsp/src/nal.js` 专项补测 42.9%→达标；迭代台账建立 | 本波 |
+| 55 | 分层覆盖率门禁 + 补测 | `coverage-gate.mjs`（env 豁免 / core 85% / parser 80%）接入 CI；`rtsp/src/nal.js` 专项补测 42.9%→达标；迭代台账建立 | `fa8ebe3` |
+| 56 | 迭代扫描器 + 两项补测 | `iteration-scan.mjs` 聚合现盘（git/lint/check/双契约审计/覆盖率/backlog → 自动建议下一波）；`mp4/src/file-source.js` DOM stub 补测 56.7%→达标；`subtitle/src/errors.js` 构造器表驱动补测 74.2%→达标 | 本波 |
 
 ---
 
@@ -72,12 +73,16 @@
 
 ### 已完成
 - [x] **P1** 接入 CI：`coverage-gate.mjs` 已加进 `.github/workflows/ci.yml`（第五十五波）
+- [x] **P1** `iteration-scan.mjs`：聚合扫描器已落地（第五十六波）
+- [x] **P1** 补测 `mp4/src/file-source.js` 56.7% → 达标出列（第五十六波，+12 例）
+- [x] **P2** 补测 `subtitle/src/errors.js` 74.2% → 达标出列（第五十六波，+26 例）
 
 ### 待办（按优先级，下一波取 P1 第一条）
-- [ ] **P1** `iteration-scan.mjs`：聚合扫描器（一键输出下一轮候选，减少每波现盘成本）
-- [ ] **P1** 补测 `mp4/src/file-source.js` **56.7%**（当前 parser 层最差，未覆盖 29 行）
-- [ ] **P2** 补测 `core/src/data-source.js` 80.7%、`core/src/exp-golomb.js` 82.2%（core 门槛 85%，各差 4.3/2.8 个百分点）
-- [ ] **P2** 补测 `subtitle/src/errors.js` 74.2%、`webtorrent/src/utils.js` 75%、`rtmp/src/flv-demuxer.js` 75.1%、`webtorrent/src/loader.js` 79%
+- [ ] **P1** 补测 `webtorrent/src/utils.js` **75%**（parser 层最差，差 5 个百分点）
+- [ ] **P2** 补测 `rtmp/src/flv-demuxer.js` 75.1%、`webtorrent/src/loader.js` 79%
+- [ ] **P2** 补测 `core/src/exp-golomb.js` 82.2%、`core/src/data-source.js` 84.8%（core 门槛 85%，各差 2.8/0.2）
 - [ ] **P2** 真机 e2e 回归脚本化：把 `docs/review/i3/` 的手工验证固化成可重跑脚本
-- [ ] **P2** README 刷新：当前 README 未反映第 50-55 波（GitHub 首推、CI、契约对齐、分层门禁）成果
+- [ ] **P2** README 刷新：当前 README 未反映第 50-56 波（GitHub 首推、CI、契约对齐、分层门禁、迭代机制）成果
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
+
+> 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
