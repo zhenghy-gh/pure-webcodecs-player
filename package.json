@@ -1,8 +1,8 @@
 {
-  "name": "pure-frontend-player",
+  "name": "pure-webcodecs-player",
   "version": "0.1.0",
-  "private": true,
-  "description": "纯前端实现播放器：HLS/CMAF/WebRTC/MP4/MKV/TS 等模块化播放内核（零构建，纯 ESM）",
+  "private": false,
+  "description": "纯前端媒体播放器：Container 解析 → Demux → WebCodecs 解码 → Canvas/AudioWorklet 渲染。零构建、纯 ESM、零第三方运行时依赖（下一代 ffplay.js 方向）",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -21,5 +21,64 @@
     "server": "node scripts/static-server.mjs",
     "gateway": "node samples/gateway/bin/gateway.js",
     "fixtures": "node samples/generate-all.mjs"
-  }
+  },
+  "license": "MIT",
+  "author": "zhenghy",
+  "exports": {
+    ".": "./core/src/index.js",
+    "./ape": "./ape/src/index.js",
+    "./cmaf": "./cmaf/src/index.js",
+    "./flac": "./flac/src/index.js",
+    "./flv": "./flv/src/index.js",
+    "./hls": "./hls/src/index.js",
+    "./mkv": "./mkv/src/index.js",
+    "./mov": "./mov/src/index.js",
+    "./mp4": "./mp4/src/index.js",
+    "./rtmp": "./rtmp/src/index.js",
+    "./rtsp": "./rtsp/src/index.js",
+    "./subtitle": "./subtitle/src/index.js",
+    "./ts": "./ts/src/index.js",
+    "./wav": "./wav/src/index.js",
+    "./webrtc": "./webrtc/src/index.js",
+    "./webtorrent": "./webtorrent/src/index.js"
+  },
+  "files": [
+    "ape/src",
+    "cmaf/src",
+    "core/src",
+    "flac/src",
+    "flv/src",
+    "hls/src",
+    "mkv/src",
+    "mov/src",
+    "mp4/src",
+    "rtmp/src",
+    "rtsp/src",
+    "subtitle/src",
+    "ts/src",
+    "wav/src",
+    "webrtc/src",
+    "webtorrent/src",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "webcodecs",
+    "player",
+    "mp4",
+    "hls",
+    "flv",
+    "ts",
+    "mkv",
+    "demuxer",
+    "mse",
+    "video",
+    "audio",
+    "esm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhenghy-gh/pure-webcodecs-player.git"
+  },
+  "sideEffects": false
 }

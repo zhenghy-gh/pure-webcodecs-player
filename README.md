@@ -57,10 +57,14 @@ npm run demo        # 启动零依赖静态服务器（支持中文路径 / HTTP
 
 ### 2. 代码集成：`createPlayer` 一条龙（推荐）
 
+```bash
+npm i pure-webcodecs-player        # 或 CDN 直引，见上文「效果演示」jsdelivr 链接
+```
+
 ```js
-import { createPlayer, registerDemuxer } from './core/src/index.js';
-import * as mp4Mod from './mp4/src/index.js';
-import * as tsMod from './ts/src/index.js';
+import { createPlayer, registerDemuxer } from 'pure-webcodecs-player';
+import * as mp4Mod from 'pure-webcodecs-player/mp4';
+import * as tsMod from 'pure-webcodecs-player/ts';
 
 // 宿主注册容器模块（生产协议），URL 自动探测容器并选路
 registerDemuxer(mp4Mod);
