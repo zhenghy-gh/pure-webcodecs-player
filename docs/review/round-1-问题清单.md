@@ -1500,3 +1500,30 @@ wav#1 worklet 溢出 → mkv#1 demo 挂页 → ts#1/#2 适配壳+µs → core#1 
 - `.gitignore` 补 `samples/e2e/`（脚本可再生媒体，32MB，目录内无源码）与 `.smoke/`（8/26 一次性排查草稿 14 个，磁盘保留仅排除入库）
 - `git init` → 首提交 `4dc220d`（main）· 435 files / 71624 insertions；**未推送**（按规矩 push 须显式确认）
 - 注意：`git add -A` 后再补忽略规则不会自动清出索引，须 `git rm -r --cached <dir>`（只退暂存、不动磁盘）
+
+---
+
+## §51 第五十波 #22：§2.4 第 4/5/7/8 项逐模块运行时核对
+
+**背景**：§2.4 八项契约（demuxer 外表面）中，前三波已完成结构层（类名/继承/static probe/open/_doOpen/方法面）+ 两处真实缺口修复（mkv/wav）；余第 4/5/7/8 项「逐模块运行时」此前仅由散落单测部分覆盖，未做全矩阵现盘。本波补齐。
+
+**基建**：`scripts/audit/runtime-2-4-audit.mjs` —— 对 7 个 demuxer 模块（mp4/mov/ts/flv/mkv/flac/wav）调用各自 `fixtures/gen.mjs` 现盘生成 canonical fixture（`__tests__/fixtures/` 已被 .gitignore 忽略），经 `MemoryDataSource` 装入后跑真实 `open()→readSample()` 循环，现盘核对：
+- C4 未 open 调 readSample 是否抛 STATE_ERROR（同步 throw 或 Promise reject 均判）
+- C5 seek 行为：可寻址容器 resolve {actualTimestampUs}；直播/无索引容器拒 SEEK_UNSUPPORTED
+- C7 事件名集合 ⊆ {error, media-info, mediaInfo, sample, progress, end}
+- C8 所有 Sample.timestamp / duration 是否 `Number.isInteger`（µs 边界，不外泄 ticks）
+
+**结果（7/7 全 PASS）**：
+| 模块 | C4 | C5 | C7 触发事件 | C8 |
+|---|---|---|---|---|
+| mp4 | ✓ STATE_ERROR | ✓ seek(0)=0µs | media-info,mediaInfo,sample,end | ✓ 整数 |
+| mov | ✓ STATE_ERROR | ✓ seek(0)=0µs | media-info,mediaInfo,sample,end | ✓ 整数 |
+| ts | ✓ STATE_ERROR | ✓ SEEK_UNSUPPORTED（无索引） | progress,media-info,mediaInfo,sample,end | ✓ 整数 |
+| flv | ✓ STATE_ERROR | ✓ seek(0)=0µs | progress,media-info,mediaInfo,sample,end | ✓ 整数 |
+| mkv | ✓ STATE_ERROR | ✓ seek(0)=0µs | media-info,mediaInfo | ✓ 整数 |
+| flac | ✓ STATE_ERROR | ✓ seek(0)=0µs | media-info,mediaInfo,end | ✓ 整数 |
+| wav | ✓ STATE_ERROR | ✓ seek(0)=0µs | media-info,end | ✓ 整数 |
+
+**结论**：mkv/flac/wav 在 pull 模式下不 emit `sample`（契约规定 sample 仅 `start()` 直播推送），符合预期；无模块 emit 溢出事件名。第四十九波 transmux 修复 + 本波运行时核对后，**§2.4 八项契约全模块闭环**。
+
+**未引入代码改动**：本波仅为审计+台账，无源码变更（第四十九波 mkv/wav 修复已在 `60419a7` 入库）。全仓回归 fail=0（基线 1015/1015）。
