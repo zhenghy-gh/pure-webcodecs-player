@@ -95,14 +95,14 @@
 > - **C8 时间戳整数 µs**：所有 Sample.timestamp/duration 全部 `Number.isInteger`，不外泄 ticks —— 7/7 ✓
 > §2.4 八项（含此前前三波结构层 + 本波运行时）**全模块闭环**，checklist 收口。
 
-- [ ] 类名 `<Format>Demuxer` 且继承 core `Demuxer` 基类（基类提供事件/状态机/迭代器骨架；或经 captain 批准的适配壳）；
-- [ ] `static probe(bytes)`：同步、无副作用、不抛异常、未命中返回 null；
-- [ ] **`open()`** 打开并解析初始化段，resolve 后 this.mediaInfo/.tracks/.metadata 可用并 emit('media-info')；initTimeoutMs 超时 reject TIMEOUT（迁移期别名 parseInit()/init()+attach() 按 §2.4 别名表接受）；
-- [ ] **`readSample(trackId)`** pull 主通道（EOS resolve null），`samples(trackId)` 为等价糖层；未 open 先调 throw STATE_ERROR；
-- [ ] `seek(timestampUs)` 关键帧对齐、resolve `{actualTimestampUs}`；直播/无索引 reject SEEK_UNSUPPORTED；
-- [ ] 直播推送 `start()`【可选】+'sample' 事件；pause/resume；**`destroy()` 幂等销毁**（别名 stop()，之后一切调用抛 STATE_ERROR）；
-- [ ] 事件名恰为 error/media-info/sample/progress/end，载荷形状符合契约事件表；
-- [ ] 时间戳全部整数微秒（对外），原生 tick 不外泄。
+- [x] 类名 `<Format>Demuxer` 且继承 core `Demuxer` 基类（基类提供事件/状态机/迭代器骨架；或经 captain 批准的适配壳）；
+- [x] `static probe(bytes)`：同步、无副作用、不抛异常、未命中返回 null；
+- [x] **`open()`** 打开并解析初始化段，resolve 后 this.mediaInfo/.tracks/.metadata 可用并 emit('media-info')；initTimeoutMs 超时 reject TIMEOUT（迁移期别名 parseInit()/init()+attach() 按 §2.4 别名表接受）；
+- [x] **`readSample(trackId)`** pull 主通道（EOS resolve null），`samples(trackId)` 为等价糖层；未 open 先调 throw STATE_ERROR；
+- [x] `seek(timestampUs)` 关键帧对齐、resolve `{actualTimestampUs}`；直播/无索引 reject SEEK_UNSUPPORTED；
+- [x] 直播推送 `start()`【可选】+'sample' 事件；pause/resume；**`destroy()` 幂等销毁**（别名 stop()，之后一切调用抛 STATE_ERROR）；
+- [x] 事件名恰为 error/media-info/sample/progress/end，载荷形状符合契约事件表；
+- [x] 时间戳全部整数微秒（对外），原生 tick 不外泄。
 
 ---
 
