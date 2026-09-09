@@ -34,7 +34,7 @@ npm run gateway  # 本地 WS 测试网关（rtmp/rtsp 桥接联调用）
 
 ## 模块状态表
 
-> 状态取值：`未开始` / `进行中` / `待评审` / `已完成`。本表已按 2026-09-07 第二轮评审现状更新；运行时以各模块 README、测试与 demo 为准。
+> 状态取值：`未开始` / `进行中` / `待评审` / `已完成`。本表已按 2026-09-09 第二轮评审现状更新；运行时以各模块 README、测试与 demo 为准。
 
 | 模块 | 目录 | 负责人 | 状态 | 说明 |
 |------|------|--------|------|------|
@@ -66,3 +66,25 @@ npm run gateway  # 本地 WS 测试网关（rtmp/rtsp 桥接联调用）
 3. `demo/index.html`：可静态服务的最小演示页，复用 `site/` 共享皮肤
 4. `__tests__/`：`node --test` 可运行的解析层单测；fixture 一律由 `samples/fixtures/` 程序化生成，不依赖外网与大文件
 5. 质量门禁：全仓测试通过；demo 打开无未捕获异常；reviewer 评审通过；qa 按 PRD 验收
+
+## 质量门禁与工程化
+
+仓库已接入完整的契约对齐、覆盖率门禁与持续迭代机制（详见 [docs/CONTRACTS.md](docs/CONTRACTS.md)、[docs/review/iteration-backlog.md](docs/review/iteration-backlog.md)）：
+
+- **单仓库 monorepo**：`pure-webcodecs-player` 一个仓库承载全部 16 模块（mp4/mov/cmaf/mkv/ts/flv/hls/wav/flac/ape/subtitle/webtorrent/webrtc/rtsp/rtmp/core），模块间直接 `import core`，拆仓即断链。
+- **CI**：[`.github/workflows/ci.yml`](.github/workflows/ci.yml)（Node 22）——`lint → check(16/16 模块门槛) → test → 结构层 §2.4 审计 → 运行时 §2.4 审计` 五段全绿。
+- **分层覆盖率门禁**：[`scripts/audit/coverage-gate.mjs`](scripts/audit/coverage-gate.mjs)——`env` 浏览器依赖层豁免（Node 不可测）、`core` 逻辑层 ≥85%、`parser` 层 ≥80%，未达标 CI 失败。
+- **契约审计**：[`scripts/audit/contract-2-4-audit.mjs`](scripts/audit/contract-2-4-audit.mjs)（结构层 §2.4，应为 0 问题）+ [`runtime-2-4-audit.mjs`](scripts/audit/runtime-2-4-audit.mjs)（7 个 demuxer 运行时矩阵），对齐 [docs/CONTRACTS.md](docs/CONTRACTS.md) §2.4 八项契约。
+- **迭代扫描器**：[`scripts/audit/iteration-scan.mjs`](scripts/audit/iteration-scan.mjs)（聚合 git / lint / check / 双契约审计 / 覆盖率 / backlog，末行自动建议下一波），驱动「每波一项、数据驱动、跨会话可续」的长期优化。
+
+### 测试与覆盖率现状（2026-09-09，第六十一波基线）
+
+全仓 `npm test`（Node ≥ 22，`--test-concurrency=4`）**1142/1142 绿，fail=0、cancelled=0**。
+
+| 层 | 文件数 | 行覆盖均值 | 门槛 | 状态 |
+|----|-------|-----------|------|------|
+| core 逻辑层 | 20 | 96.3% | ≥85% | ✓ |
+| parser 层 | 123 | 95.3% | ≥80% | ✓ |
+| env 浏览器层 | 17 | 61.8% | 豁免（仅报告） | — |
+
+> 逻辑层（core + parser）未达标文件已清零；env 层低覆盖为浏览器 API（WebCodecs / Canvas / AudioWorklet / MSE）在 Node 不可测所致，属环境限制而非测试缺失，**不写假测试刷覆盖率**，验证走真机 e2e（`docs/review/i3/`）。
