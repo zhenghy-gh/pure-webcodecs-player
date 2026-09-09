@@ -30,7 +30,7 @@
 | 运行时契约审计 | `node scripts/audit/runtime-2-4-audit.mjs` | 7 demuxer 运行时矩阵 |
 | 风格检查 | `npm run lint` | 应为 0 警告 |
 | 模块门槛 | `npm run check` | 16/16 模块达标 |
-| 全仓测试 | `npm test` | 1094/1094，fail=0、cancelled=0（第五十七波基线） |
+| 全仓测试 | `npm test` | 1142/1142，fail=0、cancelled=0（第六十一波基线） |
 
 ---
 
@@ -51,6 +51,19 @@
 **结论**：这些不是测试缺失，是环境限制。**不要为刷覆盖率给它们写假测试**；正确方向是
 ①分层门禁（已落地 `coverage-gate.mjs`）；②若确需验证，走真机 e2e（`docs/review/i3/`）。
 
+### 第六十一波里程碑：逻辑层未达标文件清零
+
+| 层 | 文件数 | 均值 | 门槛 | 状态 |
+|---|---|---|---|---|
+| core 逻辑层 | 20 | **96.3%**（第五十五波 94.3%） | 85% | ✓ |
+| parser 层 | 123 | **95.3%**（第五十五波 93.7%） | 80% | ✓ |
+| env 浏览器层 | 17 | 61.8% | 豁免（仅报告） | — |
+
+自第五十五波建立门禁起，逐波清掉 8 个未达标文件：`rtsp/nal.js` 42.9% → `mp4/file-source.js`
+56.7% → `subtitle/errors.js` 74.2% → `webtorrent/utils.js` 75% → `rtmp/flv-demuxer.js` 75.1%
+→ `webtorrent/loader.js` 79% → `core/exp-golomb.js` 82.2% → `core/data-source.js` 84.8%。
+全部为**真实补测**（先核实根因、再写断言），无一通过放宽阈值或写假测试达成。
+
 ---
 
 ## 4. 波次台账
@@ -65,7 +78,10 @@
 | 55 | 分层覆盖率门禁 + 补测 | `coverage-gate.mjs`（env 豁免 / core 85% / parser 80%）接入 CI；`rtsp/src/nal.js` 专项补测 42.9%→达标；迭代台账建立 | `fa8ebe3` |
 | 56 | 迭代扫描器 + 两项补测 | `iteration-scan.mjs` 聚合现盘（git/lint/check/双契约审计/覆盖率/backlog → 自动建议下一波）；`mp4/src/file-source.js` DOM stub 补测 56.7%→达标；`subtitle/src/errors.js` 构造器表驱动补测 74.2%→达标 | `077a33e` |
 | 57 | webtorrent utils 补测 | `webtorrent/src/utils.js` 75%→达标（+15 例）；发现 `withTimeout` 未导出且零调用（死代码候选，待 owner 定夺） | `79135b3` |
-| 58 | rtmp FLV 分支补测 | `rtmp/src/flv-demuxer.js` 75.1%→达标（+16 例）：AAC 轨、不支持 codec、未知 Tag 跳过、未配置前丢样本、tsExt/负 cts、PreviousTagSize 告警、魔数缺失、destroy 后写入 | 本波 |
+| 58 | rtmp FLV 分支补测 | `rtmp/src/flv-demuxer.js` 75.1%→达标（+16 例）：AAC 轨、不支持 codec、未知 Tag 跳过、未配置前丢样本、tsExt/负 cts、PreviousTagSize 告警、魔数缺失、destroy 后写入 | `7e73f05` |
+| 59 | webtorrent loader 补测 | `webtorrent/src/loader.js` 79%→达标（+16 例）：用 `module.registerHooks` 白名单拦截解决「Node 只支持 file/data import vs 安全白名单只放行 http(s)」的互斥，真实跑通 CDN 成功路径；含 data:/blob:/file: 安全过滤回归 | 本波 |
+| 60 | core exp-golomb 分支补测 | `core/src/exp-golomb.js` 82.2%→达标（+7 例）：high profile scaling list 消费、chroma_format_idc=3(4:4:4)/0(mono) 的 CropUnitX/Y 分支、frame_mbs_only=0 高度翻倍、pic_order_cnt_type=1 循环、非 SPS PARSE_ERROR、stripEmulationPrevention、BitReader 复用 | 本波 |
+| 61 | core data-source 补测（逻辑层清零） | `core/src/data-source.js` 84.8%→达标（+8 例）：`MemoryDataSource`/`BlobDataSource`/`asDataSource` 三个导出此前**零直接测试**；含 ArrayBuffer 入参、File 名回退、尾部截断 vs 越界、无 Blob 环境降级、鸭子类型 TypeError | 本波 |
 
 ---
 
@@ -80,14 +96,15 @@
 - [x] **P2** 补测 `subtitle/src/errors.js` 74.2% → 达标出列（第五十六波，+26 例）
 - [x] **P1** 补测 `webtorrent/src/utils.js` 75% → 达标出列（第五十七波，+15 例）
 - [x] **P1** 补测 `rtmp/src/flv-demuxer.js` 75.1% → 达标出列（第五十八波，+16 例）
+- [x] **P1** 补测 `webtorrent/src/loader.js` 79% → 达标出列（第五十九波，+16 例，`registerHooks` 白名单拦截）
+- [x] **P1** 补测 `core/src/exp-golomb.js` 82.2% → 达标出列（第六十波，+7 例）
+- [x] **P1** 补测 `core/src/data-source.js` 84.8% → 达标出列（第六十一波，+8 例）——**至此逻辑层（core+parser）未达标文件清零，`coverage-gate` exit 0**
 
 ### 待办（按优先级，下一波取 P1 第一条）
 - [ ] **P1** 死代码处置（**待 owner 定夺**）：`webtorrent/src/utils.js` 的 `withTimeout` 未从 `index.js` 导出、全仓零调用——删掉 or 导出，二选一（第五十七波发现，已补测证明可用）
-- [ ] **P1** 补测 `webtorrent/src/loader.js` **79%**（parser 层最差）
-- [ ] **P2** 补测 `core/src/exp-golomb.js` 82.2%、`core/src/data-source.js` 84.8%（core 门槛 85%，各差 2.8/0.2）
-- [ ] **P2** 补测 `core/src/exp-golomb.js` 82.2%、`core/src/data-source.js` 84.8%（core 门槛 85%，各差 2.8/0.2）
 - [ ] **P2** 真机 e2e 回归脚本化：把 `docs/review/i3/` 的手工验证固化成可重跑脚本
-- [ ] **P2** README 刷新：当前 README 未反映第 50-56 波（GitHub 首推、CI、契约对齐、分层门禁、迭代机制）成果
+- [ ] **P2** README 刷新：当前 README 未反映第 50-61 波（GitHub 首推、CI、契约对齐、分层门禁、迭代机制、逻辑层覆盖率清零）成果
+- [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
 
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
