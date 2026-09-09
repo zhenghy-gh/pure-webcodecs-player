@@ -85,6 +85,7 @@
 | 62 | README 工程化章节刷新 | 新增「质量门禁与工程化」章节（单仓库 monorepo / CI 五段 / 分层覆盖率门禁 / §2.4 双契约审计 / 迭代扫描器）+ 测试与覆盖率现状表（1142/1142 绿；core 96.3% / parser 95.3% / env 61.8% 豁免）；模块状态表脚注日期→2026-09-09 | `98e3af4` |
 | 63 | withTimeout 死代码转正（owner「继续」授权） | 裁决=**导出**而非删除：`index.js` 导出 `withTimeout`（增量合规 §12.3）；`loader.js` 删自写 `raceTimeout` 改用 `withTimeout`（超时错误原被循环内 `catch{}` 吞掉，替换为零可观察差异，实为消费者转正）；新增 2 例超时分支回归（永不 settle 的 CDN 模块按 timeoutMs 放弃返回 null、超时后回退下一源）；全仓 1144/1144 | `8e89068` |
 | 64 | README 效果演示 + 使用方式（owner 指出缺口） | 新增「效果演示」：playwright 驱动真实 Chrome 播放实拍——WebCodecs 主路线动图（bbb480_30s.ts + 15 步断言日志）+ MP4/MSE 实拍 + 演示站全景（`docs/demo/` 三件约 660KB）；新增「使用方式」四级（demo 体验 / createPlayer 集成 / 底层 Demuxer API / 真机 e2e）；修 mp4/demo 环境日志陈旧字段 `.available`→`.supported`（截图暴露） | `4d90c61` |
+| 65 | README localhost 框架修正（owner 反馈） | §使用方式 1 补 clone→run→open 完整流程，localhost 改代码体并注明「本机地址非外网链接」；§e2e 如实注明素材不入库需自备；覆盖率计数 1142→1144 | `b44b219` |
 
 ---
 
