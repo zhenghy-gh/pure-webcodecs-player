@@ -67,8 +67,14 @@ export function extractMetrics(report, prev = {}, clock = Date.now) {
           }
         }
         if (kind === 'video') {
-          bucket.framesDecoded = s.framesDecoded ?? bucket.framesDecoded;
-          bucket.framesDropped = s.framesDropped ?? bucket.framesDropped;
+          // framesDecoded/framesDropped 规范上单调递增。浏览器某次 report 缺
+          // 这些字段时不应归零（bucket 初始 0），而应保留上一轮值：把
+          // framesDecoded/framesDropped 也纳入 nextPrev 通道，回退顺序：
+          // 当前报告 → prev → bucket 初始（恒 0，作为最终兜底）。
+          const prevFrames = prev.framesDecoded ?? bucket.framesDecoded;
+          const prevDropped = prev.framesDropped ?? bucket.framesDropped;
+          bucket.framesDecoded = s.framesDecoded ?? prevFrames;
+          bucket.framesDropped = s.framesDropped ?? prevDropped;
           bucket.framesPerSecond = s.framesPerSecond ?? null;
         }
         // 播放端抖动缓冲平均驻留
@@ -101,6 +107,8 @@ export function extractMetrics(report, prev = {}, clock = Date.now) {
     nextPrev: {
       bytesVideo: out._bytesVideo ?? prev.bytesVideo ?? null,
       bytesAudio: out._bytesAudio ?? prev.bytesAudio ?? null,
+      framesDecoded: out.video.framesDecoded,
+      framesDropped: out.video.framesDropped,
       ts: now,
     },
     _bytesVideo: undefined,
