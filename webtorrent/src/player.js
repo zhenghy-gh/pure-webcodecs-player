@@ -22,8 +22,10 @@ export class WebTorrentPlayer extends Emitter {
   /**
    * @param {{
    *   clientFactory?: () => Promise<Function|null>, // 注入测试桩或自定义加载器
-   *   selectExts?: string[],       // 媒体文件优选扩展名
-   *   autoSelect?: boolean,        // ready 时自动选文件（默认 true；false 暂不支持，会抛 STATE_ERROR）
+   *   selectExts?: string[],       // 媒体文件优选扩展名（selectFile 同样据此判定可播格式）
+   *   autoSelect?: boolean,        // ready 时自动选文件（默认 true）。false 时 attach 在元数据
+   *                                // 就绪后抛 STATE_ERROR 并停在 degraded，由消费方调用
+   *                                // selectFile(selector) 手动选文件继续加载
    * }} opts
    */
   constructor(opts = {}) {
@@ -84,13 +86,13 @@ export class WebTorrentPlayer extends Emitter {
       this.torrent = await addTorrent(this.client, torrentId);
 
       if (this.opts.autoSelect === false) {
-        // 手动选文件 API 尚未提供（见 backlog 待办）：诚实报错，而不是让
-        // null file 流入 createTorrentSource 造成 SOURCE_ERROR + 永久卡 loading
+        // 关闭自动选择：元数据已就绪（this.torrent 可用），停在 degraded，
+        // 由消费方调用 selectFile(selector) 手动选文件后继续加载管线
         this.state = 'degraded';
         this.emit('status', this.state);
         throw new PlayerError(
           'STATE_ERROR',
-          'autoSelect=false 暂不支持：手动选文件 API 尚未提供，请使用默认自动选择',
+          'autoSelect=false：已跳过自动选文件，请调用 selectFile(文件对象/文件名/索引/谓词) 手动选择',
         );
       }
       if (!this.file) {
@@ -103,23 +105,66 @@ export class WebTorrentPlayer extends Emitter {
           throw new PlayerError('NOT_SUPPORTED', '种子中没有可识别的媒体文件');
         }
       }
-      this.source = createTorrentSource(this.file);
-
-      // ── 断流感知：torrent/client 的运行期错误必须转发上层（评审严重3）──
-      this.#wireRuntimeErrorForwarding(this.client, this.torrent);
-
-      this.state = 'ready';
-      this.emit('status', this.state);
-      this.emit('metadata', summarizeTorrent(this.torrent));
-      this.emit('ready', { file: this.file, source: this.source, torrent: this.torrent });
-
-      this._startStats();
-      return { file: this.file, source: this.source, torrent: this.torrent };
+      return this.#finishLoad();
     } catch (err) {
       this.state = err instanceof PlayerError ? this.state : 'degraded';
       this.emit('error', err);
       throw err;
     }
+  }
+
+  /**
+   * 手动选择媒体文件（autoSelect=false 时，attach 之后在 degraded 态调用）。
+   *
+   * selector 支持四种形态：
+   *   - webtorrent File 对象：须为当前 torrent.files 的成员（同一引用）；
+   *   - string：按 name/path 精确匹配；
+   *   - number：文件索引（0 起）；
+   *   - function：谓词 (file, index) => boolean，取第一个匹配。
+   *
+   * 选中后自动继续既有加载管线（建源 → 错误转发 → ready 事件）。
+   * 失败时 state 保持 degraded（可换 selector 重试），同时 emit('error') 并抛出：
+   *   - 找不到匹配 → SOURCE_ERROR(detail.reason='FILE_NOT_FOUND')；
+   *   - 非可播媒体格式（selectExts 判定）→ NOT_SUPPORTED(detail.reason='NOT_MEDIA')；
+   *   - 非 degraded/destroyed 态调用 → STATE_ERROR。
+   * @param {Object|string|number|Function} selector
+   * @returns {{file:Object, source:Object, torrent:Object}}
+   */
+  selectFile(selector) {
+    if (this.state === 'destroyed') {
+      throw new PlayerError('STATE_ERROR', '播放器已销毁');
+    }
+    if (this.state !== 'degraded') {
+      throw new PlayerError(
+        'STATE_ERROR',
+        `selectFile 仅在 degraded（autoSelect=false 且元数据就绪）状态可用，当前状态: ${this.state}`,
+      );
+    }
+
+    let file;
+    try {
+      const files = this.torrent?.files ?? [];
+      file = resolveFileSelector(files, selector);
+      assertMediaFile(file, this.opts.selectExts ?? DEFAULT_SELECT_EXTS);
+    } catch (err) {
+      this.emit('error', err); // 不静默：state 保持 degraded，消费方可重试
+      throw err;
+    }
+
+    this.file = file;
+    return this.#finishLoad();
+  }
+
+  /** 建源 → 挂运行期错误转发 → 进入 ready 的公共收尾（attach 与 selectFile 共用） */
+  #finishLoad() {
+    this.source = createTorrentSource(this.file);
+    this.#wireRuntimeErrorForwarding(this.client, this.torrent);
+    this.state = 'ready';
+    this.emit('status', this.state);
+    this.emit('metadata', summarizeTorrent(this.torrent));
+    this.emit('ready', { file: this.file, source: this.source, torrent: this.torrent });
+    this._startStats();
+    return { file: this.file, source: this.source, torrent: this.torrent };
   }
 
   /**
@@ -243,6 +288,70 @@ export function selectMediaFile(files, { selectExts = DEFAULT_SELECT_EXTS } = {}
   const byExt = files.filter((f) => norm.some((ext) => (f.name ?? '').toLowerCase().endsWith(ext)));
   const pool = byExt.length ? byExt : files;
   return [...pool].sort((a, b) => (b.length ?? 0) - (a.length ?? 0))[0];
+}
+
+/**
+ * selectFile 的 selector 解析：文件对象/文件名/索引/谓词 → torrent.files 成员。
+ * 找不到匹配统一抛 SOURCE_ERROR(detail.reason='FILE_NOT_FOUND')。
+ */
+function resolveFileSelector(files, selector) {
+  if (typeof selector === 'number') {
+    if (!Number.isInteger(selector) || selector < 0 || selector >= files.length) {
+      throw new PlayerError(
+        'SOURCE_ERROR',
+        `文件索引越界: ${selector}（当前种子共 ${files.length} 个文件）`,
+        { detail: { reason: 'FILE_NOT_FOUND' } },
+      );
+    }
+    return files[selector];
+  }
+  if (typeof selector === 'string') {
+    const hit = files.find((f) => f.name === selector || f.path === selector);
+    if (!hit) {
+      throw new PlayerError('SOURCE_ERROR', `当前种子中找不到文件: ${selector}`, {
+        detail: { reason: 'FILE_NOT_FOUND' },
+      });
+    }
+    return hit;
+  }
+  if (typeof selector === 'function') {
+    const hit = files.find((f, i) => {
+      try { return !!selector(f, i); } catch { return false; }
+    });
+    if (!hit) {
+      throw new PlayerError('SOURCE_ERROR', '文件谓词未匹配到任何文件', {
+        detail: { reason: 'FILE_NOT_FOUND' },
+      });
+    }
+    return hit;
+  }
+  if (selector && typeof selector === 'object') {
+    const hit = files.find((f) => f === selector);
+    if (!hit) {
+      throw new PlayerError('SOURCE_ERROR', '传入的文件对象不属于当前种子（须为 torrent.files 成员）', {
+        detail: { reason: 'FILE_NOT_FOUND' },
+      });
+    }
+    return hit;
+  }
+  throw new PlayerError(
+    'PARSE_ERROR',
+    'selectFile 需要 文件对象 / 文件名 / 索引 / 谓词 之一',
+    { detail: { reason: 'BAD_SELECTOR' } },
+  );
+}
+
+/** 手选文件的可播格式校验：复用 selectMediaFile 的 selectExts 扩展名判定 */
+function assertMediaFile(file, selectExts) {
+  const norm = selectExts.map((e) => e.toLowerCase());
+  const name = (file?.name ?? '').toLowerCase();
+  if (!norm.some((ext) => name.endsWith(ext))) {
+    throw new PlayerError(
+      'NOT_SUPPORTED',
+      `文件不是可播媒体格式: ${file?.name ?? '(无名)'}（可播扩展名: ${selectExts.join(', ')}，可用 opts.selectExts 扩充）`,
+      { detail: { reason: 'NOT_MEDIA' } },
+    );
+  }
 }
 
 function summarizeTorrent(t) {

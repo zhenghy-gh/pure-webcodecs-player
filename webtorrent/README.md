@@ -2,7 +2,7 @@
 
 把 WebTorrent 网络中的文件变成 demuxer 可读的 **DataSource**（契约 §2.1：`{size, read(offset,length), close?}`）。定位与交付物遵循 CONTRACTS v0.2 §2.5/§10：**传输接入层不实现 demuxer 接口**，`webtorrent → DataSource`，路线随容器（mkv/mp4）。
 
-> 归属：vue-dev-1（MKV/WebTorrent 方向）· 契约基线 CONTRACTS v0.2 · 单测门槛 ≥40（实测 50，全绿）
+> 归属：vue-dev-1（MKV/WebTorrent 方向）· 契约基线 CONTRACTS v0.2 · 单测门槛 ≥40（实测 152，全绿）
 
 ## 一、原理速览
 
@@ -117,7 +117,7 @@ cd webtorrent && python3 -m http.server 8091    # 或根目录 npm run demo
 | `parseTorrent/buildSingleFileTorrent` | .torrent 解析 / 确定性测试种子构造 |
 | `rangesToPieces/pieceIndexFor/planSequentialPieces` | 跨片映射 / 偏移换算 / 确定性取片决策 |
 | `TorrentAssembler` | 片→连续流装配器 |
-| `WebTorrentPlayer/selectMediaFile` | 网络封装（可选依赖） |
+| `WebTorrentPlayer/selectMediaFile` | 网络封装（可选依赖）；`selectFile(selector)` 手动选文件（autoSelect:false 场景） |
 | `TorrentFileSource/createTorrentSource` | webtorrent File → DataSource |
 | `loadWebTorrent/DEFAULT_CDN_URLS` | 可选依赖加载器 |
 | `Emitter/formatBytes/withTimeout`、`PlayerError/ErrorCode`(复用 core) | 工具 |
@@ -136,6 +136,17 @@ cd webtorrent && python3 -m http.server 8091    # 或根目录 npm run demo
 
 `attach(torrentId)` → `{file, source, torrent}`；状态机 `idle/loading/ready/degraded/destroyed`；事件 `status/metadata/ready/stats/no-client/error`；错误码映射十码：NO_CLIENT→`NETWORK_ERROR(detail.reason)`、ATTACH_FAILED→`NETWORK_ERROR`、无可播文件→`NOT_SUPPORTED`、已销毁调用→`STATE_ERROR`。
 
+**手动选文件（autoSelect:false）**：`new WebTorrentPlayer({ autoSelect: false })` 时，attach 在元数据就绪后抛 `STATE_ERROR` 并停在 `degraded`，随后调用 `selectFile(selector)` 手动选择并继续加载管线（建源 → ready）。selector 支持四种形态：
+
+```js
+player.selectFile(torrent.files[1])        // 文件对象（须为 torrent.files 成员）
+player.selectFile('movie.mkv')             // 文件名（name/path 精确匹配）
+player.selectFile(2)                       // 文件索引
+player.selectFile((f, i) => f.name.endsWith('.mkv')) // 谓词，取首个匹配
+```
+
+失败分支（state 保持 degraded，emit('error') 后可换 selector 重试）：找不到匹配 → `SOURCE_ERROR(detail.reason='FILE_NOT_FOUND')`；非可播媒体格式（按 `opts.selectExts` 判定，可扩充）→ `NOT_SUPPORTED(detail.reason='NOT_MEDIA')`；非法 selector 形态 → `PARSE_ERROR`；非 degraded/destroyed 态调用 → `STATE_ERROR`。
+
 ### TorrentFileSource（DataSource 实现）
 
 `size`（契约主名，byteLength 别名）、`read`（恰好 length 字节，EOF 短读）、`supportsRandomAccess`、`close()`、`onRead(bytes)` 测速钩子。
@@ -148,7 +159,7 @@ cd webtorrent && python3 -m http.server 8091    # 或根目录 npm run demo
 4. 离线装配路径不做 SHA-1 校验（测试数据无哈希语义）；生产校验由 webtorrent 库完成，`verifyPiece` 钩子留给自定义管线。
 5. 路线：WebSeed 混合源、piece 热力图联调面板、与 core 缓冲水位联动、infohash 计算导出。
 
-## 七、测试（50 例，node --test 全绿；PRD 验收单元 ≥40 达标）
+## 七、测试（152 例，node --test 全绿；PRD 验收单元 ≥40 达标）
 
 ```bash
 cd webtorrent && node --test "__tests__/*.test.js"    # 或 npm test（根）
