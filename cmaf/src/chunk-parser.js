@@ -146,7 +146,12 @@ function materializeSamples(buf, moofBox, traf) {
   }));
 
   const out = [];
-  let cursor = mdatDataStart + trun.dataOffset;
+  // ISO 14496-12 §8.8.7：data_offset 以 moof 起点为基准（本项目各 muxer 均按
+  // moof.length+8 写入，即 default-base-is-moof 约定）。此前错加在 mdat 载荷
+  // 起点，dataStart 普遍偏大 moof.size+8 字节，样本数据全部读偏。
+  // trun 无 data-offset 标志时退回 mdat 载荷起点。
+  const moofStart = moofBox.contentStart - 8;
+  let cursor = trun.hasDataOffset ? moofStart + trun.dataOffset : mdatDataStart;
   let dtsOffset = baseTime; // 所属 timescale 的 ticks
   for (const row of rows) {
     out.push({

@@ -179,8 +179,15 @@ export function parseTrun(buf, contentStart, contentEnd) {
   if (hasDataOffset) {
     dataOffset = dv.getInt32(p); p += 4;
   }
-  // first_sample_flags 存在时不计入每行字段（仅覆盖首样本标志）
+  // first-sample-flags-present（0x000004）：data_offset 之后、样本行之前还有
+  // 一个 4 字节 first_sample_flags，它不属于任何样本行。此前未消费，导致
+  // 所有样本行整体错位 4 字节（首行 duration 被读成 first_sample_flags）。
   const hasFirstSampleFlags = !!(flags & 0x000004);
+  let firstSampleFlags = null;
+  if (hasFirstSampleFlags) {
+    firstSampleFlags = dv.getUint32(p);
+    p += 4;
+  }
 
   const rows = [];
   for (let i = 0; i < sampleCount; i++) {
@@ -188,14 +195,17 @@ export function parseTrun(buf, contentStart, contentEnd) {
     if (hasDuration) { row.duration = dv.getUint32(p); p += 4; }
     if (hasSize) { row.size = dv.getUint32(p); p += 4; }
     if (hasFlags) { row.flags = dv.getUint32(p); p += 4; }
-    else if (i === 0 && hasFirstSampleFlags) { /* 首样本标志单独处理 */ }
+    else if (i === 0 && firstSampleFlags !== null) {
+      // sample-flags 不存在时首样本标志取 first_sample_flags
+      row.flags = firstSampleFlags;
+    }
     if (hasCts) {
       row.cts = version === 0 ? dv.getUint32(p) : dv.getInt32(p);
       p += 4;
     }
     rows.push(row);
   }
-  return { sampleCount, dataOffset, rows };
+  return { sampleCount, dataOffset, hasDataOffset, firstSampleFlags, rows };
 }
 
 /** 解析 tfdt → baseMediaDecodeTime */
