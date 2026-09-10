@@ -110,3 +110,47 @@ test('remux：init segment 可被 mp4 模块 probe 识别（pm 验收点）', as
   const pr = Mp4Demuxer.probe(inits[0].data.subarray(0, 64));
   assert.ok(pr && pr.confidence >= 0.8 && pr.container === 'mp4', JSON.stringify(pr));
 });
+
+test('remux：中间切片（非 flush）末帧 duration 不得为 0（审计 C-4 回归）', async () => {
+  const { segs } = await remux(assembleFlv({ video: { frames: 8 } })); // 33ms/帧, gop=4, fragmentUs=100ms
+  const videoSegs = segs.filter((s) => s.trackId === 1);
+  assert.ok(videoSegs.length >= 2, `应产生多个视频切片产生中间态，实际 ${videoSegs.length}`);
+
+  for (const seg of videoSegs) {
+    // trun v1 body：version/flags(4) + sample_count(4) + data_offset(4) + [first_sample_flags(4)] + N×12
+    const trunBody = findTrun(seg.data);
+    assert.ok(trunBody, 'trun 应存在');
+    const view = new DataView(trunBody.buffer, trunBody.byteOffset, trunBody.byteLength);
+    const versionAndFlags = view.getUint32(0);
+    const hasFirstFlags = (versionAndFlags & 0x004) !== 0;
+    const count = view.getUint32(4);
+    let off = hasFirstFlags ? 16 : 12;
+    const durations = [];
+    for (let i = 0; i < count; i++) {
+      durations.push(view.getUint32(off));
+      off += 12;                                        // duration + size + cts
+    }
+    assert.equal(durations.length, count);
+    const zeros = durations.filter((d) => d === 0);
+    assert.equal(zeros.length, 0, `切片 seq=${seg.seqNo} 出现 duration=0 的帧：${durations.join(',')}`);
+  }
+});
+
+/** 在 mediaSegment.data 中定位 trun 盒体（含盒头），返回其内容视图 */
+function findTrun(bytes) {
+  function walk(buf, path) {
+    let pos = 0;
+    while (pos + 8 <= buf.length) {
+      const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      const size = view.getUint32(pos);
+      const type = String.fromCharCode(buf[pos + 4], buf[pos + 5], buf[pos + 6], buf[pos + 7]);
+      const body = buf.subarray(pos + 8, pos + size);
+      if (type === path[0]) {
+        return path.length === 1 ? body : walk(body, path.slice(1));
+      }
+      pos += size;
+    }
+    return null;
+  }
+  return walk(bytes, ['moof', 'traf', 'trun']);
+}

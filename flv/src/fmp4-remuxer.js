@@ -127,10 +127,20 @@ export class FlvRemuxer extends Emitter {
     const buf = this.buffers.get(trackId);
     if (!buf || buf.samples.length === 0) return;
 
-    // 组装 mdat 负载
-    const payload = concatBytes(buf.samples.map((s) => s.data));
+    // 非 flush（中间）切片：末帧 duration 尚未被下一帧 DTS 回填，
+    // 用上一已回填帧的时长估算，避免末帧 duration=0（审计 C-4）。
+    const samples = buf.samples;
+    const n = samples.length;
+    if (n > 0 && samples[n - 1].durationTicks == null) {
+      samples[n - 1].durationTicks = n >= 2
+        ? (samples[n - 2].durationTicks ?? 33)
+        : 33;
+    }
 
-    const samplesMeta = buf.samples.map((s) => ({
+    // 组装 mdat 负载
+    const payload = concatBytes(samples.map((s) => s.data));
+
+    const samplesMeta = samples.map((s) => ({
       duration: s.durationTicks ?? 0,
       size: s.size,
       cts: s.ctsTicks,
