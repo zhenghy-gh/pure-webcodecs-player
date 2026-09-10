@@ -293,6 +293,7 @@ export class Player extends Emitter {
     try {
       const result = await this.demuxer.seek(Math.round(timestampUs));
       this.currentTimeValue = result.actualTimestampUs;
+      this.endedValue = false; // 任何 seek 均清除 ended（HTMLMediaElement 语义；此前 play() 自动重播后 ended 恒为 true）
       this.clock.seekTo(this.currentTimeValue / 1e6);
       this.statsValue.markSeek();
       await this.pipeline?.seek?.(this.currentTimeValue);
