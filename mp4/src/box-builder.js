@@ -334,10 +334,10 @@ export function buildStsc(entries) {
   });
 }
 
-/** stsz：定长或变长 */
+/** stsz：定长或变长。ISO 14496-12：sample_count 恒为样本总数（与 defaultSize 无关） */
 export function buildStsz(sizes, defaultSize = 0) {
   return fullBox('stsz', 0, 0, (w) => {
-    w.writeU32(defaultSize).writeU32(defaultSize === 0 ? sizes.length : 0);
+    w.writeU32(defaultSize).writeU32(sizes.length);
     if (defaultSize === 0) for (const s of sizes) w.writeU32(s);
   });
 }

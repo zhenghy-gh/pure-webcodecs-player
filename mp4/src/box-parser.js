@@ -247,6 +247,35 @@ export function parseStsz(s) {
   return { defaultSize, sizes, sampleCount: count };
 }
 
+/**
+ * stz2（compact sample size box）：
+ *   reserved(3 字节) + field_size(1 字节，4/8/16) + sample_count(4) + 打包尺寸表。
+ * 布局与 stsz 不同，不能复用 parseStsz（此前把 field_size 当 defaultSize、
+ * 把打包表当 u32 数组读，field_size<32 时静默错解）。返回形状与 parseStsz 一致。
+ */
+export function parseStz2(s) {
+  readVersionFlags(s);
+  s.readU24();                    // reserved
+  const fieldSize = s.readU8();
+  const count = s.readU32();
+  const sizes = new Array(count);
+  if (fieldSize === 16) {
+    for (let i = 0; i < count; i++) sizes[i] = s.readU16();
+  } else if (fieldSize === 8) {
+    for (let i = 0; i < count; i++) sizes[i] = s.readU8();
+  } else if (fieldSize === 4) {
+    // 每字节打包 2 个 4 位尺寸，高半字节在前；奇数 count 时末字节低半字节为 padding
+    for (let i = 0; i < count; i += 2) {
+      const b = s.readU8();
+      sizes[i] = (b >> 4) & 0x0f;
+      if (i + 1 < count) sizes[i + 1] = b & 0x0f;
+    }
+  } else {
+    throw parseError(`stz2 field_size=${fieldSize} 不支持（仅 4/8/16）`);
+  }
+  return { defaultSize: 0, sizes, sampleCount: count };
+}
+
 export function parseStco(s, isCo64 = false) {
   readVersionFlags(s);
   const count = s.readU32();
@@ -486,7 +515,8 @@ export function parseBoxByType(s, type) {
     case 'ctts': return parseCtts(s);
     case 'stss': return parseStss(s);
     case 'stsc': return parseStsc(s);
-    case 'stsz': case 'stz2': return parseStsz(s);
+    case 'stsz': return parseStsz(s);
+    case 'stz2': return parseStz2(s);
     case 'stco': return parseStco(s, false);
     case 'co64': return parseStco(s, true);
     case 'esds': return parseEsds(s);
@@ -587,7 +617,7 @@ const TABLE_PARSERS = {
   stss: parseStss,
   stsc: parseStsc,
   stsz: parseStsz,
-  stz2: parseStsz,
+  stz2: parseStz2,
   stco: (s) => parseStco(s, false),
   co64: (s) => parseStco(s, true),
 };
