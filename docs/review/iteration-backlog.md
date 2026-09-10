@@ -112,7 +112,9 @@
 - [x] **P2** 薄弱模块测试补强（第七十三~七十八波）：webrtc/wav/cmaf/ape/flac/mkv 共新增 23 个测试文件，全仓测试 1144 → **1385**（+241），全量全绿；过程中修复 mkv 两个真实缺陷（第七十二波）
 
 ### 待办（按优先级，下一波取 P1 第一条）
-- [ ] **P3** 剩余模块补测：rtmp（5 测/1468 行）、subtitle（8 测/2103 行）、rtsp（8 测/1397 行）测试密度仍偏低，可继续按第七十三~七十八波同法补强
+- [ ] **P3** 下一批补测落点（audit-79 B）：flv（41.7 行/例，最大 flv-demuxer.js 615 行 / iso-bmff.js 298 行）、core（35.5，pipeline-webcodecs 534 / player 523）、ts（34.0，ts-stream-engine 732 / ts-demuxer 536）
+- [ ] **P3** C-4 flv fmp4-remuxer 非 flush 切片末帧 duration=0（audit-79 C，低）
+- [ ] **P3** 重构收敛（audit-79 D，**动前需 owner 点头**）：BitReader×4 / BitWriter×2 / buildEsds×2 收敛到 core；删 `mp4/src/box-builder.js:225` 死导出 buildBtrt
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
 
@@ -129,3 +131,8 @@
 | 76 | ape 补测 | +3 文件：压缩等级码表全量映射（descriptor/legacy 双路径、未知码兜底 `code-XXXX`）、validate 边界（采样率/声道/帧数越界拒绝与合法极值）、APE 标签解析（<32B/<160B 的 ID3v1 守卫、空标签安全、valueLen 越界钳制、itemsStart>itemsEnd 抛错） | `351616c` |
 | 77 | flac 补测 | +5 文件：bitreader 位读取边界越界、CRC8/CRC16、帧头与帧同步、metadata 各类块（STREAMINFO/VORBIS_COMMENT/PICTURE/SEEKTABLE 占位乱序残尾/APPLICATION/padding 截断）、subframe 各预测分支（CONSTANT/FIXED/LPC/verbatim）与残差解码 | `3c9e7e0` |
 | 78 | mkv 补测（+4 文件） | EBML 变长整数与定长读写边界、Cues 与 seek 定位、时间戳与关键帧判定、轨道与编解码私有数据解析。**并修正 3 处测试自身缺陷**：Cues 自依赖（CueClusterPosition 依赖 Cues 长度、Cues 长度又依赖其值）改用 `minLen=8` 固定宽度两遍构造并附等长断言兜底；`U8(10)` 实为 `Uint8Array.from(10)`→空数组致 xiph 帧全 0 长，改 `new Uint8Array(10)`；AAC ASC 显式采样率须位于 channelConfiguration **之前**（规范顺序），此前置错得到 sampleRate=2103152 | `293ade7` |
+| 79 | rtmp/rtsp/subtitle 补测（后台并行） | +12 文件（rtmp/rtsp/subtitle 各 4）：rtmp 按 WebSocket-FLV 桥接实际源码补 AMF0 全类型/错误工厂/MP4 封装/WS URL 安全守卫；rtsp 补错误枚举/Backoff/SDP 边界/报文与 RTP 解析错误分支；subtitle 补时间码/ASS 标签/detectFormat/VTT settings。全仓 1385 → **1531**（+146） | `6e2babf` |
+| 80 | 修复 subtitle 两个真实缺陷 | ①track.js:69 对 ASS 的 Uint8Array raw 二次 encode（ToString 压成逗号串），改 instanceof 透传，连带修复 createTextTrack 的 x-ass codec 推断；②time.js:45 小数域 padEnd 只补不截（'1234'→1234ms），改 slice(0,3).padEnd | `ce34d30` |
+| 81 | 修复 APE 头偏移（高危，真实文件全读错） | descriptor 分支把 offset 6 的 nPadding 当 descriptorLen、header 硬编码 offset 32、audioOffset=56 忽略 seekTable/headerData。按真实布局（52B 描述符含 MD5，header 从 descriptorLen 起）重写；5 个测试文件的 buildDescriptorFile 与 gen.mjs 复刻了错误布局自洽掩盖 bug，全部重写 + 3 条 conformance 回归。ape 74/74 | `0b5e0cc` |
+| 82 | 修复 CMAF findTimescales 顺序假定 | 全文件扫 'mdhd' + 按出现顺序假定第 1 个=视频 → 音频在前取反、解码配置字节误命中。改 box 树关联：moov→trak→mdia，hdlr handlerType 判轨型再读 mdhd；缺字段跳过兜底。新增乱序双轨/埋字节/缺 hdlr 测试（旧实现验证必败）。cmaf 58/58 | `bd7b327` |
+| 83 | 全仓只读审计 | 产出 `docs/review/audit-79.md`：A 技术债 8 条（多为有意设计，轻量债 webtorrent bencode 死参数、rtsp/rtmp 空 catch）、B 密度最低 flv/core/ts、C 确凿 bug 4 条（C-1 APE 高危已修、C-2 CMAF 已修、C-3 subtitle ms 截断已修、C-4 flv duration=0 待办）、D 死导出 buildBtrt + 重复实现 BitReader×4/BitWriter×2/buildEsds×2。C-4 与重构级收敛**待 owner 决策**后动 | 本波 |
