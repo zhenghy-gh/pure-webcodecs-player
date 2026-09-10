@@ -110,7 +110,11 @@ export class GatewayChunkSource extends MiniEmitter {
       this.#onSignal(data);
       return;
     }
-    const chunk = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer ?? data);
+    // 视图输入（如 Buffer 池切片）必须按其 byteOffset/byteLength 取，直接读
+    // data.buffer 会带上整块底层 buffer 造成多读。
+    const chunk = ArrayBuffer.isView(data)
+      ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+      : new Uint8Array(data);
     this.bytesIn += chunk.length;
     this._lastDataAt = Date.now();
     this.#armIdleTimer();

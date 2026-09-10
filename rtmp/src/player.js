@@ -207,14 +207,18 @@ export class WsFlvPlayer extends MiniEmitter {
   #startFlushLoop() {
     if (this._flushTimer) return;
     this._flushTimer = setInterval(() => {
-      this.flushPending(true);
+      this.flushPending({ force: false });
     }, Math.max(50, this.opts.flushIntervalMs));
     this._flushTimer.unref?.();
-    this.flushPending(true);
+    this.flushPending({ force: true });
   }
 
-  /** 手动/定时冲刷 remux 队列 → sink.onInitSegment/onFragment */
-  flushPending() {
+  /**
+   * 手动/定时冲刷 remux 队列 → sink.onInitSegment/onFragment
+   * @param {{force?: boolean}} [opts] force 预留给调用方语义（定时冲刷与手动冲刷
+   *   共用同一实现，当前无差异行为）；此前调用点传的布尔实参被静默忽略。
+   */
+  flushPending(opts) {
     if (!this._remuxer.ready) return;
     if (!this._initSent && this._remuxer.pendingSamples > 0) {
       this._initSent = true;
@@ -256,9 +260,13 @@ export class WsFlvPlayer extends MiniEmitter {
       this.#fail(errors.network('重连次数已达上限', err));
       return;
     }
+    this.stats.reconnects++;
     const delay = this.#nextBackoffMs();
+    // attempt 在本计时器触发前保持不变（供断言/展示判定「这是第几次重连」）。
+    // #nextBackoffMs() 内部已 ++，故此处用重连次数而非 _backoffAttempt。
+    const attemptThisRound = this.stats.reconnects;
     this.#setStateSafe(PLAYER_STATES.RECONNECTING);
-    this.emit('will-reconnect', { delayMs: delay, attempt: this._backoffAttempt, reason: err?.message });
+    this.emit('will-reconnect', { delayMs: delay, attempt: attemptThisRound, reason: err?.message });
     clearTimeout(this._reconnectTimer);
     this._reconnectTimer = setTimeout(() => {
       if (this._userStopped) return;
