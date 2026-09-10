@@ -112,8 +112,8 @@
 - [x] **P2** 薄弱模块测试补强（第七十三~七十八波）：webrtc/wav/cmaf/ape/flac/mkv 共新增 23 个测试文件，全仓测试 1144 → **1385**（+241），全量全绿；过程中修复 mkv 两个真实缺陷（第七十二波）
 
 ### 待办（按优先级，下一波取 P1 第一条）
-- [x] **P3** C-4 flv fmp4-remuxer 非 flush 切片末帧 duration=0（第八十四波 `734c982` 已修 + 回归）
-- [ ] **P3** 下一批补测落点：core 的 pipeline-webcodecs 正向路径（534 行，本轮只覆盖错误路径）、mov（密度中低）、flv iso-bmff 剩余面
+- [ ] **P3** 下一批补测落点：flv iso-bmff 剩余面、rtmp player/gateway 正向管线（需网关样本）、webvtt 渲染层
+- [ ] **P3** 信息性观察（agent 报告，行为已固化测试，动前需 owner 点头）：①pipeline 渲染 emitted 顺序为 rendered 先于 firstframe（与直觉相反）；②_waitQueue guard=64 兜底空转与注释不一致
 - [ ] **P3** 重构收敛（audit-79 D，**动前需 owner 点头**）：BitReader×4 / BitWriter×2 / buildEsds×2 收敛到 core；删 `mp4/src/box-builder.js:225` 死导出 buildBtrt
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
@@ -139,3 +139,7 @@
 | 84 | flv 补测 + 修复 C-4 | cut() 非 flush 切片末帧 durationTicks 未回填即出 trun → duration=0；改用上一回填帧时长估算兜底（与 flush() 一致）+ trun 全 duration>0 回归。补测 +11（音频位域/ASC 序列头/MP3 直通/ASC 24bit 扩展位序修正）。flv 52 → 63 | `734c982` |
 | 85 | ts 补测（+17） | 包头/TEI/PUSI/CC/afControl 三分支与 afLen 边界/AF stuffing 落位/半截 PES 丢弃（0xff stuffing 语义）/截断与垃圾重同步。ts 72 → 90 | `17985dd` |
 | 86 | core 补测（+19） | pipeline 错误路径：Fake codec 注入下 decodeError 传播/configure 失败/close-reset 重建。core 密度收敛起步 | `d97d47a` |
+| 87 | hls 补测（+28）+ 修复 averageBandwidth 恒 0 | m3u8-parser 读 AVERAGE-BANDWIDTH 键名误写下划线（attrs.AVERAGE_BANDWIDTH），parseAttributes 保留连字符原键 → 所有 level 的 averageBandwidth 恒 0，ABR 选档依据失效。补测覆盖主清单边界/KEY 作用域与 IV/ABR 闸/loader 守卫（410 不重试/maxBytes 熔断）。hls 118 → 146 | `2d40098` |
+| 88 | mov 补测（+39）+ 修复 mp4 两缺陷 | ①buildStsz defaultSize≠0 时 sample_count 恒写 0（违反 ISO 14496-12）→ 恒写 sizes.length；②stz2 误映射 parseStsz（布局不符，field_size<32 静默错解）→ 新增 parseStz2（4/8/16，返回形状与 stsz 一致）+ 5 例专项。mov 30 → 69、mp4 68 → 74 | `1e62d38` |
+| 89 | core 正向补测（+38）+ 修复 ended 恒 true | player.js seek() 成功路径不复位 endedValue → ended 后 play() 自动重播期间 player.ended 恒 true；seek 成功即复位（HTMLMediaElement 语义）+ 回归断言。补测覆盖状态机全矩阵/pipeline 队列与渲染决策/clock 与 Emitter 边界。core 180 → 218 | `e434065` |
+| 90 | 第三批后台流程升级 | 后台 agent 改用 lite 模型规避默认模型 429 + 「增量验证」约束（每写完 1 个测试文件立即跑模块测试再写下一个）→ 落盘文件全部已验证，主线程零测试构造错修复，只处理真实缺陷 | 本波 |
