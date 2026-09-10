@@ -147,7 +147,7 @@ export function parseMaster(text, baseUrl = '') {
         levels.push({
           url: resolveUrl(line, baseUrl),
           bandwidth: toNumber(attrs.BANDWIDTH) || 0,
-          averageBandwidth: toNumber(attrs.AVERAGE_BANDWIDTH) || 0,
+          averageBandwidth: toNumber(attrs['AVERAGE-BANDWIDTH']) || 0,
           resolution: parseResolution(attrs.RESOLUTION),
           codecs: attrs.CODECS || '',
           videoCodec: codecs.video,
