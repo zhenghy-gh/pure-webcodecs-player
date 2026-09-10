@@ -140,6 +140,7 @@ export class MkvDemuxer extends Demuxer {
     // ── 解析产物（open 后可用）──
     this.docTypeRaw = null;        // 'webm' | 'matroska'（原始 DocType）
     this.timecodeScaleNs = DEFAULT_TIMECODE_SCALE_NS;
+    this.durationRaw = null; // Duration 原始值（按 TimecodeScale 缩放），待 TimecodeScale 已知后换算
     this.durationUs = null;
     this.title = null;
     this.dateUTCms = null;
@@ -425,9 +426,16 @@ export class MkvDemuxer extends Demuxer {
       switch (el.id) {
         case ID.TimecodeScale:
           this.timecodeScaleNs = val();
+          // Duration 可能先于 TimecodeScale 出现 → 用当前已知 scale 重算已缓存的原始值
+          if (this.durationRaw != null) {
+            this.durationUs = Math.round((this.durationRaw * this.timecodeScaleNs) / 1000);
+          }
           break;
         case ID.Duration:
-          this.durationUs = Math.round((val() * this.timecodeScaleNs) / 1000);
+          // 按 RFC 9559，Duration 以 TimecodeScale 为单位；先存原始值，待 scale 已知后换算，
+          // 避免 Duration 早于 TimecodeScale 时误用默认 1e6 scale（#4）。
+          this.durationRaw = val();
+          this.durationUs = Math.round((this.durationRaw * this.timecodeScaleNs) / 1000);
           break;
         case ID.Title: this.title = val(); break;
         case ID.DateUTC: this.dateUTCms = val(); break;
@@ -484,8 +492,14 @@ export class MkvDemuxer extends Demuxer {
         case ID.TrackNumber: t.id = val(); break;
         case ID.TrackUID: t.uid = val(); break;
         case ID.TrackType: t.type = TRACK_TYPE_NAME[val()] ?? 'unknown'; break;
-        case ID.TrackLanguage: t.language = val(); break;
-        case ID.LanguageIETF: t.language = val(); break; // IETF 优先
+        case ID.TrackLanguage:
+          // LanguageIETF 必须优先于 legacy Language：一旦设过 IETF 就不允许被后续 Language 覆盖
+          if (!t._ietfLang) t.language = val();
+          break;
+        case ID.LanguageIETF:
+          t.language = val();
+          t._ietfLang = true; // IETF 优先，且不被后续 legacy Language 覆盖
+          break;
         case ID.TrackName: t.name = val(); break;
         case ID.FlagDefault: t.flagDefault = !!val(); break;
         case ID.FlagLacing: t.flagLacing = !!val(); break;
@@ -580,7 +594,6 @@ export class MkvDemuxer extends Demuxer {
     for (const point of iterElements(body, 0, body.length, SCHEMA)) {
       if (point.id !== ID.CuePoint) continue;
       let timeNs = null;
-      let clusterPos = null;
       for (const el of iterElements(body, point.contentStart, point.contentEnd, SCHEMA)) {
         if (el.id === ID.CueTime) {
           // Matroska 规范：CueTime 以 TimecodeScale 为单位（tick），实际纳秒 = CueTime × TimecodeScale。
@@ -589,15 +602,21 @@ export class MkvDemuxer extends Demuxer {
           const cueTimeTicks = decodeValueByType('u', body.subarray(el.contentStart, el.contentEnd));
           timeNs = cueTimeTicks * this.timecodeScaleNs;
         } else if (el.id === ID.CueTrackPositions) {
+          // 单个 CuePoint 可含多个 CueTrackPositions（多轨）；按 CueTrack 分别保留，
+          // 不可被后者覆盖（#3）。同一 CuePoint 的 timeNs 对所有轨一致。
+          let clusterPos = null;
+          let track = null;
           for (const tp of iterElements(body, el.contentStart, el.contentEnd, SCHEMA)) {
             if (tp.id === ID.CueClusterPosition) {
               clusterPos = decodeValueByType('u', body.subarray(tp.contentStart, tp.contentEnd));
+            } else if (tp.id === ID.CueTrack) {
+              track = decodeValueByType('u', body.subarray(tp.contentStart, tp.contentEnd));
             }
           }
+          if (timeNs !== null && clusterPos !== null) {
+            this.cues.push({ timeNs, clusterOffsetInSegment: clusterPos, track });
+          }
         }
-      }
-      if (timeNs !== null && clusterPos !== null) {
-        this.cues.push({ timeNs, clusterOffsetInSegment: clusterPos });
       }
     }
     this.cues.sort((a, b) => a.timeNs - b.timeNs);
@@ -982,7 +1001,9 @@ export class MkvDemuxer extends Demuxer {
                  || h.id === ID.ClusterTimecode) {
         p = h.next;
       } else {
-        break; // 进入下一个兄弟元素
+        // 簇内非白名单的未知/不相关元素（如 deprecated Position 0xA7）：跳过其 payload
+        // 并继续，避免 break 导致整簇剩余块/样本被静默丢弃（#2）。
+        p = h.unknown ? await this.#probeUnknownMasterEnd(h) : h.next;
       }
     }
   }

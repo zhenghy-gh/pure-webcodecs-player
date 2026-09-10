@@ -129,8 +129,8 @@ function readStreaminfo(b) {
   const sampleRate = (b[10] << 12) | (b[11] << 4) | (b[12] >> 4);
   const channels = ((b[12] >> 1) & 0x07) + 1;
   const bitsPerSample = (((b[12] & 0x01) << 4) | (b[13] >> 4)) + 1;
-  const hi = ((b[13] & 0x0f) * 256 + b[14]) * 256 + b[15];
-  const lo = (b[16] << 24) >>> 0;
+  const hi = b[13] & 0x0f; // totalSamples[35:32]
+  const lo = ((b[14] << 24) | (b[15] << 16) | (b[16] << 8) | b[17]) >>> 0;
   const totalSamples = hi * 2 ** 32 + lo;
   return { sampleRate, channels, bitsPerSample, totalSamples };
 }
