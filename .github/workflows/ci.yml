@@ -34,7 +34,7 @@ jobs:
       - name: Module thresholds
         run: npm run check
 
-      - name: Unit tests (1030 cases)
+      - name: Unit tests
         # 基线并发参数：--test-concurrency=4 必需。
         # 默认全核并发会让各模块 fixtures/gen.mjs 原子写相互竞争，
         # 导致大量用例被误报 cancelled（实测 62 例），非代码缺陷。

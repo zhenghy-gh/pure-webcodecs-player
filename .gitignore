@@ -4,9 +4,12 @@ node_modules/
 # macOS
 .DS_Store
 
-# 测试中程序化生成、落盘的临时二进制 fixture（生成器源码在 samples/fixtures，不受影响）
-**/__tests__/fixtures/
-!**/__tests__/fixtures/gen.mjs
+# 测试中程序化生成、落盘的临时二进制 fixture 不入库（测试运行时经 gen.mjs 自愈重建）；
+# 但 fixtures 目录内的 .mjs 构建器/生成器脚本必须入库——CI 全新 checkout 靠它们重建数据。
+# 注意：不能写成 `**/__tests__/fixtures/`（父目录被整体排除后 `!…gen.mjs` 白名单即失效，
+# 曾致 CI 上 ERR_MODULE_NOT_FOUND: build-flv.mjs，Module thresholds 步骤失败）。
+**/__tests__/fixtures/*
+!**/__tests__/fixtures/*.mjs
 
 # 真机验收脚本落盘的临时媒体（scripts/e2e/* 可再生产物，目录内无源码）
 samples/e2e/
