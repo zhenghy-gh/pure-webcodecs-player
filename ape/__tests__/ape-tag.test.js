@@ -28,15 +28,18 @@ function concat(list) {
 
 /** 标准 64B descriptor 头 */
 function buildDescriptorFile() {
-  const b = new Uint8Array(64);
+  const b = new Uint8Array(76);
   const dv = new DataView(b.buffer);
   for (const [i, ch] of ['M', 'A', 'C', ' '].entries()) b[i] = ch.charCodeAt(0);
   dv.setUint16(4, 3990, true);
-  dv.setUint32(6, 80, true);
-  dv.setUint32(10, 24, true);
-  dv.setUint32(18, 44, true);
-  dv.setUint32(22, 100000, true);
-  let p = 32;
+  dv.setUint32(8, 52, true);      // nDescriptorBytes
+  dv.setUint32(12, 24, true);     // nHeaderBytes
+  dv.setUint32(16, 0, true);      // nSeekTableBytes
+  dv.setUint32(20, 0, true);      // nHeaderDataBytes
+  dv.setUint32(24, 100000, true); // nAPEFrameDataBytes（低 32）
+  dv.setUint32(28, 0, true);
+  dv.setUint32(32, 0, true);      // nTerminatingDataBytes
+  let p = 52;
   dv.setUint16(p, 4001, true); p += 2;
   dv.setUint16(p, 0x02, true); p += 2;
   dv.setUint32(p, 73728, true); p += 4;

@@ -1,11 +1,15 @@
 /**
  * ape/src/mac-parser.js — Monkey's Audio 容器头解析（MAC_DESCRIPTOR / MAC_HEADER）
  * ------------------------------------------------------------
- * 版本 ≥ 3980：'MAC '(4) + version(2) + APE_DESCRIPTOR + MAC_HEADER
- *   DESCRIPTOR（32B）：descriptorLen(4) headerLen(4) seekTableLen(4)
- *                      waveHeaderLen(4) audioDataLen(4) waveFooterLen(4) md5占位(4+…)
- *   HEADER（24B）：compression(2) formatFlags(2) blocksPerFrame(4)
+ * 版本 ≥ 3980：'MAC '(4) + version(2) + APE_DESCRIPTOR(52B) + MAC_HEADER(24B)
+ *   DESCRIPTOR（52B）：
+ *     cID(4)='MAC ' version(2) padding(2)
+ *     nDescriptorBytes(4)@8  nHeaderBytes(4)@12  nSeekTableBytes(4)@16
+ *     nHeaderDataBytes(4)@20 nAPEFrameDataBytes(4)@24 nAPEFrameDataBytesHigh(4)@28
+ *     nTerminatingDataBytes(4)@32  cFileMD5[16]@36
+ *   HEADER（24B）@nDescriptorBytes：compression(2) formatFlags(2) blocksPerFrame(4)
  *                  finalFrameBlocks(4) totalFrames(4) bps(2) channels(2) sampleRate(4)
+ *   音频起始 = nDescriptorBytes + nHeaderBytes + nSeekTableBytes + nHeaderDataBytes
  * 版本 < 3980：旧式 30B 头，无 bps/总帧数字段（帧数需到文件尾推算）。
  *
  * 本模块只做**容器与元数据解析**；解码器复杂度路线见 README（ARCHITECTURE Phase 3 结论）。
@@ -61,12 +65,16 @@ export function parseMacHeader(bytes) {
   const version = dv.getUint16(4, true);
 
   if (version >= 3980) {
-    if (bytes.length < 32 + 24) throw parseError('APE_DESCRIPTOR/HEADER 不完整');
-    const descriptorLen = dv.getUint32(6, true);
-    const headerLen = dv.getUint32(10, true);
-    void descriptorLen; void headerLen; // 供未来 seek 表定位使用
-    // 描述符固定 32 字节后紧跟 24 字节头部
-    let p = 32;
+    if (bytes.length < 12) throw parseError('APE 文件过短，无法读取描述符长度');
+    const descriptorLen = dv.getUint32(8, true);  // nDescriptorBytes
+    // 主流实现（ffmpeg 等）约定：描述符必须 ≥ 52 字节，过短视为损坏
+    if (descriptorLen < 52) throw parseError(`APE_DESCRIPTOR 长度 ${descriptorLen} 非法（需 ≥ 52）`);
+    if (bytes.length < descriptorLen + 24) throw parseError('APE_DESCRIPTOR/HEADER 不完整');
+    const headerLen = dv.getUint32(12, true);     // nHeaderBytes
+    const seekTableLen = dv.getUint32(16, true);  // nSeekTableBytes
+    const headerDataLen = dv.getUint32(20, true); // nHeaderDataBytes
+    // 描述符后紧跟 24 字节头部；描述符可 >52B（含附加字段），按实际长度跳过
+    let p = descriptorLen;
     const compressionCode = dv.getUint16(p, true); p += 2;
     const flags = dv.getUint16(p, true); p += 2;
     const blocksPerFrame = dv.getUint32(p, true); p += 4;
@@ -78,6 +86,8 @@ export function parseMacHeader(bytes) {
 
     validate({ channels, sampleRate, blocksPerFrame, totalFrames });
     const totalSamples = (totalFrames - 1) * blocksPerFrame + finalFrameBlocks;
+    // 音频起始 = 描述符 + 头部 + seek 表 + 头部数据（与 ffmpeg 一致）
+    const audioOffset = descriptorLen + headerLen + seekTableLen + headerDataLen;
     return {
       version,
       kind: 'descriptor',
@@ -91,7 +101,7 @@ export function parseMacHeader(bytes) {
       channels,
       sampleRate,
       durationUs: Math.round((totalSamples / sampleRate) * 1e6),
-      audioOffset: 32 + 24,
+      audioOffset,
     };
   }
 

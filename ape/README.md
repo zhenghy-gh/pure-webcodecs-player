@@ -13,9 +13,9 @@
 ┌──────────────────────────── .ape 文件 ────────────────────────────┐
 │ 'MAC ' + version(u16)                                             │
 │ ├─ version ≥ 3980：                                               │
-│ │   APE_DESCRIPTOR(32B)：descriptorLen/headerLen/seekTableLen/    │
-│ │                         waveHeaderLen/audioDataLen/waveFooterLen│
-│ │   MAC_HEADER(24B)：compression formatFlags blocksPerFrame       │
+│ │   APE_DESCRIPTOR(52B)：nDescriptorBytes/nHeaderBytes/          │
+│ │       nSeekTableBytes/nHeaderDataBytes/audioDataLen/.../md5[16]  │
+│ │   MAC_HEADER(24B)@nDescriptorBytes：compression formatFlags     │
 │ │                     finalFrameBlocks totalFrames bps ch rate    │
 │ ├─ version < 3980：旧式头（无 bps/总帧数，块大小按版本推导）        │
 │ ├─ 音频帧流（压缩数据，本模块不触碰其内容）                        │

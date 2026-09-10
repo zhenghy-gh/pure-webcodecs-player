@@ -16,20 +16,23 @@ import {
  * fixture 构造
  * ============================================================ */
 
-/** 合成 APE_DESCRIPTOR 形态文件（版本 3990） */
+/** 合成 APE_DESCRIPTOR 形态文件（版本 3990，真实 52B 描述符布局） */
 function buildDescriptorFile(opt = {}) {
-  const b = new Uint8Array(64);
+  const seekTableLen = opt.seekTableLen ?? 0;
+  const headerDataLen = opt.headerDataLen ?? 0;
+  const b = new Uint8Array(52 + 24 + seekTableLen + headerDataLen);
   const dv = new DataView(b.buffer);
   for (const [i, ch] of ['M', 'A', 'C', ' '].entries()) b[i] = ch.charCodeAt(0);
   dv.setUint16(4, opt.version ?? 3990, true);
-  dv.setUint32(6, 56 + 24, true);   // descriptorLen（含头与 seek 表的总量，示意值）
-  dv.setUint32(10, 24, true);       // headerLen
-  dv.setUint32(14, opt.seekTableLen ?? 0, true);
-  dv.setUint32(18, 44, true);       // waveHeaderLen
-  dv.setUint32(22, opt.audioLen ?? 100000, true);
-  dv.setUint32(26, 0, true);
-  // p=32 起为 HEADER 24 字节
-  let p = 32;
+  dv.setUint32(8, 52, true);               // nDescriptorBytes
+  dv.setUint32(12, 24, true);              // nHeaderBytes
+  dv.setUint32(16, seekTableLen, true);    // nSeekTableBytes
+  dv.setUint32(20, headerDataLen, true);   // nHeaderDataBytes
+  dv.setUint32(24, opt.audioLen ?? 100000, true); // nAPEFrameDataBytes（低 32）
+  dv.setUint32(28, 0, true);
+  dv.setUint32(32, 0, true);               // nTerminatingDataBytes
+  // p=52 起为 HEADER 24 字节
+  let p = 52;
   dv.setUint16(p, opt.compression ?? 4001, true); p += 2;   // normal
   dv.setUint16(p, opt.flags ?? 0x02, true); p += 2;
   dv.setUint32(p, opt.blocksPerFrame ?? 73728, true); p += 4;
@@ -37,7 +40,7 @@ function buildDescriptorFile(opt = {}) {
   dv.setUint32(p, opt.totalFrames ?? 10, true); p += 4;
   dv.setUint16(p, opt.bps ?? 16, true); p += 2;
   dv.setUint16(p, opt.channels ?? 2, true); p += 2;
-  dv.setUint32(p, opt.sampleRate ?? 44100, true); p += 4;
+  dv.setUint32(p, opt.sampleRate ?? 44100, true);
   return b;
 }
 
@@ -120,6 +123,8 @@ describe('parseMacHeader', () => {
     const totalSamples = 9 * 73728 + 12345;
     assert.equal(info.durationUs, Math.round((totalSamples / 44100) * 1e6));
     assert.equal(info.formatFlags.noWaveHeader, false);
+    // 默认无 seek 表 / 头部数据：audioOffset = 52(descriptor) + 24(header)
+    assert.equal(info.audioOffset, 76);
   });
 
   test('legacy 形态：块大小按版本推导、帧数未知', () => {

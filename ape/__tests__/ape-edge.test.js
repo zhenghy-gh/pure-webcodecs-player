@@ -31,20 +31,23 @@ function u8(...bytes) {
   return Uint8Array.from(bytes);
 }
 
-/** 合成 APE_DESCRIPTOR 形态文件（版本 ≥3980，布局与 ape.test.js 一致） */
+/** 合成 APE_DESCRIPTOR 形态文件（版本 ≥3980，真实 52B 描述符布局） */
 function buildDescriptorFile(opt = {}) {
-  const b = new Uint8Array(64);
+  const seekTableLen = opt.seekTableLen ?? 0;
+  const headerDataLen = opt.headerDataLen ?? 0;
+  const b = new Uint8Array(52 + 24 + seekTableLen + headerDataLen);
   const dv = new DataView(b.buffer);
   for (const [i, ch] of ['M', 'A', 'C', ' '].entries()) b[i] = ch.charCodeAt(0);
   dv.setUint16(4, opt.version ?? 3990, true);
-  dv.setUint32(6, 80, true);        // descriptorLen（示意值）
-  dv.setUint32(10, 24, true);       // headerLen
-  dv.setUint32(14, opt.seekTableLen ?? 0, true);
-  dv.setUint32(18, 44, true);       // waveHeaderLen
-  dv.setUint32(22, opt.audioLen ?? 100000, true);
-  dv.setUint32(26, 0, true);
-  // p=32 起 HEADER 24 字节
-  let p = 32;
+  dv.setUint32(8, 52, true);               // nDescriptorBytes
+  dv.setUint32(12, 24, true);              // nHeaderBytes
+  dv.setUint32(16, seekTableLen, true);    // nSeekTableBytes
+  dv.setUint32(20, headerDataLen, true);   // nHeaderDataBytes
+  dv.setUint32(24, opt.audioLen ?? 100000, true); // nAPEFrameDataBytes（低 32）
+  dv.setUint32(28, 0, true);
+  dv.setUint32(32, 0, true);               // nTerminatingDataBytes
+  // p=52 起 HEADER 24 字节
+  let p = 52;
   dv.setUint16(p, opt.compression ?? 4001, true); p += 2;
   dv.setUint16(p, opt.flags ?? 0x02, true); p += 2;
   dv.setUint32(p, opt.blocksPerFrame ?? 73728, true); p += 4;
@@ -165,7 +168,7 @@ describe('MAC 头畸变与版本边界', () => {
     // 不足 8B 的 MAC 前缀
     assert.throws(() => parseMacHeader(buildDescriptorFile().subarray(0, 7)),
       (e) => e.code === 'PARSE_ERROR');
-    // descriptor 形态在 56B 内截断
+    // descriptor 形态在 76B（descriptorLen+24）内截断
     assert.throws(() => parseMacHeader(buildDescriptorFile().subarray(0, 40)),
       (e) => e.code === 'PARSE_ERROR');
     // legacy 形态在 14B 内截断
@@ -185,7 +188,7 @@ describe('MAC 头畸变与版本边界', () => {
       const info = parseMacHeader(buildDescriptorFile({ version: v }));
       assert.equal(info.kind, 'descriptor', `版本 ${v} 应为 descriptor`);
       assert.equal(info.version, v);
-      assert.equal(info.audioOffset, 56); // 32B DESCRIPTOR + 24B HEADER
+      assert.equal(info.audioOffset, 76); // 52B DESCRIPTOR + 24B HEADER（默认无 seek/头部数据）
     }
   });
 
@@ -251,6 +254,51 @@ describe('MAC 头畸变与版本边界', () => {
       hasSeekTableFirst: true, noWaveHeader: true, crc32PerFrame: false,
       highBitDepth24: false, hasPeakLevel: true,
     });
+  });
+});
+
+/* ============================================================
+ * APE_DESCRIPTOR 布局合规（修复 C-1 偏移缺陷的回归覆盖）
+ * ============================================================ */
+
+describe('APE_DESCRIPTOR 布局合规', () => {
+  test('audioOffset = 52 + 24 + seekTable + headerData；头部字段自偏移 52 读取', () => {
+    const S = 8, W = 16;
+    const info = parseMacHeader(buildDescriptorFile({ seekTableLen: S, headerDataLen: W }));
+    assert.equal(info.audioOffset, 52 + 24 + S + W);
+    // 头部 compressionCode 位于 descriptorLen(=52) 偏移处
+    const dv = new DataView(buildDescriptorFile({ seekTableLen: S, headerDataLen: W }).buffer);
+    assert.equal(dv.getUint16(52, true), 4001);
+  });
+
+  test('descriptorLen < 52 视为损坏抛 PARSE_ERROR（ffmpeg 约定）', () => {
+    const b = buildDescriptorFile();
+    new DataView(b.buffer).setUint32(8, 40, true); // 伪造过短描述符
+    assert.throws(() => parseMacHeader(b), (e) => e.code === 'PARSE_ERROR');
+  });
+
+  test('descriptorLen > 52（含附加字段）头部按实际偏移读取且 audioOffset 正确', () => {
+    const S = 8, W = 16;
+    const b = new Uint8Array(60 + 24 + S + W);
+    const dv = new DataView(b.buffer);
+    for (const [i, ch] of ['M', 'A', 'C', ' '].entries()) b[i] = ch.charCodeAt(0);
+    dv.setUint16(4, 3990, true);
+    dv.setUint32(8, 60, true);   // descriptorLen > 52
+    dv.setUint32(12, 24, true);
+    dv.setUint32(16, S, true);
+    dv.setUint32(20, W, true);
+    let p = 60;                  // 头部实际位置
+    dv.setUint16(p, 4002, true); p += 2;  // 用 4002 证明真从偏移 60 读取
+    dv.setUint16(p, 0x02, true); p += 2;
+    dv.setUint32(p, 73728, true); p += 4;
+    dv.setUint32(p, 12345, true); p += 4;
+    dv.setUint32(p, 10, true); p += 4;
+    dv.setUint16(p, 16, true); p += 2;
+    dv.setUint16(p, 2, true); p += 2;
+    dv.setUint32(p, 44100, true);
+    const info = parseMacHeader(b);
+    assert.equal(info.compressionCode, 4002); // 证伪硬编码 p=52
+    assert.equal(info.audioOffset, 60 + 24 + S + W);
   });
 });
 
