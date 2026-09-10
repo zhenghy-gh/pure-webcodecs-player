@@ -179,6 +179,5 @@ function compareBytes(a, b) {
 
 /** 快捷：解码并把所有字节串保留为 Uint8Array（不转字符串） */
 export function bdecodeRaw(bytes) {
-  void bytes; // 与 bdecode 相同实现路径；占位以表达语义差异由调用方处理
-  return bdecode(arguments[0]);
+  return bdecode(bytes);
 }

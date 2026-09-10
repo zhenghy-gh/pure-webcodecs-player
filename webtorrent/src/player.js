@@ -23,7 +23,7 @@ export class WebTorrentPlayer extends Emitter {
    * @param {{
    *   clientFactory?: () => Promise<Function|null>, // 注入测试桩或自定义加载器
    *   selectExts?: string[],       // 媒体文件优选扩展名
-   *   autoSelect?: boolean,        // ready 时自动选文件（默认 true）
+   *   autoSelect?: boolean,        // ready 时自动选文件（默认 true；false 暂不支持，会抛 STATE_ERROR）
    * }} opts
    */
   constructor(opts = {}) {
@@ -83,7 +83,17 @@ export class WebTorrentPlayer extends Emitter {
       this.client ??= new WT();
       this.torrent = await addTorrent(this.client, torrentId);
 
-      if (this.opts.autoSelect !== false && !this.file) {
+      if (this.opts.autoSelect === false) {
+        // 手动选文件 API 尚未提供（见 backlog 待办）：诚实报错，而不是让
+        // null file 流入 createTorrentSource 造成 SOURCE_ERROR + 永久卡 loading
+        this.state = 'degraded';
+        this.emit('status', this.state);
+        throw new PlayerError(
+          'STATE_ERROR',
+          'autoSelect=false 暂不支持：手动选文件 API 尚未提供，请使用默认自动选择',
+        );
+      }
+      if (!this.file) {
         this.file = selectMediaFile(this.torrent.files ?? [], {
           selectExts: this.opts.selectExts ?? DEFAULT_SELECT_EXTS,
         });

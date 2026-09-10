@@ -79,7 +79,11 @@ export class TorrentFileSource {
       throw new TorrentSourceError(`read 参数非法: offset=${offset} length=${length}`, 'BAD_ARGS');
     }
     if (length === 0) return new Uint8Array(0);
-    // OOB 统一在入口拒绝（见下）
+    // OOB：size 已知时在入口统一拒绝，slice/sequential 两路行为一致
+    // （size 未知时顺序流拉到 EOF 按契约返回不足部分）
+    if (this.size && offset >= this.size) {
+      throw new TorrentSourceError(`越界读取: offset=${offset} ≥ size=${this.size}`, 'OUT_OF_RANGE');
+    }
 
     const out = this.supportsRandomAccess
       ? await this.#readViaSlice(offset, length)
@@ -92,9 +96,7 @@ export class TorrentFileSource {
   get byteLength() { return this.size; }
 
   async #readViaSlice(offset, length) {
-    if (this.size && offset >= this.size) {
-      throw new TorrentSourceError(`越界读取: offset=${offset} ≥ size=${this.size}`, 'OUT_OF_RANGE');
-    }
+    // OOB 检查已上提至 read() 入口（slice/sequential 一致）
     const end = Math.min(offset + length, this.size || Infinity);
     const sliced = this.file.slice(offset, end);
     // 兼容多种返回：ArrayBuffer / TypedArray / Blob 式（有 arrayBuffer()）
