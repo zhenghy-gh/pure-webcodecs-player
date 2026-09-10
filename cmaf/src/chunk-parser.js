@@ -11,6 +11,7 @@
 
 import {
   iterateBoxes,
+  findBox,
   parseMoof,
   parseSidx,
   isKeyframeFlag,
@@ -175,7 +176,7 @@ export function parseInitSegment(initBytes) {
   const videoCfg = findVideoDecoderConfig(initBytes);
   const asc = findAudioSpecificConfig(initBytes);
 
-  /** 从 mdhd 抓 timescale（简化实现：全文件搜索第一个 mdhd） */
+  /** 按 trak 树关联提取 timescale（复用 hdlr 判定轨类型，非全文件字节扫描） */
   const timescales = findTimescales(initBytes);
 
   return {
@@ -190,27 +191,65 @@ export function parseInitSegment(initBytes) {
   };
 }
 
-/** 遍历全部 mdhd box 取 timescale；按出现顺序第 1 个视为视频、第 2 个视为音频 */
-function findTimescales(initBytes) {
-  const dv = new DataView(initBytes.buffer, initBytes.byteOffset, initBytes.byteLength);
+/**
+ * 从 init segment 的 moov 树按 trak 结构关联提取各轨 timescale。
+ *
+ * 修正（audit-79 C-2）：旧实现全文件扫描 'mdhd' 字节串、并以出现顺序
+ * 假定"第 1 个 mdhd=视频、第 2 个=音频"，在音视频顺序非常规、或解码配置
+ * 字节里恰含 'mdhd' 序列时会取错。这里改为遍历
+ *   moov → trak → mdia，用 hdlr.handlerType 判定轨类型
+ * （'vide'→视频、'soun'→音频），再读同 trak 的 mdhd 取 timescale。
+ * 不依赖出现顺序，也不扫描解码配置字节（avcC/hvcC/esds 等二进制内
+ * 理论上也可出现这 4 字节，全文件扫描会误命中）。
+ *
+ * @param {Uint8Array} initBytes ftyp+moov 字节
+ * @returns {{video?:number, audio?:number}}
+ */
+export function findTimescales(initBytes) {
   const result = {};
-  for (let i = 0; i + 24 <= initBytes.length; i++) {
-    if (
-      initBytes[i] === 0x6d && initBytes[i + 1] === 0x64 &&
-      initBytes[i + 2] === 0x68 && initBytes[i + 3] === 0x64
-    ) {
-      // 布局：[size(4)][mdhd(4)][verFlags(4)] → v0: ctime(4)+mtime(4)+timescale(4)
-      //                                              v1: ctime(8)+mtime(8)+timescale(4)
-      const version = initBytes[i + 4]; // fullBox 的 version 在 verFlags 首字节
-      const tsPos = i + 8 + (version === 1 ? 16 : 8);
-      if (tsPos + 4 <= initBytes.length) {
-        const ts = dv.getUint32(tsPos);
-        if (ts > 0 && ts < 0xffffffff) {
-          if (result.video == null) result.video = ts;
-          else if (result.audio == null) result.audio = ts;
-        }
-      }
+  // 顶层定位 moov（非全文件扫描）
+  const moov = findBox(initBytes, 0, initBytes.length, 'moov');
+  if (!moov) return result;
+  for (const trak of iterateBoxes(initBytes, moov.contentStart, moov.contentEnd)) {
+    if (trak.type !== 'trak') continue;
+    const mdia = findBox(initBytes, trak.contentStart, trak.contentEnd, 'mdia');
+    if (!mdia) continue; // 缺 mdia：兜底跳过该轨
+    const mdhd = findBox(initBytes, mdia.contentStart, mdia.contentEnd, 'mdhd');
+    if (!mdhd) continue; // 缺 mdhd：兜底跳过该轨
+    const handlerType = readHandlerType(initBytes, mdia);
+    const ts = readMdhdTimescale(initBytes, mdhd);
+    if (ts == null) continue; // timescale 非法：兜底跳过
+    if (handlerType === 'soun') {
+      if (result.audio == null) result.audio = ts;
+    } else if (handlerType === 'vide') {
+      if (result.video == null) result.video = ts;
     }
+    // 其他 handlerType / 缺 hdlr：兜底跳过该轨
   }
   return result;
+}
+
+/** 读 hdlr 的 handlerType（4 字符）；缺 hdlr/截断返回 null */
+function readHandlerType(buf, mdia) {
+  const hdlr = findBox(buf, mdia.contentStart, mdia.contentEnd, 'hdlr');
+  if (!hdlr) return null;
+  // hdlr fullBox：[ver/flags(4)][predefined(4)][handlerType(4)]…
+  if (hdlr.contentStart + 8 + 4 > buf.length) return null;
+  return String.fromCharCode(
+    buf[hdlr.contentStart + 8],
+    buf[hdlr.contentStart + 9],
+    buf[hdlr.contentStart + 10],
+    buf[hdlr.contentStart + 11]
+  );
+}
+
+/** 读 mdhd 的 timescale；版本不识别/越界/非正返回 null */
+function readMdhdTimescale(buf, mdhd) {
+  const version = buf[mdhd.contentStart];
+  // v0: [ver/flags(4)][ctime(4)][mtime(4)][timescale(4)] → +12；v1 时间戳 8 字节 → +20
+  const tsPos = mdhd.contentStart + 4 + (version === 1 ? 16 : 8);
+  if (tsPos + 4 > buf.length) return null;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const ts = dv.getUint32(tsPos);
+  return ts > 0 ? ts : null;
 }

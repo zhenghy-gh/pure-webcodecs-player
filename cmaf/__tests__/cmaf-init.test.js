@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { _internalForTest as fmp4 } from '../../hls/src/fmp4-muxer.js';
-import { parseInitSegment } from '../src/chunk-parser.js';
+import { parseInitSegment, findTimescales } from '../src/chunk-parser.js';
 import { findVideoDecoderConfig, findAudioSpecificConfig } from '../src/isobmff.js';
 
 const FAKE_AVC_C = new Uint8Array([
@@ -73,8 +73,8 @@ test('init：mp4a/esds 提取 AudioSpecificConfig 与 AOT/timescale', () => {
   const info = parseInitSegment(init);
   assert.ok(info.audio, '纯音频 init 应含音频轨');
   assert.equal(info.audio.codecAot, 2, 'ASC 高 5 位为 AOT=2');
-  // 纯音频 init 仅一个 mdhd，被 cmaf 归入 video 槽，audio 槽缺失 → 回退默认 48000
-  assert.equal(info.audio.timescale, 48000, '单 mdhd 时 audio 槽缺失回退 48000');
+  // 修正后按 hdlr('soun') 关联：单音频轨 mdhd timescale 取真实 44100，而非默认 48000
+  assert.equal(info.audio.timescale, 44100, '按 hdlr 关联后单音频轨取真实 timescale=44100');
   assert.equal(info.video, null, '纯音频 init 不应含视频');
 });
 
@@ -114,4 +114,89 @@ test('init 含零长度配置盒（avcC bytes=0）不抛错，fourcc 仍识别',
   const cfg = findVideoDecoderConfig(init);
   assert.equal(cfg.fourcc, 'avcC', '空载荷的配置盒仍被识别为 avcC');
   assert.doesNotThrow(() => parseInitSegment(init));
+});
+
+/* ---------------- audit-79 C-2 修法回归（按 hdlr 树关联，非字节扫描） ---------------- */
+
+// 合成最小 init（仅覆盖兜底用例，不依赖 hls muxer 内部实现）
+function u32b(n) { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, n >>> 0); return b; }
+function u16b(n) { const b = new Uint8Array(2); new DataView(b.buffer).setUint16(0, n & 0xffff); return b; }
+function asciib(s) { const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 0x7f; return b; }
+function mbox(type, ...ps) { const body = fmp4.concat(ps); return fmp4.concat([u32b(body.length + 8), asciib(type), body]); }
+function mfull(type, ver, flags, ...ps) { const vf = new Uint8Array([ver, (flags >> 16) & 0xff, (flags >> 8) & 0xff, flags & 0xff]); return mbox(type, vf, ...ps); }
+
+/** 构造 moov(trak…) 的 init；track: {timescale, handlerType, hasMdhd, hasHdlr} */
+function synthInit(tracks) {
+  const traks = tracks.map((t) => {
+    const mdiaKids = [];
+    if (t.hasMdhd !== false) {
+      // mdhd v0：[ctime(4)][mtime(4)][timescale(4)][duration(4)][language(2)][pre_defined(2)]
+      mdiaKids.push(mfull('mdhd', 0, 0, u32b(0), u32b(0), u32b(t.timescale), u32b(0), u16b(0x8000 | 0x5c), u16b(0)));
+    }
+    if (t.hasHdlr !== false) {
+      mdiaKids.push(mfull('hdlr', 0, 0, u32b(0), asciib(t.handlerType), u32b(0), u32b(0), u32b(0), asciib('x'), new Uint8Array(1)));
+    }
+    const mdia = mbox('mdia', ...mdiaKids);
+    const tkhd = mfull('tkhd', 0, 3, new Uint8Array(80));
+    return mbox('trak', tkhd, mdia);
+  });
+  const mvhd = mfull('mvhd', 0, 0, new Uint8Array(92));
+  const moov = mbox('moov', mvhd, ...traks);
+  const ftyp = mbox('ftyp', asciib('iso5'), u32b(0x200), asciib('isom'));
+  return fmp4.concat([ftyp, moov]);
+}
+
+test('C-2：结构遍历按 hdlr 关联，与 trak 出现顺序无关（音频在前）', () => {
+  // 音频轨先于视频轨：旧"第 1 个 mdhd=视频"会被颠倒，新实现按 hdlr 判定
+  const init = fmp4.buildInit([AUDIO_TRACK({ timescale: 48000 }), VIDEO_TRACK({ timescale: 90000 })]);
+  const info = parseInitSegment(init);
+  assert.equal(info.video.timescale, 90000, '视频轨在后的 timescale 仍正确');
+  assert.equal(info.audio.timescale, 48000, '音频轨在前的 timescale 仍正确');
+});
+
+test('C-2：解码配置里埋入 "mdhd" 字节不误命中', () => {
+  // 在视频 avcC 载荷内塞入形似 mdhd box 头的字节串（伪造 timescale）。
+  // 旧实现全文件字节扫描会把这段"假 mdhd"当作第 2 个 mdhd、误归入音频轨。
+  const fake = fmp4.concat([
+    FAKE_AVC_C.slice(0, 4),
+    new Uint8Array([0x6d, 0x64, 0x68, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0b, 0xca, 0x72]),
+    FAKE_AVC_C.slice(4),
+  ]);
+  const init = fmp4.buildInit([
+    VIDEO_TRACK({ timescale: 90000, description: { tag: 'avcC', bytes: fake } }),
+    AUDIO_TRACK({ timescale: 48000 }),
+  ]);
+  const info = parseInitSegment(init);
+  assert.equal(info.video.timescale, 90000, '视频 mdhd 取真实 90000');
+  assert.equal(info.audio.timescale, 48000, '嵌入的假 mdhd 不应误归入音频轨');
+});
+
+test('C-2：缺 mdhd 的轨被兜底跳过（其余轨仍可取）', () => {
+  const init = synthInit([
+    { timescale: 90000, handlerType: 'vide' },
+    { timescale: 48000, handlerType: 'soun', hasMdhd: false },
+  ]);
+  const ts = findTimescales(init);
+  assert.equal(ts.video, 90000);
+  assert.equal(ts.audio, undefined, '缺 mdhd 的音频轨应被跳过');
+});
+
+test('C-2：缺 hdlr 的轨无法判定类型被兜底跳过', () => {
+  const init = synthInit([
+    { timescale: 90000, handlerType: 'vide', hasHdlr: false },
+    { timescale: 48000, handlerType: 'soun' },
+  ]);
+  const ts = findTimescales(init);
+  assert.equal(ts.video, undefined, '缺 hdlr 的视频轨无法关联，应跳过');
+  assert.equal(ts.audio, 48000);
+});
+
+test('C-2：标准双轨（含 hdlr）结构遍历正确关联', () => {
+  const init = synthInit([
+    { timescale: 48000, handlerType: 'soun' },
+    { timescale: 90000, handlerType: 'vide' },
+  ]);
+  const ts = findTimescales(init);
+  assert.equal(ts.video, 90000);
+  assert.equal(ts.audio, 48000);
 });
