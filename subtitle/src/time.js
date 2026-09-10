@@ -14,7 +14,7 @@ import { SubtitleError } from './errors.js';
  * 通用时间码正则：可选小时位(1-3位) + 分 + 秒 + 可选小数部分(1-3位)。
  * 例：00:00:01,500 / 0:12:34.5 / 05:06.250 / 1:02:03.12(ASS 厘秒)
  */
-const TS_RE = /^(?:(\d{1,3}):)?(\d{1,2}):(\d{1,2})(?:[.,](\d{1,3}))?$/;
+const TS_RE = /^(?:(\d{1,3}):)?(\d{1,2}):(\d{1,2})(?:[.,](\d{1,}))?$/;
 
 /**
  * 解析单个时间码为整数微秒。
@@ -40,9 +40,9 @@ export function parseTimestamp(str) {
   if (minutes > 59 || seconds > 59) {
     throw new SubtitleError('PARSE_ERROR', `时间码分/秒越界（>59）：「${str.trim()}」`, { detail: { raw: str } });
   }
-  // 小数位右补零到毫秒：'5'→500ms，'52'→520ms，'520'→520ms
+  // 小数位右补零、超长截断到毫秒（3 位）：'5'→500ms，'52'→520ms，'1234'→123ms
   const frac = m[4] ?? '';
-  const ms = frac === '' ? 0 : Number.parseInt(frac.padEnd(3, '0'), 10);
+  const ms = frac === '' ? 0 : Number.parseInt(frac.slice(0, 3).padEnd(3, '0'), 10);
   return ((hours * 3600 + minutes * 60 + seconds) * 1000 + ms) * 1000;
 }
 

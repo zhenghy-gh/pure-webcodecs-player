@@ -66,7 +66,7 @@ export async function* parseCues(bytes, options = {}) {
     yield {
       ...c,
       trackId,
-      raw: encoder.encode(c.raw ?? c.text),
+      raw: c.raw instanceof Uint8Array ? c.raw : encoder.encode(c.raw ?? c.text),
     };
   }
 }

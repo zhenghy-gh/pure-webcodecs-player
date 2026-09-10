@@ -51,9 +51,12 @@ test('SRT：时间行尾坐标段进入 settings.extra', async () => {
 
 test('SRT：畸形样例 lenient 跳过并计数', async () => {
   const r = parseSrt(await readFix('sample-broken.srt'));
-  assert.equal(r.cues.length, 1);
-  assert.equal(r.stats.skippedBlocks, 3);
-  assert.ok(r.stats.warnings.length >= 3);
+  // 修复前：4 位毫秒（00:00:06,0001）被视作非法整块跳过；
+  // 修复后：毫秒域超 3 位按截断处理（→ 6s000ms），该块成为有效 cue。
+  // 仍真正畸形的是：时间行含非数字字符（XX:YY:ZZ）与结束时间缺失。
+  assert.equal(r.cues.length, 2);
+  assert.equal(r.stats.skippedBlocks, 2);
+  assert.ok(r.stats.warnings.length >= 2);
   assert.equal(r.stats.warnings[0].endsWith('已跳过'), true);
 });
 
