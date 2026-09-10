@@ -112,8 +112,8 @@
 - [x] **P2** 薄弱模块测试补强（第七十三~七十八波）：webrtc/wav/cmaf/ape/flac/mkv 共新增 23 个测试文件，全仓测试 1144 → **1385**（+241），全量全绿；过程中修复 mkv 两个真实缺陷（第七十二波）
 
 ### 待办（按优先级，下一波取 P1 第一条）
-- [ ] **P3** 下一批补测落点（audit-79 B）：flv（41.7 行/例，最大 flv-demuxer.js 615 行 / iso-bmff.js 298 行）、core（35.5，pipeline-webcodecs 534 / player 523）、ts（34.0，ts-stream-engine 732 / ts-demuxer 536）
-- [ ] **P3** C-4 flv fmp4-remuxer 非 flush 切片末帧 duration=0（audit-79 C，低）
+- [x] **P3** C-4 flv fmp4-remuxer 非 flush 切片末帧 duration=0（第八十四波 `734c982` 已修 + 回归）
+- [ ] **P3** 下一批补测落点：core 的 pipeline-webcodecs 正向路径（534 行，本轮只覆盖错误路径）、mov（密度中低）、flv iso-bmff 剩余面
 - [ ] **P3** 重构收敛（audit-79 D，**动前需 owner 点头**）：BitReader×4 / BitWriter×2 / buildEsds×2 收敛到 core；删 `mp4/src/box-builder.js:225` 死导出 buildBtrt
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
@@ -136,3 +136,6 @@
 | 81 | 修复 APE 头偏移（高危，真实文件全读错） | descriptor 分支把 offset 6 的 nPadding 当 descriptorLen、header 硬编码 offset 32、audioOffset=56 忽略 seekTable/headerData。按真实布局（52B 描述符含 MD5，header 从 descriptorLen 起）重写；5 个测试文件的 buildDescriptorFile 与 gen.mjs 复刻了错误布局自洽掩盖 bug，全部重写 + 3 条 conformance 回归。ape 74/74 | `0b5e0cc` |
 | 82 | 修复 CMAF findTimescales 顺序假定 | 全文件扫 'mdhd' + 按出现顺序假定第 1 个=视频 → 音频在前取反、解码配置字节误命中。改 box 树关联：moov→trak→mdia，hdlr handlerType 判轨型再读 mdhd；缺字段跳过兜底。新增乱序双轨/埋字节/缺 hdlr 测试（旧实现验证必败）。cmaf 58/58 | `bd7b327` |
 | 83 | 全仓只读审计 | 产出 `docs/review/audit-79.md`：A 技术债 8 条（多为有意设计，轻量债 webtorrent bencode 死参数、rtsp/rtmp 空 catch）、B 密度最低 flv/core/ts、C 确凿 bug 4 条（C-1 APE 高危已修、C-2 CMAF 已修、C-3 subtitle ms 截断已修、C-4 flv duration=0 待办）、D 死导出 buildBtrt + 重复实现 BitReader×4/BitWriter×2/buildEsds×2。C-4 与重构级收敛**待 owner 决策**后动 | 本波 |
+| 84 | flv 补测 + 修复 C-4 | cut() 非 flush 切片末帧 durationTicks 未回填即出 trun → duration=0；改用上一回填帧时长估算兜底（与 flush() 一致）+ trun 全 duration>0 回归。补测 +11（音频位域/ASC 序列头/MP3 直通/ASC 24bit 扩展位序修正）。flv 52 → 63 | `734c982` |
+| 85 | ts 补测（+17） | 包头/TEI/PUSI/CC/afControl 三分支与 afLen 边界/AF stuffing 落位/半截 PES 丢弃（0xff stuffing 语义）/截断与垃圾重同步。ts 72 → 90 | `17985dd` |
+| 86 | core 补测（+19） | pipeline 错误路径：Fake codec 注入下 decodeError 传播/configure 失败/close-reset 重建。core 密度收敛起步 | `d97d47a` |
