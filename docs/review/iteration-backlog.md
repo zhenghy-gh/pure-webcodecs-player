@@ -109,7 +109,10 @@
 - [x] **P2** 总览页 MODULES.status 陈旧修复（第七十波 `e7ff2eb`）：nav.js 16 模块 status 全部对齐 ok（core/mp4/mov/mkv/webtorrent/ts/flv/hls/cmaf/webrtc wip→ok，rtsp/rtmp na→ok）；线上 hub 验证徽章唯一 ["可用"]
 - [x] **P2** 真机 e2e 回归脚本化（第七十一波）：新增 `scripts/e2e/demo-smoke.mjs`——playwright 驱动真实 Chrome 遍历 16 模块 demo 页 + hub，捕获 console error/pageerror + 资源 404（favicon/sourcemap 豁免良性），mp4/hls 用本地样本自动驱动播放并断言，全屏截图刷新 `docs/review/i3/*.png` 与 `docs/demo/demo-hub.png`；17/17 全 PASS、退出码 0。把 i3 手工验证固化成可重跑回归
 
+- [x] **P2** 薄弱模块测试补强（第七十三~七十八波）：webrtc/wav/cmaf/ape/flac/mkv 共新增 23 个测试文件，全仓测试 1144 → **1385**（+241），全量全绿；过程中修复 mkv 两个真实缺陷（第七十二波）
+
 ### 待办（按优先级，下一波取 P1 第一条）
+- [ ] **P3** 剩余模块补测：rtmp（5 测/1468 行）、subtitle（8 测/2103 行）、rtsp（8 测/1397 行）测试密度仍偏低，可继续按第七十三~七十八波同法补强
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
 
@@ -119,3 +122,10 @@
 | 69 | 根路径重定向 mp4/demo/（owner 选方向1） | index.html 重定向目标由 ./site/demo/index.html 改为 ./mp4/demo/，打开仓库主页即播放器；线上已生效验证（curl 返回 location.replace('./mp4/demo/')） | `2c66a19` |
 | 70 | 总览页 MODULES.status 陈旧修复（owner「继续优化」） | nav.js 16 模块 status 全部对齐 ok（core/mp4/mov/mkv/webtorrent/ts/flv/hls/cmaf/webrtc wip→ok，rtsp/rtmp na→ok）；线上 hub playwright 验证 16 卡片徽章取值唯一 ["可用"]；hub 截图已同步更新 | `e7ff2eb` |
 | 71 | 真机 e2e 回归脚本化（P2） | 新增 `scripts/e2e/demo-smoke.mjs`：playwright 驱动真实 Chrome 遍历 16 模块 demo 页 + hub，捕获 console error/pageerror + 资源 404（favicon/sourcemap 豁免），mp4/hls 用本地样本（sintel-trailer.mp4 / ts-hls/playlist.m3u8）自动驱动播放并断言（video playing / stats 分片），全屏截图刷新 `docs/review/i3/*.png` 与 `docs/demo/demo-hub.png`；17/17 全 PASS、退出码 0；backlog 划掉 hub 徽章 P2 + e2e P2 | 本波 |
+| 72 | 修复 mkv 两个真实缺陷 | ①**CueTime 未按 TimecodeScale 缩放**：`#parseCuesAt` 把 CueTime 直接当 ns，与 `locate()` 的 targetNs(=us×1000) 单位差 1e6 倍 → 二分命中错误簇（seek(1.6s) 误落 2s 簇）；改为 ×`this.timecodeScaleNs`，并修正既有用例 demuxer.test.js「seek：Cues 定位」（原期望 1.6s 命中 cluster1 系旧 bug 凑巧成立，目标改 2s 以保持原意图）。②**DiscardPadding 对外丢失**：`#emitBlockFrames` 已解析为 µs，但 `#iterateTrack` 映射未透传 → `readSample` 拿不到 Opus/AAC 首尾填充裁剪依据；现透传 `discardPaddingUs`/`discardable` | `8d47f09` |
+| 73 | webrtc 补测（27→58） | +4 文件：SDP 构造与 `parseCandidateLine` 边界、getStats 极端输入（无 inbound-rtp / 未 succeeded 候选 / 除零 / 未来时间戳截断）、player 边界（parsePlayerUrl 多形态、状态枚举冻结、destroy 清理、trickle 注入、重连中 destroy 取消定时器）、信令错误分支（5xx/4xx/非 sdp/Location 协议白名单、WS 无实现、`__proto__` 键拒绝） | `c183b95` |
+| 74 | wav 补测（75→82） | +4 文件：RIFF/WAVE 头校验（截断/坏魔数/流式哨兵 0xFFFFFFFF）、fmt 全格式（PCM 8/16/24/32、IEEE float、mulaw/alaw、extensible SubFormat GUID、cbSize 缺失）、chunk 边界（未知块跳过/奇数长度补齐/data 先于 fmt/超大块报错）、createWavPlayer 在 Node 与 browser-mock 下的支持性契约 | `70a4010` |
+| 75 | cmaf 补测 | +3 文件：init segment 配置提取（avcC/hvcC/mp4a、未知盒、零长不崩）、fragment 封装（两遍 `data_offset` 回填、mdat 载荷、parseMoof 的 tfhd/tfdt/trun、mfhd seq 递增）、box 字节级解析（readBoxHeader 普通/largesize/截断、findBox、parseTrun v0/v1 有符号 cts） | `fd2ef47` |
+| 76 | ape 补测 | +3 文件：压缩等级码表全量映射（descriptor/legacy 双路径、未知码兜底 `code-XXXX`）、validate 边界（采样率/声道/帧数越界拒绝与合法极值）、APE 标签解析（<32B/<160B 的 ID3v1 守卫、空标签安全、valueLen 越界钳制、itemsStart>itemsEnd 抛错） | `351616c` |
+| 77 | flac 补测 | +5 文件：bitreader 位读取边界越界、CRC8/CRC16、帧头与帧同步、metadata 各类块（STREAMINFO/VORBIS_COMMENT/PICTURE/SEEKTABLE 占位乱序残尾/APPLICATION/padding 截断）、subframe 各预测分支（CONSTANT/FIXED/LPC/verbatim）与残差解码 | `3c9e7e0` |
+| 78 | mkv 补测（+4 文件） | EBML 变长整数与定长读写边界、Cues 与 seek 定位、时间戳与关键帧判定、轨道与编解码私有数据解析。**并修正 3 处测试自身缺陷**：Cues 自依赖（CueClusterPosition 依赖 Cues 长度、Cues 长度又依赖其值）改用 `minLen=8` 固定宽度两遍构造并附等长断言兜底；`U8(10)` 实为 `Uint8Array.from(10)`→空数组致 xiph 帧全 0 长，改 `new Uint8Array(10)`；AAC ASC 显式采样率须位于 channelConfiguration **之前**（规范顺序），此前置错得到 sampleRate=2103152 | `293ade7` |
