@@ -225,7 +225,7 @@ footer{padding:64px 120px 36px;background:var(--bg-footer);border-top:1px solid 
     </div>
     <div class="hero-visual" data-page-node-id="PMx2r75rRYIQ3WCa5DIiB0">
       <div class="win-bar" data-page-node-id="pnaRbCg09Q4xbZlhMl0DHq"><i data-page-node-id="qwBqgA4oGyJMmTN4uTCfVg"></i><i data-page-node-id="MXLGFF5maADNnHMlvPO4JF"></i><i data-page-node-id="jdafjZRwyBO7BaLmFjr15e"></i><span data-page-node-id="qEjshigGTzekrPfFtCModO">site/demo/ · ts → demux → VideoDecoder → canvas</span></div>
-      <div class="ph hero-stage" data-page-node-id="0bjpku8jykZ2XxxCKUyqBS">播放器实拍 16:9（占位，待替换真实截图 / demo-webcodecs.gif）</div>
+      <div class="ph hero-stage" data-page-node-id="0bjpku8jykZ2XxxCKUyqBS"><img src="./assets/hero-player.png" alt="播放器实拍：Sintel 预告片经 ISO-BMFF 解封装 → fMP4 Remux → MSE 边下边播" style="width:100%;height:100%;object-fit:cover;display:block"></div>
     </div>
     <div class="trust" data-page-node-id="841XcTcPnzspEZ8GT8lXU8">
       <div class="stat" data-page-node-id="adB9g5ZLoaFk6mWWKp0Imu"><b data-page-node-id="d1xOCDe6rumB7ZsYJF95sG">2221 / 2221</b><em data-page-node-id="vRVWDUowkxZJPvmoqkd6F9">单元测试通过</em></div><div class="div" data-page-node-id="fkAukyiipPqHdnsS3ZgOGQ"></div>
@@ -306,11 +306,11 @@ footer{padding:64px 120px 36px;background:var(--bg-footer);border-top:1px solid 
         <div class="bullet" data-page-node-id="7TVhkjvCcBuAeNPWZ8tvmJ"><svg viewBox="0 0 16 16" fill="none" data-page-node-id="DhDZ1IoMmVWVcicacpYFG5"><path d="M3 8.4l3 3 7-7.4" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="LuKcHFzO1pgaxUzwCxcqQD"/></svg><p data-page-node-id="tBqrBM42Ok1Nn1igD3dstp">VideoDecoder / AudioDecoder 原生调用，帧回调可订阅</p></div>
         <div class="bullet" data-page-node-id="9XyvdrueeRaTKzqfWBG2PO"><svg viewBox="0 0 16 16" fill="none" data-page-node-id="hGPguLky7Bjs0lVOn1Emep"><path d="M3 8.4l3 3 7-7.4" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="jDjKaGbRN7vL0HD4wGbFgH"/></svg><p data-page-node-id="bi68wKoR4D5ENWoFjDmFAD">firstframe / error 等事件齐全，seek 关键帧对齐</p></div>
       </div>
-      <div class="ph vis" data-page-node-id="h1Zw8tYkXJNNs4I1kE0Hxa">WebCodecs 解码实拍（占位）</div>
+      <div class="ph vis" data-page-node-id="h1Zw8tYkXJNNs4I1kE0Hxa"><img src="./assets/shot-webcodecs.png" alt="core 内核实拍：detectCapabilities 探测 WebCodecs 解码能力，VideoFrameRenderer 走 WebGL 路径 60fps 渲染" style="width:100%;height:100%;object-fit:cover;display:block"></div>
     </div>
 
     <div class="feature rev" data-page-node-id="kuwYsKIn7AtV5v7LSMw455">
-      <div class="ph vis" data-page-node-id="mW7XzKdlrAyeL7w5JPOxT4">MSE 兜底路线（占位）</div>
+      <div class="ph vis" data-page-node-id="mW7XzKdlrAyeL7w5JPOxT4"><img src="./assets/shot-mse.png" alt="mp4 演示实拍：ISO-BMFF 解封装 → fMP4 Remux → MSE，HTTP Range 渐进加载边下边播" style="width:100%;height:100%;object-fit:cover;display:block"></div>
       <div class="txt" data-page-node-id="Sa74RGxYWosnrgEqyMiWZh">
         <div class="tag" data-page-node-id="c7k41m32iwrDsIGdEDEIwv">02 — MSE 兜底降级</div>
         <h3 data-page-node-id="0cHfGx9pxDjqNR4xucDy4o">能硬解就硬解，不能就平滑落地</h3>
@@ -328,7 +328,7 @@ footer{padding:64px 120px 36px;background:var(--bg-footer);border-top:1px solid 
         <div class="bullet" data-page-node-id="SJmGNU9fUe1EqEBZuBLNlC"><svg viewBox="0 0 16 16" fill="none" data-page-node-id="NUv9i8ERsdoOgFfpJ8d3cd"><path d="M3 8.4l3 3 7-7.4" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="qZT9EQnLaioo4nYzjZfTTp"/></svg><p data-page-node-id="oQcQq5mIdzWcpSKTrUVaAV">纯 ESM 单包，16 个模块按子路径按需引入</p></div>
         <div class="bullet" data-page-node-id="0vX3oynsAN7niBvQLZILJr"><svg viewBox="0 0 16 16" fill="none" data-page-node-id="iVCBF5OPuIwIbyzJD2eaXc"><path d="M3 8.4l3 3 7-7.4" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="bVO7eFI6WS2Gp0V7dw1vnu"/></svg><p data-page-node-id="SazsW0nlhHXUQ4xNXv72pJ">npm / jsdelivr CDN / GitHub Pages 三种引入任选</p></div>
       </div>
-      <div class="ph vis" data-page-node-id="fkGCR1FXhDTA2zSL48gerT">零依赖源码结构（占位）</div>
+      <div class="ph vis" data-page-node-id="fkGCR1FXhDTA2zSL48gerT"><img src="./assets/shot-log.png" alt="解封装日志实拍：容器探测、轨道与 codec 解析、媒体段追加，全部本地完成" style="width:100%;height:100%;object-fit:contain;display:block"></div>
     </div>
   </section>
 
