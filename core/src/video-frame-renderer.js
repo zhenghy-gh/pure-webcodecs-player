@@ -235,7 +235,12 @@ export class VideoFrameRenderer extends Emitter {
     }
     const offX = (1 - scaleX) / 2;
     const offY = (1 - scaleY) / 2;
-    const uvTop = this.flipY ? offY : 1 - offY - scaleY;
+    // 垂直翻转：
+    //   flipY=true（默认）保持原 upright——uvTop=offY，使采样子矩形正立。
+    //   flipY=false 将采样子矩形 [offY-scaleY, offY+scaleY] 关于纹理 v=0.5 镜像，
+    //   即把屏幕顶部映射到原底部（1-offY+scaleY），故 uvTop = 1 - offY。
+    //   注意旧实现写的是 1-offY-scaleY，代数上恒等于 offY（flipY 失效，见缺陷报告）。
+    const uvTop = this.flipY ? offY : 1 - offY;
     gl.uniform4f(this._uUv, scaleX, scaleY, offX, uvTop);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this._quadBuffer);
