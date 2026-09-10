@@ -112,9 +112,9 @@
 - [x] **P2** 薄弱模块测试补强（第七十三~七十八波）：webrtc/wav/cmaf/ape/flac/mkv 共新增 23 个测试文件，全仓测试 1144 → **1385**（+241），全量全绿；过程中修复 mkv 两个真实缺陷（第七十二波）
 
 ### 待办（按优先级，下一波取 P1 第一条）
-- [ ] **P3** 下一批补测落点：flv iso-bmff 剩余面、rtmp player/gateway 正向管线（需网关样本）、webvtt 渲染层
+- [x] **P3** flv iso-bmff 剩余面（**第九十波 `7485e97` 已完成**，flv 63→89）。下一批：rtmp player/gateway 正向管线（需网关样本）、webvtt 渲染层
 - [ ] **P3** 信息性观察（agent 报告，行为已固化测试，动前需 owner 点头）：①pipeline 渲染 emitted 顺序为 rendered 先于 firstframe（与直觉相反）；②_waitQueue guard=64 兜底空转与注释不一致
-- [ ] **P3** webtorrent 手动选文件 API（第九十二波把 autoSelect=false 改为诚实报 STATE_ERROR 后，若要真正支持需新增 `selectFile(file)` 入口并重入 attach 流程）
+- [x] **P3** webtorrent 手动选文件 API（**第九十三波 `18d1ec4` 已落地**）：player.selectFile(selector) 在 degraded 态调用，selector 四形态，错误码全显式
 - [ ] **P3** 重构收敛（audit-79 D，**动前需 owner 点头**）：BitReader×4 / BitWriter×2 / buildEsds×2 收敛到 core；删 `mp4/src/box-builder.js:225` 死导出 buildBtrt
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
@@ -146,3 +146,7 @@
 | 90 | 第三批后台流程升级 | 后台 agent 改用 lite 模型规避默认模型 429 + 「增量验证」约束（每写完 1 个测试文件立即跑模块测试再写下一个）→ 落盘文件全部已验证，主线程零测试构造错修复，只处理真实缺陷 | 本波 |
 | 91 | mp4 补测（+15）+ 修复 seek 游标不重定位 | **高**：_doSeek 只算返回值不重定位游标，违反 core 契约——渐进模式 seek 后从样本 0 重来、分片模式 seek 后提前 EOS（两种模式 seek 全坏）。修：各轨 state 增 resumeIndex，_doSeek 写目标轨关键帧二分结果 + 其余轨按各自时间基定位（_locateResumeIndex）；渐进迭代器从 resumeIndex 起步；分片迭代器开头重放表内样本再接续扫描（重放不动共享游标；resumeIndex=0 且表非空也重放）。已知限制注释明示：中断 moof 内未解析样本随游标越过丢失。补测：双轨交错、渐进→fMP4 remux→读回往返、游程与退化文件、seek 四场景回归。mp4 74 → 92 | `6268350` |
 | 92 | webtorrent 补测（+45）+ 修复 3 缺陷 | **高**：read() OOB 检查只在 slice 路径，顺序流 offset≥size 静默返回空数组（两路行为不一致 + 违反 EOF 契约）→ 检查上提入口两路共用；**中**：autoSelect=false 声明可用实际不可用（null file 流入 createTorrentSource 抛 SOURCE_ERROR 且 state 永卡 loading，且无手动选文件 API）→ 诚实抛 STATE_ERROR + degraded，手动选文件 API 进待办；清理 bdecodeRaw 的 void bytes+arguments[0] 占位异味（audit A 遗留）。webtorrent 100 → 145 | 本波 |
+| 93 | webtorrent selectFile() API（第五批后台） | 补上 autoSelect=false 的手动路径：player.selectFile(selector) 在 degraded 态调用后续走加载管线至 ready；selector 四形态（对象/文件名/索引/谓词）；错误分支全显式（FILE_NOT_FOUND / NOT_MEDIA / PARSE_ERROR / STATE_ERROR）保持 degraded 可重试；attach 与 selectFile 公共收尾 #finishLoad()；README 同步 + 修正两处过期计数（50→152）。webtorrent 145 → 152 | `18d1ec4` |
+| 94 | cmaf 深化补测 + 修复 2 缺陷（第五批后台） | **isobmff parseTrun**：flags 含 first-sample-flags-present（0x004）时不消费 data_offset 后的 4 字节字段 → 样本行整体错位 4 字节且首样本标志未应用 → 消费并赋 rows[0]；**materializeSamples**：dataOffset 应以 moof 起点为基准（各 muxer 均按 moof.length+8 写入），此前错加在 mdat 载荷起点 → dataStart 偏大 moof.size+8、样本数据全读偏 → 改 moofStart+dataOffset（无标志回退 mdat）。补测：splitChunks finalize 分支、moof flag 组合（v0/v1 cts、tfhd 缺省回落、单 moof 双 traf）、muxer→parser 逐字段往返。cmaf 58 → 81 | `3109f37` |
+| 95 | ts 深化补测 + 修复 3 缺陷（第五批后台） |
+| 96 | 第五批后台任务收尾 | webtorrent selectFile API（93）+ cmaf 两缺陷修复（94：parseTrun first-sample-flags 错位 / materializeSamples dataOffset 基准错）+ ts 三缺陷修复（95：CC/disc 次序 / PCR 33bit 回绕 / PMT 换版静默）| 本批 | **CC/discontinuity 次序**：CC 校验先于 AF 解析，拼接点跳变误计 ccError → AF 解析上提、discontinuity 豁免；**PCR 回绕**：min/max 追踪使 33 位回绕后时长变 ≈26.5h 垃圾值且 span<0 补偿不可达 → 回退值 +2^33 抬升单调域；**PMT 换版静默**：`changed = firstSeen` 使仅移除 ES 的换版不重发 tracks、this.tracks 残留 → firstSeen\|\|versionChanged。补测：跨包 PES 组装/PTS-DTS 三形态与回绕连续化/declaredLength=0/PSI 跨包分段/stream_type 全映射/版本对账/PCR ext/丢包恢复。ts 90 → 113 | 本波 |
