@@ -247,7 +247,7 @@ export class Mp4Demuxer extends Demuxer {
   _prepareTrackState(track, trak) {
     if (this._fragmented) {
       const trex = this._moov.mvex.trexByTrack[track.id] ?? {};
-      this._trackState.set(track.id, { track, samples: [], keyframes: [], trex });
+      this._trackState.set(track.id, { track, samples: [], keyframes: [], trex, resumeIndex: 0 });
       return;
     }
     const table = expandSampleTable(trak.stbl);
@@ -257,6 +257,7 @@ export class Mp4Demuxer extends Demuxer {
       keyframes: table.samples
         .map((s, i) => (s.keyframe ? i : -1))
         .filter((i) => i >= 0),
+      resumeIndex: 0, // seek 续读起点（样本表 index），由 _doSeek 写入、迭代器生成时消费
     });
   }
 
@@ -281,8 +282,10 @@ export class Mp4Demuxer extends Demuxer {
     const { track } = state;
     const ts = track.timescale || 1000;
     const lazy = this.options.lazySamples === true;
-    let index = 0;
-    for (const raw of state.samples) {
+    // seek 续读：从 resumeIndex（最近关键帧或对应时间样本）起步；
+    // 跳过的样本不读数据。表在 open 时已完整，index 保持原表编号。
+    for (let index = state.resumeIndex ?? 0; index < state.samples.length; index++) {
+      const raw = state.samples[index];
       const sample = createSample({
         trackId,
         codec: track.codec,
@@ -291,7 +294,7 @@ export class Mp4Demuxer extends Demuxer {
         keyframe: raw.keyframe,
         dts: ticksToUs(raw.dts, ts),
         size: raw.size,
-        index: index++,
+        index,
         offset: raw.offset,
         dataState: undefined,
         data: null,
@@ -315,6 +318,21 @@ export class Mp4Demuxer extends Demuxer {
     const wantedId = trackId !== undefined ? trackId : null;
     const ds = this.source;
     const lazy = this.options.lazySamples === true;
+
+    // seek 续读：先重放样本表中 resumeIndex 起的已解析样本，再接续扫描。
+    // 表内样本在扫描时已完成 data 装载（或标记 lazy），直接产出即可；
+    // 重放不动共享 _fragCursorIndex，衔接处 index 由 samples.length 自然递增。
+    // resumeIndex=0 且表非空同样重放（seek 回开头时游标可能已越过早期 moof）。
+    // ⚠️ 已知限制：seek 前被 return 掉的迭代器若挂起在某 moof 中途，该 moof 内
+    // 未解析的样本会随游标越过而丢失（游标只前进；找回需重扫+查重，不值）。
+    {
+      const state = this._trackState.get(trackId);
+      if (state && state.resumeIndex < state.samples.length) {
+        for (let i = state.resumeIndex; i < state.samples.length; i++) {
+          yield state.samples[i];
+        }
+      }
+    }
 
     while (this._fragCursorIndex < this._topLevelBoxes.length) {
       const box = this._topLevelBoxes[this._fragCursorIndex++];
@@ -392,16 +410,21 @@ export class Mp4Demuxer extends Demuxer {
   /**
    * @param {number} timestampUs 整数微秒
    * @returns {Promise<{actualTimestampUs:number}>}
+   * 契约（core demuxer）：_doSeek 负责重定位内部游标——各轨 resumeIndex 写为
+   * 「≤ 目标时间的最后样本」index（目标轨取关键帧二分结果），seek 后新迭代器
+   * 从 resumeIndex 续读。渐进表 open 时完整；分片表随扫描建立，仅能落在已扫
+   * 区间内（未扫到的部分由后续扫描自然接续）。
    */
   async _doSeek(timestampUs) {
-    // 渐进模式有完整索引可直接定位；分片模式的索引随顺序消费建立，
-    // 未建立时回退到流起点（actual=0）。
     const targetId =
       this.tracks.find((t) => t.type === 'video')?.id ?? this.tracks[0]?.id;
     if (targetId === undefined) return { actualTimestampUs: 0 };
 
     const state = this._trackState.get(targetId);
     if (!state || state.keyframes.length === 0) {
+      // 索引未建立：resumeIndex 归 0（有表则整表重放）、共享游标不动，
+      // 后续从当前扫描位置继续（分片模式索引随消费建立，属既定限制）。
+      if (state) state.resumeIndex = 0;
       return { actualTimestampUs: 0 };
     }
 
@@ -423,6 +446,13 @@ export class Mp4Demuxer extends Demuxer {
     }
 
     const pickIdx = found >= 0 ? state.keyframes[found] : state.keyframes[0];
+    state.resumeIndex = pickIdx;
+    // 多轨一致：其余轨按各自时间基定位 ≤ 目标时间的最后样本（解码序 dts，
+    // 与关键帧二分同口径），避免 seek 后音频轨从 0 重放或提前 EOS。
+    for (const [id, st] of this._trackState) {
+      if (id !== targetId) st.resumeIndex = _locateResumeIndex(st, timestampUs);
+    }
+
     const actualUs = ticksToUs(kfDtsTicks(state.samples[pickIdx], ts), ts);
     this.emit('seek', { timestampUs, trackId: targetId });
     return { actualTimestampUs: Math.min(actualUs, timestampUs) };
@@ -436,6 +466,21 @@ export class Mp4Demuxer extends Demuxer {
 }
 
 /* ------------------------------ 辅助函数 ------------------------------ */
+
+/**
+ * 按时间定位轨的 seek 续读起点：解码序 dts ≤ 目标时间的最后一个样本 index。
+ * 样本按 dts 单调递增（渐进表/分片表均成立）；无匹配（目标早于全部已扫样本）
+ * 回退 0（从表头重放）。返回值写入 state.resumeIndex。
+ */
+function _locateResumeIndex(state, timestampUs) {
+  const ts = state.track.timescale || 1000;
+  const target = usToTicks(timestampUs, ts);
+  let found = -1;
+  for (let i = 0; i < state.samples.length; i++) {
+    if (kfDtsTicks(state.samples[i], ts) <= target) found = i;
+  }
+  return found >= 0 ? found : 0;
+}
 
 /** 条目 DTS（ticks）：渐进表为原始 ticks 结构；分片表为契约 Sample（dts 为 µs，需回转） */
 function kfDtsTicks(entry, timescale) {
