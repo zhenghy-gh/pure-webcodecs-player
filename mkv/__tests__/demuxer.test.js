@@ -158,15 +158,18 @@ test('seek：Cues 定位 + actualTimestampUs + 迭代窗口重置', async () => 
   const d = new MkvDemuxer(new BufferSource(bytes));
   await d.open();
 
-  const r = await d.seek(1_600_000);
+  // CueTime 以 TimecodeScale 为单位（tick），本 fixture scale=1e6 → CueTime 2000 = 2000ms。
+  // 取 2s 作为目标，使其明确命中第二个 CuePoint（cluster1）：
+  // locate 语义为「取 ≤ target 的最后一个 CuePoint」，若用 1.6s 则正确落点应是 0ms 的 cluster0。
+  const r = await d.seek(2_000_000);
   assert.equal(r.actualTimestampUs, 2_000_000);
-  assert.equal(await d.locate(1_600_000), d.segmentDataStart + cuesOffsetInSegmentForCluster1);
+  assert.equal(await d.locate(2_000_000), d.segmentDataStart + cuesOffsetInSegmentForCluster1);
 
   // 视频轨从新窗口拉取：首样本即落点关键帧
   const s1 = await d.readSample(1);
   assert.equal(s1.timestamp, 2_000_000);
   assert.equal(s1.keyframe, true);
-  // 音频轨在 1.6s 后无样本 → EOS
+  // 音频轨在 2.0s 后无样本 → EOS
   assert.equal(await d.readSample(2), null);
 });
 

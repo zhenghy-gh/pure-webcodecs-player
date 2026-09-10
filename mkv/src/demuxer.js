@@ -583,7 +583,11 @@ export class MkvDemuxer extends Demuxer {
       let clusterPos = null;
       for (const el of iterElements(body, point.contentStart, point.contentEnd, SCHEMA)) {
         if (el.id === ID.CueTime) {
-          timeNs = decodeValueByType('u', body.subarray(el.contentStart, el.contentEnd));
+          // Matroska 规范：CueTime 以 TimecodeScale 为单位（tick），实际纳秒 = CueTime × TimecodeScale。
+          // 此前直接把 CueTime 当 ns，导致与 locate() 的 targetNs(=us×1000) 单位错位、
+          // 二分命中错误簇（默认 scale=1e6 时偏差 1e6 倍）。
+          const cueTimeTicks = decodeValueByType('u', body.subarray(el.contentStart, el.contentEnd));
+          timeNs = cueTimeTicks * this.timecodeScaleNs;
         } else if (el.id === ID.CueTrackPositions) {
           for (const tp of iterElements(body, el.contentStart, el.contentEnd, SCHEMA)) {
             if (tp.id === ID.CueClusterPosition) {
@@ -743,6 +747,10 @@ export class MkvDemuxer extends Demuxer {
         dts: s.timestampUs,   // MKV 无独立 DTS：解码序=呈现序
         size: s.data.length,
         index: idx,
+        // DiscardPadding（Matroska：BlockGroup 内 sint，单位 ns）：Opus/AAC 首尾填充裁剪依据。
+        // 内部 #emitBlockFrames 已解析为 µs，此前该字段在映射层被丢弃，上层拿不到裁剪信息。
+        discardPaddingUs: s.discardPaddingUs ?? 0,
+        discardable: s.discardable ?? false,
       };
     }
   }
