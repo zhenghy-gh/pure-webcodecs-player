@@ -114,6 +114,7 @@
 ### 待办（按优先级，下一波取 P1 第一条）
 - [ ] **P3** 下一批补测落点：flv iso-bmff 剩余面、rtmp player/gateway 正向管线（需网关样本）、webvtt 渲染层
 - [ ] **P3** 信息性观察（agent 报告，行为已固化测试，动前需 owner 点头）：①pipeline 渲染 emitted 顺序为 rendered 先于 firstframe（与直觉相反）；②_waitQueue guard=64 兜底空转与注释不一致
+- [ ] **P3** webtorrent 手动选文件 API（第九十二波把 autoSelect=false 改为诚实报 STATE_ERROR 后，若要真正支持需新增 `selectFile(file)` 入口并重入 attach 流程）
 - [ ] **P3** 重构收敛（audit-79 D，**动前需 owner 点头**）：BitReader×4 / BitWriter×2 / buildEsds×2 收敛到 core；删 `mp4/src/box-builder.js:225` 死导出 buildBtrt
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
@@ -143,3 +144,5 @@
 | 88 | mov 补测（+39）+ 修复 mp4 两缺陷 | ①buildStsz defaultSize≠0 时 sample_count 恒写 0（违反 ISO 14496-12）→ 恒写 sizes.length；②stz2 误映射 parseStsz（布局不符，field_size<32 静默错解）→ 新增 parseStz2（4/8/16，返回形状与 stsz 一致）+ 5 例专项。mov 30 → 69、mp4 68 → 74 | `1e62d38` |
 | 89 | core 正向补测（+38）+ 修复 ended 恒 true | player.js seek() 成功路径不复位 endedValue → ended 后 play() 自动重播期间 player.ended 恒 true；seek 成功即复位（HTMLMediaElement 语义）+ 回归断言。补测覆盖状态机全矩阵/pipeline 队列与渲染决策/clock 与 Emitter 边界。core 180 → 218 | `e434065` |
 | 90 | 第三批后台流程升级 | 后台 agent 改用 lite 模型规避默认模型 429 + 「增量验证」约束（每写完 1 个测试文件立即跑模块测试再写下一个）→ 落盘文件全部已验证，主线程零测试构造错修复，只处理真实缺陷 | 本波 |
+| 91 | mp4 补测（+15）+ 修复 seek 游标不重定位 | **高**：_doSeek 只算返回值不重定位游标，违反 core 契约——渐进模式 seek 后从样本 0 重来、分片模式 seek 后提前 EOS（两种模式 seek 全坏）。修：各轨 state 增 resumeIndex，_doSeek 写目标轨关键帧二分结果 + 其余轨按各自时间基定位（_locateResumeIndex）；渐进迭代器从 resumeIndex 起步；分片迭代器开头重放表内样本再接续扫描（重放不动共享游标；resumeIndex=0 且表非空也重放）。已知限制注释明示：中断 moof 内未解析样本随游标越过丢失。补测：双轨交错、渐进→fMP4 remux→读回往返、游程与退化文件、seek 四场景回归。mp4 74 → 92 | `6268350` |
+| 92 | webtorrent 补测（+45）+ 修复 3 缺陷 | **高**：read() OOB 检查只在 slice 路径，顺序流 offset≥size 静默返回空数组（两路行为不一致 + 违反 EOF 契约）→ 检查上提入口两路共用；**中**：autoSelect=false 声明可用实际不可用（null file 流入 createTorrentSource 抛 SOURCE_ERROR 且 state 永卡 loading，且无手动选文件 API）→ 诚实抛 STATE_ERROR + degraded，手动选文件 API 进待办；清理 bdecodeRaw 的 void bytes+arguments[0] 占位异味（audit A 遗留）。webtorrent 100 → 145 | 本波 |
