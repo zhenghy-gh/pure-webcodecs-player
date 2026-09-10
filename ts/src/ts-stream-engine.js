@@ -270,23 +270,25 @@ export class TsStreamEngine extends Emitter {
     }
     if (pid === NULL_PID || scrambling !== 0) return;
 
-    // ---- CC 连续性检测 ----
-    // 规则：带 AF 或带载荷的包都占用一个 CC；discontinuity_indicator 置位时豁免。
-    if (afControl !== 0x00) {
-      const expect = this._ccExpect.get(pid);
-      if (expect != null && cc !== expect) {
-        this.ccErrors++;
-        this._warn(`PID ${pid} 连续计数不连续（期望 ${expect} 实得 ${cc}），可能丢包`);
-      }
-      this._ccExpect.set(pid, (cc + 1) & 0x0f);
-    }
-
+    // ---- AF 解析需先于 CC 校验：discontinuity_indicator 置位时 CC 豁免 ----
+    // （此前 CC 校验先跑，拼接点 CC 跳变会被误计一次 ccError）
     let offset = 4;
     let afDiscontinuity = false;
     if (afControl & 0x02) {
       const afLen = pkt[4];
       if (afLen >= 1) afDiscontinuity = (pkt[5] & 0x80) !== 0;
       offset += 1 + afLen;         // 跳过自适应域（含填充）
+    }
+
+    // ---- CC 连续性检测 ----
+    // 规则：带 AF 或带载荷的包都占用一个 CC；discontinuity_indicator 置位时豁免。
+    if (afControl !== 0x00 && !afDiscontinuity) {
+      const expect = this._ccExpect.get(pid);
+      if (expect != null && cc !== expect) {
+        this.ccErrors++;
+        this._warn(`PID ${pid} 连续计数不连续（期望 ${expect} 实得 ${cc}），可能丢包`);
+      }
+      this._ccExpect.set(pid, (cc + 1) & 0x0f);
     }
     if (afDiscontinuity) this._ccExpect.delete(pid);
     // PCR 提取：自适应域 PCR_flag 置位时，pkt[6..11] 为 PCR（base 33 位 + ext 9 位，均 90kHz）。
@@ -323,8 +325,14 @@ export class TsStreamEngine extends Emitter {
       this._pcrFirst = pcr90k;
       this._pcrLast = pcr90k;
     } else {
-      if (this._pcrFirst == null || pcr90k < this._pcrFirst) this._pcrFirst = pcr90k;
-      if (this._pcrLast == null || pcr90k > this._pcrLast) this._pcrLast = pcr90k;
+      // 此前用 min/max 追踪：流跨 33 位回绕（≈26.5h 周期）后新 PCR 拉低
+      // _pcrFirst 而 _pcrLast 保留旧大值，时长变成 ≈26.5h 垃圾值，且
+      // metadata 处 span<0 的补偿分支永远不可达。改为：无 discontinuity
+      // 标志但 PCR 回退 = 回绕，把当前值抬升到单调域后再取 max。
+      let cur = pcr90k;
+      if (this._pcrLast != null && cur < this._pcrLast) cur += 2 ** 33;
+      if (this._pcrFirst == null || this._pcrLast == null) this._pcrFirst = pcr90k;
+      if (this._pcrLast == null || cur > this._pcrLast) this._pcrLast = cur;
     }
     this.emit('pcr', { pid, pcr90k, discontinuity: !!discontinuity });
   }
@@ -376,7 +384,9 @@ export class TsStreamEngine extends Emitter {
           }
         }
         // 2) 增改
-        let changed = firstSeen;
+        // firstSeen || versionChanged：换版「仅移除 ES」时流表已清理，但
+        // 此前 changed 不置位 → 不重发 tracks 事件，this.tracks 残留旧列表
+        let changed = firstSeen || versionChanged;
         for (const [esPid, codec] of declared) {
           const existing = this.streams.get(esPid);
           if (!existing || existing.codec !== codec) changed = true;
