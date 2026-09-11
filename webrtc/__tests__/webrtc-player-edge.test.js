@@ -30,8 +30,14 @@ class FakePC {
   async createOffer() { return { type: 'offer', sdp: 'O' }; }
   async setLocalDescription(d) {
     this.localDescription = d;
+    const prev = this.iceGatheringState;
     this.iceGatheringState = 'complete';
-    for (const f of this._l.get('ig') || []) f();
+    // 仅在采集状态「发生转移」时派发，与真实 RTCPeerConnection 一致；
+    // 否则 finish() 递归调用 setLocalDescription 会形成无限循环。
+    // 键名必须匹配 player.js 注册的 'icegatheringstatechange'（此前误用 'ig'，导致监听永不触发、3s 兜底必走）。
+    if (prev !== 'complete') {
+      for (const f of this._l.get('icegatheringstatechange') || []) f();
+    }
   }
   addEventListener(t, f) { if (!this._l.has(t)) this._l.set(t, []); this._l.get(t).push(f); }
   removeEventListener() {}
