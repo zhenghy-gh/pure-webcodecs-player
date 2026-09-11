@@ -87,7 +87,8 @@ export class WebCodecsPipeline extends Emitter {
 
   /** 建管线（解码器/渲染器/音频输出）。幂等。 */
   async init() {
-    if (this._videoDecoder || this._audioDecoder) return this;
+    if (this._initialized) return this;
+    this._initialized = true;
     const video = [...this._tracks.values()].find((t) => t.type === 'video');
     const audio = [...this._tracks.values()].find((t) => t.type === 'audio');
     if (video) await this._setupVideo(video);
