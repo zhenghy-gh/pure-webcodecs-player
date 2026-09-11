@@ -120,6 +120,14 @@
 - [ ] **P3** 重构收敛（audit-79 D，**动前需 owner 点头**）：BitReader×4 / BitWriter×2 / buildEsds×2 收敛到 core；删 `mp4/src/box-builder.js:225` 死导出 buildBtrt
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
+- [ ] **P3** **两项契约差异已探针取证并复核为「已裁决」**（第一百零六波，**勿再当缺陷重复上报**）：
+  - **D6 seek 非法目标错误码**：实测 `mp4`（走基类）`seek(-1)/seek(NaN)/seek(-0.5)/seek(Infinity)` 全为 `STATE_ERROR`，而 `mkv` 同四例全为 `PARSE_ERROR`（`mkv/src/demuxer.js:802`）。属裁决表 D6（`mkv-base-class-alignment.md:167`：「暂保兼容…**公开契约最终口径待 captain+leader 双签后统一**」）。
+  - **seek 落点回退钳制**：`mkv.seek(target)` 在落点后无样本时返回 `durationUs`（而非最近簇），已在 `mkv/__tests__/demuxer.test.js:182-183` 显式断言固化（`seek(500_000)` → `actualTimestampUs === 1_000_000`，注释「回退钳制到时长」）。**非缺陷**。
+- [ ] **P3** **基类 `end` 语义偏差已探针取证**（第一百零六波，双轨 toy demuxer 实测）：`core _maybeEmitEnd` 判定条件是「**已建迭代器**的轨全 done」，而非契约字面的「全部轨 EOS」。实测三种可观察偏差——
+  1. **提前发**：只消费视频轨（音频轨从未建迭代器）→ `end{reason:'eos'}` 立即派发，而音频轨其实尚未读完；
+  2. **可重复发**：随后消费音频轨 → `end` **再发一次**（无 `#endEmitted` 去重守卫）；
+  3. 已 done 的轨二次 `for await` 返回 0 样本且不重发（相对安全）。
+  与 mkv/wav（`#endEmitted` 单次 + 全可读轨扫完才发）、flac 的语义均不同。**属裁决表 D4**（`mkv-base-class-alignment.md:165`：「以契约字面『全部轨 EOS』为目标…**基类收敛另立跨模块议题**」）→ **需 owner/captain 裁决，禁止单模块擅改**。本波仅取证登记，未改代码。
 
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
