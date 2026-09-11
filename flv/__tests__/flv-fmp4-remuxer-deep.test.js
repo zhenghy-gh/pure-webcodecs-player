@@ -282,12 +282,10 @@ test('remux：非 mp4a 音频轨道（如 mp3）被排除出 init segment（_emi
   r.setTracks([{ id: 2, type: 'audio', codec: 'mp3', timescale: 44100, sampleRate: 44100, numberOfChannels: 2 }]);
   assert.equal(inits.length, 0, '无 mp4a/视频 trak → 不产出 init');
 
-  // 注意：cut() 不区分 codec，仍会为该轨缓冲样本产出 media 段（与 init 缺 trak 形成孤儿段）。
-  // 此处记录真实行为，潜在缺陷见文件末注释（观察点 B）。
+  // 非 mp4a 轨道没有对应 trak，因此 cut() 应清理缓存但不产出孤儿段。
   r.pushSample({ trackId: 2, timestamp: 0, dts: 0, keyframe: true, data: new Uint8Array(8) });
   r.cut(2);
-  assert.equal(segs.length, 1, 'cut() 仍产出媒体段（孤儿段，待主线程复核）');
-  assert.equal(segs[0].trackId, 2);
+  assert.equal(segs.length, 0, '非 mp4a 音频不应产出无对应 trak 的孤儿媒体段');
 });
 
 /* ------------------------------ 音频 trun first-sample-flags ------------------------------ */

@@ -127,9 +127,11 @@ test('discontinuity_indicator：重置 CC 期望，后续 CC 跳变不计错', (
   e.push(concatBytes(dataToPackets(VIDEO_PID, pes0)));
   const expect = e._ccExpect.get(VIDEO_PID);
   assert.ok(expect != null, '测试前提：期望 CC 已建立');
-  // 拼接点：AF-only + discontinuity 置位（CC 与当前期望一致，不触发本包计错）
+  // 拼接点：AF-only + discontinuity 置位，且 CC 故意与期望不一致。
+  // 修复前 CC 校验先于 discontinuity_indicator 解析，本包会被误计一次 ccError；
+  // 修复后 discontinuity 置位应豁免本包 CC 校验，不计错。
   e._parsePacket(mkPacket({
-    pid: VIDEO_PID, afControl: 0x02, afLen: 1, afFlags: 0x80, cc: expect,
+    pid: VIDEO_PID, afControl: 0x02, afLen: 1, afFlags: 0x80, cc: (expect + 5) & 0x0f,
   }));
   assert.equal(e._ccExpect.has(VIDEO_PID), false, 'discontinuity 应清除期望值');
   // 期望清除后，CC 任意跳变不计错（流拼接语义）

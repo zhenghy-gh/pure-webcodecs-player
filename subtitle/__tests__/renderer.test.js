@@ -192,9 +192,6 @@ test('renderer：attach 在无 rAF 环境下不自动循环调用 renderAt', () 
 });
 
 test('renderer：setCues 覆盖旧轨道（替换而非合并）', () => {
-  const { ctx } = makeStubCanvas();
-  const r = new SubtitleCanvasRenderer(ctx.canvas ?? makeStubCanvas().canvas);
-  // 重新获取干净画布
   const { canvas: c2, ctx: ctx2 } = makeStubCanvas();
   const r2 = new SubtitleCanvasRenderer(c2);
   r2.setCues({ cues: [{ startUs: 0, endUs: 5_000_000, text: 'a' }] });

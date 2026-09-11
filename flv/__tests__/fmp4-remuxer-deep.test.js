@@ -218,13 +218,13 @@ test('音频 duration：显式样本时长按 timescale 换算；缺省走 AAC 1
   const segs = [];
   r.on('mediaSegment', (s) => segs.push(s));
   r.setTracks([audioTrack(sr)]);
-  // 显式时长 = 1024 帧 @ 44100 → 1024 ticks；缺省时长 → round(1024*44100/1e6)=45
+  // 显式时长 = 1024 帧 @ 44100 → 1024 ticks；缺省时长 → AAC 固定 1024 ticks
   r.pushSample({ trackId: 2, timestamp: 0, dts: 0, duration: (1024 * 1_000_000) / sr, keyframe: true, data: new Uint8Array(10) });
-  r.pushSample({ trackId: 2, timestamp: 23_000, dts: 23_000, duration: 0, keyframe: true, data: new Uint8Array(10) });
+  r.pushSample({ trackId: 2, timestamp: 23_000, dts: 23_000, keyframe: true, data: new Uint8Array(10) });
   return r.flush().then(() => {
     const m = trunMeta(segs[0].data);
     assert.equal(m.samples[0].duration, 1024, '显式 1024 帧 → 1024 ticks');
-    assert.equal(m.samples[1].duration, Math.round((1024 * sr) / 1_000_000), '缺省 → AAC 兜底 45 ticks');
+    assert.equal(m.samples[1].duration, 1024, '缺省 → AAC 兜底 1024 ticks');
   });
 });
 

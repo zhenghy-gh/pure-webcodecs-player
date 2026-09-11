@@ -97,9 +97,11 @@ export class FlvRemuxer extends Emitter {
     } else {
       const sr = track?.timescale ?? 44100;
       const dtsTicks = Math.round(((s.dts ?? s.timestamp) * sr) / 1_000_000);
-      const durationTicks = s.duration
-        ? Math.round((s.duration * sr) / 1_000_000)
-        : Math.round((1024 * sr) / 1_000_000);     // AAC 兜底
+      // AAC 一帧固定为 1024 个采样点；timescale=采样率时直接使用 1024 ticks。
+      // 不能把采样点数再次按采样率换算，否则 44.1kHz 会错误得到约 45。
+      const durationTicks = s.duration != null && s.duration > 0
+        ? Math.max(1, Math.round((s.duration * sr) / 1_000_000))
+        : 1024;     // AAC 兜底
       entry = {
         dtsTicks,
         ctsTicks: 0,
@@ -126,6 +128,16 @@ export class FlvRemuxer extends Emitter {
   cut(trackId) {
     const buf = this.buffers.get(trackId);
     if (!buf || buf.samples.length === 0) return;
+    // _emitInit 只会为 MSE 可承载的轨道建立 trak；没有对应 trak 的轨道
+    // 不能产出孤儿 media segment，否则下游无法消费该 moof。
+    const track = this._tracks.find((t) => t.id === trackId);
+    if (!track || (track.type === 'audio' && !track.codec?.startsWith('mp4a')) ||
+        (track.type !== 'audio' && track.type !== 'video')) {
+      buf.samples = [];
+      buf.firstDts = null;
+      buf.lastDts = null;
+      return;
+    }
 
     // 非 flush（中间）切片：末帧 duration 尚未被下一帧 DTS 回填，
     // 用上一已回填帧的时长估算，避免末帧 duration=0（审计 C-4）。
