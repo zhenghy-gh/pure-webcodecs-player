@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="W9ft5otb4TFBVO4L1gwKTv">
+<head data-page-node-id="kZNkFobBpczQBH3fZl0A2H">
+<meta charset="UTF-8" data-page-node-id="J9EkObLOWG0X0YU4pb7zye">
+<meta name="viewport" content="width=1440" data-page-node-id="NRWi4sHEldNcqZmwmh0QsF">
+<title>pure-webcodecs-player · 官网设计稿 1:1 参考实现</title>
+<!--
+  来源：Ardot 设计稿 https://ardot.tencent.com/file/724301102167937（landing-page-v1.png 快照同目录）
+  尺寸：1440 宽定宽稿；所有颜色/间距/字号与画布节点一一对应，可直接抄进 site/
+  字体：Noto Sans SC（中文）/ JetBrains Mono（代码与数据），Google Fonts 引入，离线时回退系统字体
+-->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
+
+:root{
+  --bg-page:#06080B;      /* 页面底 / 交替 section A */
+  --bg-alt:#080B0F;       /* 交替 section B */
+  --bg-footer:#05070A;
+  --bg-card:#0C1015;      /* 通用卡片 */
+  --bg-after:#0A1512;     /* After 卡 / CTA 卡 */
+  --border-card:#1A242E;  /* rgba(0.10,0.14,0.18) */
+  --border-soft:#222C36;  /* rgba(0.14,0.19,0.24) */
+  --accent:#00E6A8;       /* 信号青绿 */
+  --accent-dark:#04140F;  /* CTA 按钮文字 */
+  --accent-dim:#0C1A16;   /* 徽章底 */
+  --danger:#FF5C7A;       /* Before 卡警示红 */
+  --amber:#E4C07A;        /* 代码语法-属性 */
+  --blue:#9CC7FF;         /* 代码语法-import */
+  --t-hi:#F2F7FB; --t-name:#E8EEF4; --t-body:#C7D2DD;
+  --t-sub:#8B9AA9; --t-mute:#7A8896; --t-dim:#6E7D8B;
+  --t-faint:#5A6873; --t-ghost:#4E5C68;
+  --code-bg:#080C10; --code-bar:#0B1116;
+  --f-mono:'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace;
+  --f-sans:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;font-family:var(--f-sans);color:var(--t-hi)}
+.page{width:1440px;margin:0 auto;background:var(--bg-page);overflow:hidden}
+
+/* ============ 通用 ============ */
+.eyebrow{font:700 12px/1 var(--f-mono);color:var(--accent);letter-spacing:.5px}
+.h2{font:700 40px/54px var(--f-sans);color:var(--t-hi);max-width:900px}
+.section-desc{font:400 16px/28px var(--f-sans);color:var(--t-sub);max-width:840px;margin-top:16px}
+section{padding:100px 120px}
+section.alt{background:var(--bg-alt)}
+section.base{background:var(--bg-page)}
+
+/* ============ Header ============ */
+.header{display:flex;justify-content:space-between;align-items:center;height:76px;padding:0 120px;
+  background:var(--bg-page);border-bottom:1px solid #1C2630}
+.logo{display:flex;align-items:center;gap:10px}
+.logo svg{width:28px;height:28px}
+.logo span{font:700 15px var(--f-mono);color:var(--t-name)}
+.nav{display:flex;gap:34px}
+.nav a{font:500 14px var(--f-sans);color:var(--t-sub);text-decoration:none}
+.nav a:hover{color:var(--t-hi)}
+.h-actions{display:flex;gap:12px;align-items:center}
+.btn-ghost{display:inline-flex;align-items:center;padding:10px 18px;border-radius:8px;border:1px solid #202A34;
+  background:none;font:500 14px var(--f-sans);color:var(--t-body);text-decoration:none}
+.btn-primary{display:inline-flex;align-items:center;padding:10px 20px;border-radius:8px;
+  background:var(--accent);font:700 14px var(--f-sans);color:var(--accent-dark);text-decoration:none}
+
+/* ============ Hero ============ */
+.hero{display:flex;flex-direction:column;align-items:center;gap:26px;padding:88px 120px 72px;
+  background:var(--bg-page);text-align:center}
+.badge{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;
+  background:var(--accent-dim);border:1px solid rgba(0,230,168,.28)}
+.badge i{width:6px;height:6px;border-radius:3px;background:var(--accent)}
+.badge span{font:500 13px var(--f-sans);color:#7FE9CB}
+.hero h1{font:700 62px/78px var(--f-sans);color:var(--t-hi)}
+.hero .sub{font:400 18px/32px var(--f-sans);color:var(--t-sub);width:960px}
+.hero-cta{display:flex;gap:14px;align-items:center}
+.btn-hero-primary{display:inline-flex;align-items:center;padding:15px 26px;border-radius:10px;background:var(--accent);
+  font:700 16px var(--f-sans);color:var(--accent-dark);text-decoration:none;
+  box-shadow:0 10px 28px -6px rgba(0,230,168,.28)}
+.btn-hero-secondary{display:inline-flex;align-items:center;padding:15px 22px;border-radius:10px;background:#10161D;
+  border:1px solid #293540;font:500 15px var(--f-mono);color:var(--t-body);text-decoration:none}
+/* Hero 产品视觉：窗口 + 占位 */
+.hero-visual{width:1200px;height:640px;border-radius:18px;background:#0B0F14;border:1px solid #293540;
+  box-shadow:0 30px 70px -20px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column}
+.win-bar{height:44px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;background:#0E141B}
+.win-bar i{width:9px;height:9px;border-radius:5px;background:#243039}
+.win-bar span{font:400 12px var(--f-mono);color:var(--t-faint)}
+.ph{background:#070A0E;color:var(--t-ghost);display:flex;align-items:center;justify-content:center;
+  font:400 14px var(--f-sans);letter-spacing:1px}
+.hero-stage{flex:1}
+/* 信任数据条 */
+.trust{display:flex;gap:28px;align-items:center;padding-top:32px}
+.trust .stat{display:flex;gap:8px;align-items:center}
+.trust b{font:700 20px var(--f-mono);color:var(--accent)}
+.trust em{font:400 13px var(--f-sans);font-style:normal;color:var(--t-dim)}
+.trust .div{width:1px;height:22px;background:#1A242E}
+
+/* ============ Section · 痛点对比 ============ */
+.compare{display:flex;gap:24px;margin-top:44px}
+.card{border-radius:16px;padding:32px 32px 36px;display:flex;flex-direction:column;gap:20px}
+.card-before{flex:1;background:var(--bg-card);border:1px solid var(--border-card)}
+.card-after{flex:1;background:var(--bg-after);border:1px solid rgba(0,230,168,.28)}
+.card-tag{display:flex;gap:9px;align-items:center;font:700 13px var(--f-sans)}
+.card-tag.mono{font:700 13px var(--f-mono)}
+.card-before .card-tag{color:var(--danger)}
+.card-after .card-tag{color:var(--accent);font-family:var(--f-mono)}
+.card-item{display:flex;gap:12px;align-items:flex-start}
+.card-item svg{width:18px;height:18px;flex:none;margin-top:4px}
+.card-before .card-item p{font:400 15px/26px var(--f-sans);color:#A6B4C1}
+.card-after .card-item p{font:400 15px/26px var(--f-sans);color:#DAE4EC}
+
+/* ============ Section · 统一管线 ============ */
+.pipeline{display:flex;gap:14px;align-items:center;margin-top:44px}
+.step{flex:1;border-radius:14px;padding:24px 22px 26px;background:var(--bg-card);border:1px solid var(--border-card);
+  display:flex;flex-direction:column;gap:8px}
+.step.hl{border-color:rgba(0,230,168,.3)}
+.step .bar{height:2px;border-radius:2px;margin-bottom:4px}
+.step .num{font:700 12px var(--f-mono);color:var(--t-faint)}
+.step.hl .num{color:var(--accent)}
+.step .head{display:flex;justify-content:space-between;align-items:center}
+.step h3{font:700 17px var(--f-sans);color:var(--t-hi)}
+.step p{font:400 14px/24px var(--f-sans);color:var(--t-sub)}
+.step .keys{font:400 12px var(--f-mono);color:var(--t-ghost);margin-top:6px}
+
+/* ============ Section · 核心能力 ============ */
+.feature{display:flex;gap:64px;align-items:center;margin-top:64px}
+.feature.rev{flex-direction:row-reverse;margin-top:56px}
+.feature .txt{width:460px;flex:none;display:flex;flex-direction:column;gap:14px}
+.feature .txt .tag{font:700 12px var(--f-mono);color:var(--accent)}
+.feature h3{font:700 28px/40px var(--f-sans);color:var(--t-hi)}
+.feature .lead{font:400 15px/28px var(--f-sans);color:var(--t-sub)}
+.bullet{display:flex;gap:10px;align-items:flex-start}
+.bullet svg{width:16px;height:16px;flex:none;margin-top:4px}
+.bullet p{font:400 14px/24px var(--f-sans);color:var(--t-body)}
+.feature .vis{flex:1;height:340px;border-radius:14px;background:var(--bg-card);border:1px solid #1C2630}
+
+/* ============ Section · 格式矩阵 ============ */
+.grid{display:flex;flex-wrap:wrap;gap:16px;margin-top:44px}
+.mod{width:288px;border-radius:12px;padding:20px 18px 22px;background:var(--bg-card);border:1px solid #141C24;
+  display:flex;flex-direction:column;gap:6px}
+.mod.core{border-color:rgba(0,230,168,.22)}
+.mod b{font:700 15px var(--f-mono);color:var(--t-name)}
+.mod.core b{color:var(--accent)}
+.mod p{font:400 13px/22px var(--f-sans);color:var(--t-mute)}
+
+/* ============ Section · 上手与实测 ============ */
+.start{display:flex;gap:48px;align-items:center;margin-top:32px}
+.start-left{width:480px;flex:none;display:flex;flex-direction:column;gap:22px}
+.start-left .lead{font:400 15px/28px var(--f-sans);color:var(--t-sub)}
+.proof{border-radius:14px;padding:22px 24px 26px;background:var(--bg-card);border:1px solid #1C2630;
+  display:flex;flex-direction:column;gap:14px}
+.proof .title{font:700 13px var(--f-mono);color:var(--t-faint)}
+.proof .row{display:flex;gap:16px;align-items:center}
+.proof .row b{font:700 14px var(--f-mono);color:var(--accent);flex:none}
+.proof .row span{font:400 14px var(--f-sans);color:#A6B4C1}
+.start-note{font:400 13px/22px var(--f-mono);color:var(--t-ghost)}
+/* 代码卡 */
+.code-card{flex:1;border-radius:14px;background:var(--code-bg);border:1px solid #172129;overflow:hidden}
+.code-bar{height:46px;display:flex;align-items:center;gap:8px;padding:0 18px;background:var(--code-bar)}
+.code-bar i{width:9px;height:9px;border-radius:5px;background:#202B35}
+.code-bar span{font:400 12px var(--f-mono);color:var(--t-ghost)}
+.code-body{padding:20px 24px 26px;display:flex;flex-direction:column;gap:4px}
+.code-body .c{font:400 13px/22px var(--f-mono);color:var(--t-ghost);white-space:pre}
+.code-body .s{height:8px;flex:none}
+.code-body .kw{color:var(--blue)}
+.code-body .tx{color:var(--t-body)}
+.code-body .str{color:var(--accent)}
+.code-body .attr{color:var(--amber)}
+
+/* ============ Section · CTA ============ */
+.cta-wrap{padding:60px 120px 100px;background:var(--bg-alt)}
+.cta-card{border-radius:20px;padding:72px 64px 76px;background:var(--bg-after);border:1px solid rgba(0,230,168,.24);
+  display:flex;flex-direction:column;align-items:center;gap:20px;text-align:center}
+.cta-card h2{font:700 44px/58px var(--f-sans);color:var(--t-hi)}
+.cta-card .p{font:400 16px/28px var(--f-sans);color:var(--t-sub);width:760px}
+.cta-btns{display:flex;gap:14px;align-items:center;padding-top:8px}
+.cta-btns .p2{display:inline-flex;align-items:center;padding:15px 28px;border-radius:10px;background:var(--accent);
+  font:700 16px var(--f-sans);color:var(--accent-dark);text-decoration:none;box-shadow:0 10px 30px -6px rgba(0,230,168,.3)}
+.cta-btns .s2{display:inline-flex;align-items:center;padding:15px 24px;border-radius:10px;border:1px solid #293540;
+  font:500 16px var(--f-sans);color:var(--t-body);text-decoration:none}
+.cta-meta{font:400 13px var(--f-mono);color:var(--t-ghost)}
+
+/* ============ Footer ============ */
+footer{padding:64px 120px 36px;background:var(--bg-footer);border-top:1px solid #141C24;
+  display:flex;flex-direction:column;gap:44px}
+.foot-top{display:flex;justify-content:space-between;align-items:flex-start;gap:40px}
+.foot-brand{width:320px;display:flex;flex-direction:column;gap:12px}
+.foot-brand .row{display:flex;align-items:center;gap:10px}
+.foot-brand svg{width:26px;height:26px}
+.foot-brand .row span{font:700 15px var(--f-mono);color:var(--t-name)}
+.foot-brand p{font:400 13px/22px var(--f-sans);color:var(--t-faint)}
+.foot-cols{display:flex;gap:64px}
+.foot-col{display:flex;flex-direction:column;gap:12px}
+.foot-col .t{font:700 12px var(--f-mono);color:var(--t-faint)}
+.foot-col a{font:400 13px var(--f-sans);color:var(--t-mute);text-decoration:none}
+.foot-col a:hover{color:var(--t-body)}
+.foot-div{height:1px;background:#0E141B}
+.foot-bot{display:flex;justify-content:space-between;align-items:center}
+.foot-bot span{font:400 12px var(--f-mono);color:var(--t-ghost)}
+</style>
+</head>
+<body data-page-node-id="lLH6eXGUPmIYfCMvKlDOkY">
+<div class="page" data-page-node-id="qEaP2A15CXrx8Ibnr3RYf6">
+
+  <!-- ========== 1. Header ========== -->
+  <header class="header" data-page-node-id="787BYSnQc1INMnsSoIZNwc">
+    <div class="logo" data-page-node-id="SHgMTaSJe2sPdfSGkEEF4M">
+      <svg viewBox="0 0 28 28" fill="none" data-page-node-id="2kbnDSaBnS7ThyWG2MVt2F"><rect x="1" y="1" width="26" height="26" rx="8" stroke="#00E6A8" stroke-opacity="0.35" data-page-node-id="hd1TsTpZJvUDSOhiiYVZzl"/><path d="M5.5 14h2.5l2-5.5 3.2 11 2.4-7.5 1.9 4h5" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="6Y5OUiHXuziu2O4SbSEBVd"/></svg>
+      <span data-page-node-id="YIt2VJ8XogZfg7hr9rPWpa">pure-webcodecs-player</span>
+    </div>
+    <nav class="nav" data-page-node-id="sG52eEey5UHGlBEODEG5zg">
+      <a href="#" data-page-node-id="Gn13ANR0sYqnsVsWP7SUjM">核心能力</a><a href="#" data-page-node-id="LSvKd1d8kLQTVeTHyobez6">统一管线</a><a href="#" data-page-node-id="vPbVX0rWNGjI1kWbQCzzUB">格式矩阵</a><a href="#" data-page-node-id="zL4dF5OftLCL6wkmySykI0">实测数据</a><a href="#" data-page-node-id="FFI5blgTopqg9ft6sS7HxH">文档</a>
+    </nav>
+    <div class="h-actions" data-page-node-id="CTYqSwVQYiHePMz9dfu8Ow">
+      <a class="btn-ghost" href="#" data-page-node-id="r4v9ta9SrggIcxavY7Eh8w">GitHub</a>
+      <a class="btn-primary" href="#" data-page-node-id="QKvl5HVW1nrC3wnPrU37WZ">在线演示</a>
+    </div>
+  </header>
+
+  <!-- ========== 2. Hero ========== -->
+  <div class="hero" data-page-node-id="VhE9xnVKx9TYLzZB5ByEFl">
+    <div class="badge" data-page-node-id="mFYBp7d8Oozcd7hi8WGk60"><i data-page-node-id="4Rh1MfnooLW7KYJypg36kB"></i><span data-page-node-id="DSR22tJopEi9oYDB8qH9r7">v0.1.0 已发布 · npm / jsdelivr CDN / GitHub Pages 三种引入</span></div>
+    <h1 data-page-node-id="Gt7dNN8utol0btBEA5f3gE">在浏览器沙箱里，跑完整条媒体管线</h1>
+    <p class="sub" data-page-node-id="iDfArrtVE2fdOPoVag0xH9">Container 解析 → Demux → WebCodecs 解码 → Canvas / AudioWorklet 渲染，全部在浏览器里完成。零构建、纯 ESM、零第三方运行时依赖——不往页面塞一个几十 MB 的 wasm 运行时，只把你真正需要的容器模块 import 进来。</p>
+    <div class="hero-cta" data-page-node-id="LJIDv6L9JKlyvflMEgn1da">
+      <a class="btn-hero-primary" href="#" data-page-node-id="ZZI6DJKF4nDTSZRD1OvtuX">打开在线演示</a>
+      <a class="btn-hero-secondary" href="#" data-page-node-id="Dwt235bs3T66yObq8Pxmc6">npm i pure-webcodecs-player</a>
+    </div>
+    <div class="hero-visual" data-page-node-id="PMx2r75rRYIQ3WCa5DIiB0">
+      <div class="win-bar" data-page-node-id="pnaRbCg09Q4xbZlhMl0DHq"><i data-page-node-id="qwBqgA4oGyJMmTN4uTCfVg"></i><i data-page-node-id="MXLGFF5maADNnHMlvPO4JF"></i><i data-page-node-id="jdafjZRwyBO7BaLmFjr15e"></i><span data-page-node-id="qEjshigGTzekrPfFtCModO">site/demo/ · ts → demux → VideoDecoder → canvas</span></div>
+      <div class="ph hero-stage" data-page-node-id="0bjpku8jykZ2XxxCKUyqBS">播放器实拍 16:9（占位，待替换真实截图 / demo-webcodecs.gif）</div>
+    </div>
+    <div class="trust" data-page-node-id="841XcTcPnzspEZ8GT8lXU8">
+      <div class="stat" data-page-node-id="adB9g5ZLoaFk6mWWKp0Imu"><b data-page-node-id="d1xOCDe6rumB7ZsYJF95sG">970 / 970</b><em data-page-node-id="vRVWDUowkxZJPvmoqkd6F9">单元测试通过</em></div><div class="div" data-page-node-id="fkAukyiipPqHdnsS3ZgOGQ"></div>
+      <div class="stat" data-page-node-id="E4br7SnEhrGM57v1JgW9Cs"><b data-page-node-id="mOkVHs3DLtevRcA2vccaLC">16</b><em data-page-node-id="PADvbpFRqnT4AqDhIHl0OS">容器与协议模块</em></div><div class="div" data-page-node-id="UCJY0fFFTXdMo4qq0nyHsz"></div>
+      <div class="stat" data-page-node-id="t1dLlL8QyDtdmptuW0zNc3"><b data-page-node-id="DJMX5c3iRvnWx6jSz0Yg3K">0</b><em data-page-node-id="0XeCdfY4UEaB7wqWVquVNJ">第三方运行时依赖</em></div><div class="div" data-page-node-id="TYegdNKHujjL1nQISXyl5R"></div>
+      <div class="stat" data-page-node-id="LCmAVsa4IWCjGGpIABwIE9"><b data-page-node-id="93j0zLGFpCPYxd4cqAQ1bk">15 步</b><em data-page-node-id="ozSaUdGq5weeXAUFiy2BHm">真机 e2e 自断言</em></div>
+    </div>
+  </div>
+
+  <!-- ========== 3. 痛点对比 ========== -->
+  <section class="alt" data-page-node-id="FBATz8eZFw7wyMKHIJMEVl">
+    <div class="eyebrow" data-page-node-id="xB1WuGeo92hCcwtS1VJHQy">WHY — 换一条更浏览器的路</div>
+    <h2 class="h2" style="margin-top:20px" data-page-node-id="yJdNzkA0xeozKcN5mNIKYV">别人让你先下几十 MB 运行时，我们只让你 import 一行</h2>
+    <p class="section-desc" data-page-node-id="plxD5Mxm6pbeyf8UtUlGNQ">解码这件事，浏览器自己也已经会做了。把容器解析交回给 JS，把解码交回给浏览器，剩下的体积、启动速度和可控性都会回来。</p>
+    <div class="compare" data-page-node-id="NKVIDBrgyBDKNySnuOrk9v">
+      <div class="card card-before" data-page-node-id="hQFlFq0yUhqn6hPn1kekP6">
+        <div class="card-tag" data-page-node-id="kw4WTjMIbdeAeEZSHA2LLL"><svg viewBox="0 0 18 18" fill="none" data-page-node-id="NivRjWjiDJw2fvaSv8QEkS"><circle cx="9" cy="9" r="8" stroke="#FF5C7A" stroke-opacity="0.45" data-page-node-id="DZmiPjizpJFkxRN6XkRsBl"/><path d="M6.2 6.2l5.6 5.6M11.8 6.2l-5.6 5.6" stroke="#FF5C7A" stroke-width="1.6" stroke-linecap="round" data-page-node-id="Q9I8jIgRzJp0CDva3rHTEc"/></svg>通常的做法</div>
+        <div class="card-item" data-page-node-id="5bXefKAbk9QJnlPZmZAlKA"><svg viewBox="0 0 18 18" fill="none" data-page-node-id="eAc3XlAbSt8bBSU2pP8Eju"><path d="M9 1.8v14.4" stroke="#FF5C7A" stroke-opacity="0.5" stroke-width="1.6" stroke-linecap="round" data-page-node-id="laqpu7VZ473chAiDhZ0SXF"/></svg><p data-page-node-id="w5PEsv9OvqYuXEAVVxAWCm">ffmpeg 编译成 wasm，首屏得先等几十 MB 下载完</p></div>
+        <div class="card-item" data-page-node-id="O3DJjK9zwa6frZzk143mIJ"><svg viewBox="0 0 18 18" fill="none" data-page-node-id="ZJczFUI91RBgd6k2L6R6kH"><path d="M9 1.8v14.4" stroke="#FF5C7A" stroke-opacity="0.5" stroke-width="1.6" stroke-linecap="round" data-page-node-id="4dEnLxCsy8mwWd39oDBbaW"/></svg><p data-page-node-id="9JgMT62wzfQVqIe7aygfVT">解码跑在 wasm 单线程里，长视频掉帧、发热明显</p></div>
+        <div class="card-item" data-page-node-id="IF0bJEJe1GmBTpXGVJFVHe"><svg viewBox="0 0 18 18" fill="none" data-page-node-id="YoT2YHjR4OxP0JSfUloHwA"><path d="M9 1.8v14.4" stroke="#FF5C7A" stroke-opacity="0.5" stroke-width="1.6" stroke-linecap="round" data-page-node-id="J2FoaadirO1i7B2VoBWCME"/></svg><p data-page-node-id="DgGqnA19gFJkQnxxpdyxXu">能力全量打包，只播一个 MP4 也要带上所有容器代码</p></div>
+      </div>
+      <div class="card card-after" data-page-node-id="PPUiqliarOU1LKyjqvQYBl">
+        <div class="card-tag mono" data-page-node-id="Odqb9W99Ic0uOeT4EjQbPc"><svg viewBox="0 0 18 18" fill="none" data-page-node-id="iU77SVhLmZG2lk0GY8yBci"><circle cx="9" cy="9" r="8" stroke="#00E6A8" stroke-opacity="0.45" data-page-node-id="wA76H81GiKBk4Cc702UrS9"/><path d="M5.6 9.3l2.4 2.4 4.4-4.8" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="9Oy5s0NDBMZ4YG8petmFQA"/></svg>pure-webcodecs-player</div>
+        <div class="card-item" data-page-node-id="jJOefXgJEQHB4k95LCpgJ0"><svg viewBox="0 0 18 18" fill="none" data-page-node-id="QFC6SpEZbwkL9058hWPkaG"><path d="M3.5 9.4l3.4 3.4L14.5 5" stroke="#00E6A8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="AIpiI4UhsSy5i6ZvTVbHRS"/></svg><p data-page-node-id="zImhXeTksGP4gA45DY36aC">零构建纯 ESM，按需 import 单个容器模块，用多少取多少</p></div>
+        <div class="card-item" data-page-node-id="Z2u89M9Y5xHpzmChdFvtzp"><svg viewBox="0 0 18 18" fill="none" data-page-node-id="tHrUXTwzNiMxum98xRNuR6"><path d="M3.5 9.4l3.4 3.4L14.5 5" stroke="#00E6A8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="kpcQLxs8lGEj9a52QBY2w0"/></svg><p data-page-node-id="j72DACz1z5uHyLjRESq8Sd">VideoDecoder 走浏览器原生解码通路，帧直送 Canvas，不抢主线程</p></div>
+        <div class="card-item" data-page-node-id="6OOUftczeQCdNWtw0ogiQ1"><svg viewBox="0 0 18 18" fill="none" data-page-node-id="JVzWpenM99FEkjYTSMgOmS"><path d="M3.5 9.4l3.4 3.4L14.5 5" stroke="#00E6A8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="qAFr5KDzkaLfDE0YuiU28y"/></svg><p data-page-node-id="ra9bftGpJgSb384KYmhzBa">解复用自己写，帧级可控：seek、切轨、时间戳全部整数 µs</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 4. 统一管线 ========== -->
+  <section class="base" data-page-node-id="s3nMpIkRVjc9nN6oTTXk7z">
+    <div class="eyebrow" data-page-node-id="rjASh9JfgqQSfm1iDtO5Oj">PIPELINE — 一条管线走到底</div>
+    <h2 class="h2" style="margin-top:20px" data-page-node-id="sWnAKkiDU9HcnBCqpQr3iG">16 种容器，共用同一套解析契约</h2>
+    <p class="section-desc" data-page-node-id="yAENb606BDnBH4tM8NHrqc">每个模块都是同一个基类契约的实现：open() 拿 MediaInfo，readSample() 取帧，seek() 对齐关键帧。换容器不换调用方式。</p>
+    <div class="pipeline" data-page-node-id="xbntPsEJe2gFTuRuGCYRNt">
+      <div class="step" data-page-node-id="W5rngk9FjdTf2TmGevjHf9">
+        <div class="bar" style="background:#1B3B33" data-page-node-id="WJl9FgyalZftTvXP5t244N"></div>
+        <div class="num" data-page-node-id="HJjq6hl558aedWuxG72FIi">01</div>
+        <div class="head" data-page-node-id="ySfkHfqZXOQaay6RnwPECP"><h3 data-page-node-id="SbwjE2BfD1mz9dXrCHrIUW">输入 Input</h3><svg width="22" height="22" viewBox="0 0 22 22" fill="none" data-page-node-id="eObcRjNyaizoL7qjcyqcCO"><path d="M11 3v9m0 0l-3.6-3.6M11 12l3.6-3.6" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="L6jKATewY0eDCEe644VQLg"/><path d="M3.5 16.5v1.5h15v-1.5" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" data-page-node-id="HfZWWFTHf5AAIhbohAsl6r"/></svg></div>
+        <p data-page-node-id="FLHMf0x21tx8ZiOPzM8hzc">任何字节源都能接：本地 File、带 Range 的 HTTP、WS 网关桥接、WebRTC 流。</p>
+        <div class="keys" data-page-node-id="4ntOCU56M2RgQrLbbgoQya">File · HTTP Range · WS · WebRTC</div>
+      </div>
+      <div class="step" data-page-node-id="lt9jeteIh0zwhtDC9M8dNy">
+        <div class="bar" style="background:#2E6B5A" data-page-node-id="L3Jo4ZrHrcJiMtHTsPZ4vD"></div>
+        <div class="num" data-page-node-id="VOqEKeqcdBohBr35aJpw2j">02</div>
+        <div class="head" data-page-node-id="LSoLHkABepLueDUgXMBSeZ"><h3 data-page-node-id="3ErpMw3q1dyoEOFUnNUl4B">解复用 Demux</h3><svg width="22" height="22" viewBox="0 0 22 22" fill="none" data-page-node-id="TMb09syGXWGTyfRZcgcJDh"><path d="M11 3.2l8 4-8 4-8-4 8-4z" stroke="#00E6A8" stroke-width="1.6" stroke-linejoin="round" data-page-node-id="edkDKZ36JHGBNTqf7RoRzA"/><path d="M3 12.4l8 4 8-4" stroke="#00E6A8" stroke-width="1.6" stroke-linejoin="round" data-page-node-id="kNvB1BSpxlz5UOBTMDXGBz"/></svg></div>
+        <p data-page-node-id="WFdERv12z8QUGIDG2cWoXx">自研容器解析器输出标准 EncodedChunk，时间戳统一为整数 µs，没有浮点漂移。</p>
+        <div class="keys" data-page-node-id="Jm0m8aDyDq5hymubXE2EGJ">mp4 / ts / hls / mkv / flv …</div>
+      </div>
+      <div class="step hl" data-page-node-id="fwIS7VNbJU3fXbMe3oDGqU">
+        <div class="bar" style="background:#00E6A8" data-page-node-id="uQx6Zxr2W4TaQ7NsNy8QDI"></div>
+        <div class="num" data-page-node-id="Visen4lb3ll6XLHK3z0EjN">03</div>
+        <div class="head" data-page-node-id="LUgBSwEG7exGCNYoqLAfeR"><h3 data-page-node-id="ABB9hQ17rcmnEG2tUCbWra">解码 Decode</h3><svg width="22" height="22" viewBox="0 0 22 22" fill="none" data-page-node-id="keQvbOFjgx34gyAtjvb46k"><rect x="5.5" y="5.5" width="11" height="11" rx="2.5" stroke="#00E6A8" stroke-width="1.6" data-page-node-id="eQUkiYmm0u7aIz6Py9Q8Di"/><path d="M9 2.2v3M13 2.2v3M9 16.8v3M13 16.8v3M2.2 9h3M2.2 13h3M16.8 9h3M16.8 13h3" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" data-page-node-id="k8Pd00QMgCQoj5XMoFO18s"/></svg></div>
+        <p data-page-node-id="7hsak5uxlyGgOKo6GbsocN">优先 WebCodecs 硬解；浏览器不支持或格式受限时，自动降级到 MSE 路线。</p>
+        <div class="keys" data-page-node-id="8sPeBW1KOzrLWdP3CXImlA">VideoDecoder · AudioDecoder · MSE</div>
+      </div>
+      <div class="step" data-page-node-id="Z2WibMGeALXohNk8TFVbOM">
+        <div class="bar" style="background:#00E6A8" data-page-node-id="tRiHnjVpb7pUjz9cO3fE6d"></div>
+        <div class="num" data-page-node-id="DXC88cqUVEmVdsMasOapeh">04</div>
+        <div class="head" data-page-node-id="itfVwUMJxj4vU6hL4pa0A5"><h3 data-page-node-id="dqoyv36kxaqJ5JBcyAQpeP">渲染 Render</h3><svg width="22" height="22" viewBox="0 0 22 22" fill="none" data-page-node-id="JVOGqJ1ReKJ4C0MqQVstaH"><rect x="2.2" y="4" width="17.6" height="12" rx="2.2" stroke="#00E6A8" stroke-width="1.6" data-page-node-id="ZpvPrTFd5GLTsvKwI4OXfC"/><path d="M9.6 8.4l4 2.6-4 2.6V8.4z" fill="#00E6A8" data-page-node-id="0ScPmIYl1gM7CM0fJDLt6Z"/></svg></div>
+        <p data-page-node-id="PAGaBmLLRogNgYHynwhf0R">视频帧上 Canvas / WebGPU，音频交给 AudioWorklet 做采样级对齐。</p>
+        <div class="keys" data-page-node-id="nCH5cXEHwErRMl4E592910">Canvas · WebGPU · AudioWorklet</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 5. 核心能力 ========== -->
+  <section class="alt" data-page-node-id="GKY3ZHOFAFqWHagpbu5VHV">
+    <div class="eyebrow" data-page-node-id="2P409vqL1NCndMiqNmQ5RT">CAPABILITIES — 三条硬能力</div>
+    <h2 class="h2" style="margin-top:20px" data-page-node-id="3PWiXCLTTI4G3fE5bm1Lji">帧在你手里，而不是在黑盒里</h2>
+
+    <div class="feature" data-page-node-id="LfnpsAGpIvYnXIXwO4ToE2">
+      <div class="txt" data-page-node-id="G68ZF07n4DDFvWMct1D8xZ">
+        <div class="tag" data-page-node-id="qc3oi5ZDwRxYvhSO5di4zs">01 — WebCodecs 主路线</div>
+        <h3 data-page-node-id="aeFcXkLrAeFZduP2GBu45U">自研解复用 + 原生解码，帧级可控</h3>
+        <p class="lead" data-page-node-id="SOFLouqMfh4AsgKcoAI2Zp">解出来的帧直接交到你手上：Canvas 绘制、滤镜、截图、推理前处理都随你安排，不用再从 &lt;video&gt; 里反抽像素。</p>
+        <div class="bullet" data-page-node-id="7TVhkjvCcBuAeNPWZ8tvmJ"><svg viewBox="0 0 16 16" fill="none" data-page-node-id="DhDZ1IoMmVWVcicacpYFG5"><path d="M3 8.4l3 3 7-7.4" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="LuKcHFzO1pgaxUzwCxcqQD"/></svg><p data-page-node-id="tBqrBM42Ok1Nn1igD3dstp">VideoDecoder / AudioDecoder 原生调用，帧回调可订阅</p></div>
+        <div class="bullet" data-page-node-id="9XyvdrueeRaTKzqfWBG2PO"><svg viewBox="0 0 16 16" fill="none" data-page-node-id="hGPguLky7Bjs0lVOn1Emep"><path d="M3 8.4l3 3 7-7.4" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="jDjKaGbRN7vL0HD4wGbFgH"/></svg><p data-page-node-id="bi68wKoR4D5ENWoFjDmFAD">firstframe / error 等事件齐全，seek 关键帧对齐</p></div>
+      </div>
+      <div class="ph vis" data-page-node-id="h1Zw8tYkXJNNs4I1kE0Hxa">WebCodecs 解码实拍（占位）</div>
+    </div>
+
+    <div class="feature rev" data-page-node-id="kuwYsKIn7AtV5v7LSMw455">
+      <div class="ph vis" data-page-node-id="mW7XzKdlrAyeL7w5JPOxT4">MSE 兜底路线（占位）</div>
+      <div class="txt" data-page-node-id="Sa74RGxYWosnrgEqyMiWZh">
+        <div class="tag" data-page-node-id="c7k41m32iwrDsIGdEDEIwv">02 — MSE 兜底降级</div>
+        <h3 data-page-node-id="0cHfGx9pxDjqNR4xucDy4o">能硬解就硬解，不能就平滑落地</h3>
+        <p class="lead" data-page-node-id="yBg2TZTeHXbBfLTMFyqQEH">一条 routePreference 声明优先级，WebCodecs 不可用或格式受限时自动切 MSE 走 &lt;video&gt;，业务代码一行不用改。</p>
+        <div class="bullet" data-page-node-id="K6jIeBD7WyKkWjFQHKrsS4"><svg viewBox="0 0 16 16" fill="none" data-page-node-id="NyHhj3GsErWsf4eRue6gPh"><path d="M3 8.4l3 3 7-7.4" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="9hkAiuHcEwYFIyYlpG7eYu"/></svg><p data-page-node-id="lge7OekBKS4ERis8ClT5N1">routePreference: ['webcodecs', 'mse'] 顺序可配</p></div>
+        <div class="bullet" data-page-node-id="E77xXMlqWLx6R5o1s6Ncfh"><svg viewBox="0 0 16 16" fill="none" data-page-node-id="uBpnejIXBVC2Zlw6S8YRif"><path d="M3 8.4l3 3 7-7.4" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="HnbFBZzon18QvHbumy2aFT"/></svg><p data-page-node-id="02h3i2SvHTPLUP2kTj5cO9">降级对上层透明，事件与 API 完全一致</p></div>
+      </div>
+    </div>
+
+    <div class="feature" data-page-node-id="5YIPX8KSRuY3iQPqUVKLbI">
+      <div class="txt" data-page-node-id="fdrCn47bPwpYwg1CGG3qpU">
+        <div class="tag" data-page-node-id="lgD1zwIli6iaxxYcKD1iFI">03 — 零构建零依赖</div>
+        <h3 data-page-node-id="IJrDClpxBZkQWHbPZdn5D1">仓库即产物，jsdelivr 直接当包源</h3>
+        <p class="lead" data-page-node-id="qAqDYNWnCWMc2WBAQrddUA">没有 bundler、没有转译、没有 node_modules。浏览器原生 ESM 直接跑，改一行源码刷新即生效，调试栈里全是自己的代码。</p>
+        <div class="bullet" data-page-node-id="SJmGNU9fUe1EqEBZuBLNlC"><svg viewBox="0 0 16 16" fill="none" data-page-node-id="NUv9i8ERsdoOgFfpJ8d3cd"><path d="M3 8.4l3 3 7-7.4" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="qZT9EQnLaioo4nYzjZfTTp"/></svg><p data-page-node-id="oQcQq5mIdzWcpSKTrUVaAV">纯 ESM 单包，16 个模块按子路径按需引入</p></div>
+        <div class="bullet" data-page-node-id="0vX3oynsAN7niBvQLZILJr"><svg viewBox="0 0 16 16" fill="none" data-page-node-id="iVCBF5OPuIwIbyzJD2eaXc"><path d="M3 8.4l3 3 7-7.4" stroke="#00E6A8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="bVO7eFI6WS2Gp0V7dw1vnu"/></svg><p data-page-node-id="SazsW0nlhHXUQ4xNXv72pJ">npm / jsdelivr CDN / GitHub Pages 三种引入任选</p></div>
+      </div>
+      <div class="ph vis" data-page-node-id="fkGCR1FXhDTA2zSL48gerT">零依赖源码结构（占位）</div>
+    </div>
+  </section>
+
+  <!-- ========== 6. 格式矩阵 ========== -->
+  <section class="base" data-page-node-id="DNfgMewp7jHwsKi4PtnXZG">
+    <div class="eyebrow" data-page-node-id="hezAlJdnhTocomhLIv7cet">MODULES — 格式矩阵</div>
+    <h2 class="h2" style="margin-top:20px" data-page-node-id="3KVp3d2iisHnwhpvqpGoI7">16 个容器与协议模块，一个都不外包</h2>
+    <p class="section-desc" data-page-node-id="KxPjGdRuvG7bvVxR1nCpRU">每个模块都能单独引：import * as mp4Mod from 'pure-webcodecs-player/mp4'。同一套基类契约，换容器不换调用方式。</p>
+    <div class="grid" id="module-grid" data-page-node-id="Z2We3UzeBJxtNtoXFH97qB"></div>
+  </section>
+
+  <!-- ========== 7. 上手与实测 ========== -->
+  <section class="alt" data-page-node-id="uiQM4gqSNhNAYLAdDCO22X">
+    <div class="eyebrow" data-page-node-id="z5tfSYxwBLBVqXXO5SBq7f">GET STARTED — 三行起播</div>
+    <h2 class="h2" style="margin-top:20px" data-page-node-id="HbQOwXkikzrlVb6j2Yze1t">createPlayer 一条龙，剩下交给管线</h2>
+    <div class="start" data-page-node-id="7b8DVWSFsxolq6rNkYphR1">
+      <div class="start-left" data-page-node-id="ZIyHVVEuhCl4Gh3mMoLsu6">
+        <p class="lead" data-page-node-id="uxDMLOkfS8lJD34waLQ6Hm">注册你要用的容器模块，剩下的探测、选路、缓冲、解码、渲染由 Player 统一调度。想更底层一点，也可以直接 new 一个 Demuxer 自己拉帧。</p>
+        <div class="proof" data-page-node-id="NFFgkBShP5s2f81xNGBtCZ">
+          <div class="title" data-page-node-id="pZ6uyGoWSz7JiBpj4AtO5p">不是效果图，是跑出来的</div>
+          <div class="row" data-page-node-id="562DsPKnV0wjQfSqhDUs0r"><b data-page-node-id="XwU9nFIGwd6ZrOO6KefI5Z">970 / 970</b><span data-page-node-id="rZJ5pgLzwq3hnsJ7HNhpyD">单元测试全部通过（Node ≥ 22）</span></div>
+          <div class="row" data-page-node-id="wsd6qykS9PujXVVhMpW16J"><b data-page-node-id="djyUXbMDhyU9MIslJjMzpI">15 步</b><span data-page-node-id="St8mYMv6vJhtm1aaaVsVou">真机 e2e 自断言：load → 首帧 → seek → destroy</span></div>
+          <div class="row" data-page-node-id="b4qhfQ6EMcL78yuM8WLuYa"><b data-page-node-id="S1bm0Ema9y6garoPug8Xem">0</b><span data-page-node-id="pSAGVUTg9HuA1znF6qnCRN">第三方运行时依赖，全部浏览器原生 API</span></div>
+        </div>
+        <p class="start-note" data-page-node-id="SO1QBnOsVw9wnVzx5IM6S2">所有容器 / 传输模块 API 同构，形状与差异见 docs/CONTRACTS.md</p>
+      </div>
+      <div class="code-card" data-page-node-id="JAjCuzRgyuGoXGxmxYJnVM">
+        <div class="code-bar" data-page-node-id="N8SF4s3pRqKysSMiErsZlL"><i data-page-node-id="geCYqOrrybB0GAOZNOmRcD"></i><i data-page-node-id="Ct1v8e74a0Zqw6sDeGJxFx"></i><i data-page-node-id="Ib1GW5CuPQ7eiE1TTjSXmR"></i><span data-page-node-id="v2029CAOWHQgFxA8yNuzcC">player.js</span></div>
+        <div class="code-body" data-page-node-id="0V825EUKm56qzCuB9ctClr">
+<div class="c" data-page-node-id="tPOxmLAbtFi9YvKufGmm4K">// 注册容器模块，URL 自动探测容器并选路</div>
+<div class="c kw" data-page-node-id="jbcAxSlfTHCKDQcfDiD2Ov">import { createPlayer, registerDemuxer } from 'pure-webcodecs-player';</div>
+<div class="c kw" data-page-node-id="StgIgyvoC34Wq1EXvWHk2s">import * as mp4Mod from 'pure-webcodecs-player/mp4';</div>
+<div class="s" data-page-node-id="JDrIxJTHoClgV0F5Kx0kEr"></div>
+<div class="c tx" data-page-node-id="NdqhwVwwUaMgyIcfHsnI5F">registerDemuxer(mp4Mod);</div>
+<div class="s" data-page-node-id="p6FT0KDB08Z7rjBF5Tlmhp"></div>
+<div class="c tx" data-page-node-id="hGBV2XpS88MzgY3GFP56pV">const player = await createPlayer({</div>
+<div class="c str" data-page-node-id="Nmwv8jEOwqhCMFhwg0UKcl">  url: 'https://example.com/movie.mp4',</div>
+<div class="c tx" data-page-node-id="3fXOvkiL1hPcSGmyNWXWYB">  canvas: document.getElementById('stage'),</div>
+<div class="c attr" data-page-node-id="Tejo5linDwaILyj0QxD8xM">  routePreference: ['webcodecs', 'mse'],</div>
+<div class="c tx" data-page-node-id="tb1cmpwOLAuRwQ6cuLeJ20">});</div>
+<div class="s" data-page-node-id="4h7eEAA5FEErQ7gm3RNbzZ"></div>
+<div class="c tx" data-page-node-id="Jt4jr0IPHbM1sIwtEzEV4b">await player.load();</div>
+<div class="c tx" data-page-node-id="mJc2EYgKR9WcYusg0LRl7A">await player.play();   // 起播前向缓冲 3s 后出水</div>
+<div class="s" data-page-node-id="OKNPWYM8lJVrJH3hGHDMgk"></div>
+<div class="c kw" data-page-node-id="9SDXnoTBTSpFdIHDpayBrD">player.on('firstframe', () =&gt; console.log('首帧已出'));</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 8. CTA ========== -->
+  <div class="cta-wrap" data-page-node-id="hCCjMwcgyIqZF6E3v7FRdT">
+    <div class="cta-card" data-page-node-id="AQuQHW6w1wbpk4Kd7Uliv7">
+      <svg width="260" height="44" viewBox="0 0 260 44" fill="none" data-page-node-id="wh5VYGsNprkFcxkWUCIkAp"><path d="M0 22h24l10-18 12 36 10-28 12 20 10-10h182" stroke="#00E6A8" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" data-page-node-id="5pmiLnHPp85kGA3PagwsZf"/><path d="M0 22h260" stroke="#00E6A8" stroke-opacity="0.18" stroke-width="1" data-page-node-id="xGxFJkfZFr8QbZbrdylhiK"/></svg>
+      <h2 data-page-node-id="jdcPHDNherI7av2Nwq6vZt">把播放器这件事，交回给浏览器</h2>
+      <p class="p" data-page-node-id="HaWOVZJOtiyThadLS00TvA">打开在线演示，拖一个本地 .mp4 / .ts 进去——解复用、解码、渲染全在你自己的浏览器里跑，数据一步都不外出。</p>
+      <div class="cta-btns" data-page-node-id="SeVGOJIA0vl3bopnEJVvM5">
+        <a class="p2" href="#" data-page-node-id="IgPIi7tQRiEFXuR19dkWJD">打开在线演示</a>
+        <a class="s2" href="#" data-page-node-id="Ju7Hsuc6YsEDWTpYKMiWBS">读 README</a>
+      </div>
+      <div class="cta-meta" data-page-node-id="jr9EcstfeKtxvufDVJRlno">MIT License · 零构建纯 ESM · Node ≥ 22 · 无第三方运行时依赖</div>
+    </div>
+  </div>
+
+  <!-- ========== 9. Footer ========== -->
+  <footer data-page-node-id="AAFAF0JzARTi8GPTFE2ecp">
+    <div class="foot-top" data-page-node-id="pGbcFbrqrjABjyDyCNrBYt">
+      <div class="foot-brand" data-page-node-id="sghkyCjbiyGcgLIiCXeb5A">
+        <div class="row" data-page-node-id="cKykzGSoATtGNIOBUPhVfF">
+          <svg viewBox="0 0 26 26" fill="none" data-page-node-id="YAMJzroFzEFofLNiztEDTn"><rect x="1" y="1" width="24" height="24" rx="7.5" stroke="#00E6A8" stroke-opacity="0.35" data-page-node-id="AYV1angBt02id2V55Rpo3A"/><path d="M5 13h2.4l1.9-5 3 10 2.3-7 1.8 4h4.6" stroke="#00E6A8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="hQYdBGnPsqH6hLEh6JlMjy"/></svg>
+          <span data-page-node-id="sPQnUSOGxKRKiNDdG05dDQ">pure-webcodecs-player</span>
+        </div>
+        <p data-page-node-id="qNpuuLpJM87qJemCF9AcZg">浏览器沙箱内的完整媒体管线。零构建、纯 ESM、零第三方运行时依赖。</p>
+      </div>
+      <div class="foot-cols" data-page-node-id="QcMKsJ2Q1pxddtkCTPOls2">
+        <div class="foot-col" data-page-node-id="pf9j4wiiTYZLzgdwrMF0xt">
+          <div class="t" data-page-node-id="m68D1ZQuRiAm2sDfS3rm7G">PRODUCT</div>
+          <a href="#" data-page-node-id="iH4XoN9AdTNNXOBrPcgOyy">核心能力</a><a href="#" data-page-node-id="2vl8JLHu8lvUfe6ZlkgPri">格式矩阵</a><a href="#" data-page-node-id="TB9hbHK7GSRVRIeDWkraxi">统一管线</a>
+        </div>
+        <div class="foot-col" data-page-node-id="R3tJTQDxbDUK9mfB3V6gGt">
+          <div class="t" data-page-node-id="DxzhZAnu265bZYKxYgtOPu">RESOURCES</div>
+          <a href="#" data-page-node-id="irT2wuIXSELXxdsUZglGiY">快速开始</a><a href="#" data-page-node-id="1DKKhZtM3ejDAyNWfiyTUb">docs/CONTRACTS.md</a><a href="#" data-page-node-id="mOgRp0LioMyBpk9L0xRqbh">测试与工程约定</a>
+        </div>
+        <div class="foot-col" data-page-node-id="gm6MbX8TEaAUejTBhkX05R">
+          <div class="t" data-page-node-id="wT8JHCd5Ebkm1EW1S7oaZ1">COMMUNITY</div>
+          <a href="#" data-page-node-id="Wt2B5mtbeo3uhOj1UhFbY9">GitHub 仓库</a><a href="#" data-page-node-id="NqyV5IyPff85E47lMtEeDP">npm 包</a><a href="#" data-page-node-id="yUtp8VYorWWzL8a2Kzz9Qi">提交 Issue</a>
+        </div>
+      </div>
+    </div>
+    <div class="foot-div" data-page-node-id="MToqhmIESBMhM1DEI2ubGc"></div>
+    <div class="foot-bot" data-page-node-id="RD9Eky19qChF79xAeduFAq">
+      <span data-page-node-id="oTDlNkxXink1Ujk42lYLBp">2026 zhenghy · MIT License</span>
+      <span data-page-node-id="0wqapmj1SAfAExxQCZ7AQI">GitHub Pages 演示 · npm · jsdelivr CDN</span>
+    </div>
+  </footer>
+</div>
+
+<script>
+// 16 个模块卡数据（与画布节点一致）
+const MODULES = [
+  {n:'core', core:true, d:'播放调度内核：createPlayer、解码路由、事件总线'},
+  {n:'mp4',  d:'ISO BMFF 盒解析，moov 索引 + HTTP Range 拉流'},
+  {n:'ts',   d:'MPEG-TS 188 字节包，PAT / PMT 重建轨道'},
+  {n:'hls',  d:'m3u8 解析 + 分片调度，直播与点播同构'},
+  {n:'cmaf', d:'CMAF / fMP4 分片，与 DASH、HLS 共用媒体段'},
+  {n:'flv',  d:'FLV tag 解析，覆盖 AVC / AAC 与脚本 tag'},
+  {n:'mkv',  d:'EBML 解析，Matroska 与 WebM 通吃'},
+  {n:'mov',  d:'QuickTime 容器，与 MP4 共享盒结构方言'},
+  {n:'flac', d:'无损音频帧解析，seekTable 精准定位'},
+  {n:'ape',  d:"Monkey's Audio 无损，帧级 seek 支持"},
+  {n:'wav',  d:'RIFF / WAVE，PCM 与扩展格式块'},
+  {n:'subtitle', d:'SRT / VTT 解析与时间轴挂载'},
+  {n:'webtorrent', d:'createSource 走 P2P，边下边播'},
+  {n:'webrtc', d:'SDP 协商与实时媒体流接入'},
+  {n:'rtmp', d:'WebSocket 网关桥接（浏览器无 TCP API）'},
+  {n:'rtsp', d:'WS 网关 / WebRTC 转封装桥接'},
+];
+document.getElementById('module-grid').innerHTML = MODULES.map(m =>
+  `<div class="mod${m.core?' core':''}"><b>${m.n}</b><p>${m.d}</p></div>`).join('');
+</script>
+</body>
+</html>
