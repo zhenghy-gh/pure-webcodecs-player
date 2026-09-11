@@ -781,9 +781,11 @@ test('端到端：逐字节增量喂入（1 字节/次）→ 顶层/原子照常
   const src = new StreamingDataSource(bytes.length);
   const d = new MovDemuxer(src);
   const openPromise = d.open();
+  // 逐字节喂入：每推送 1 字节让出一次微任务，确保 demuxer 内部 read 等待可被推进，
+  // 同时避免 macrotask(setTimeout) 在并行执行时饥饿导致死锁。
   for (let i = 0; i < bytes.length; i++) {
     src.push(bytes.subarray(i, i + 1));
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
   }
   await openPromise;
   const samples = [];
