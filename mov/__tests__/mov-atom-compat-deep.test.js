@@ -242,4 +242,78 @@ test('listTopLevelAtoms：多盒序列顺序还原', () => {
   assert.deepEqual(listTopLevelAtoms(bytes), ['ftyp', 'wide', 'moov']);
 });
 
+/* ------------------------- detectCompressedMoov 内容区路径 ------------------------- */
+
+test('detectCompressedMoov：传入内容区（无 moov 头，start=0）也能识别 cmov', () => {
+  const cmov = box('cmov', (cw) => {
+    cw.writeRaw(box('dcom', (dw) => dw.writeFourCC('zlib')));
+    cw.writeRaw(box('cmvd', (dw) => {
+      dw.writeU32(4);
+      dw.writeRaw(new Uint8Array([1, 2, 3, 4]));
+    }));
+  });
+  const r = detectCompressedMoov(cmov); // 内容区首盒即 cmov，start 应保持 0
+  assert.equal(r.compressed, true);
+  assert.equal(r.vendor, 'zlib');
+});
+
+/* ------------------------- parseUdtaTags 混合布局与健壮性 ------------------------- */
+
+test('parseUdtaTags：QT 风格 meta 与 udta 直接子标签共存时两者均提取', () => {
+  const udta = box('udta', (uw) => {
+    uw.writeRaw(
+      box('meta', (mw) => {
+        mw.writeRaw(buildHdlr({ handlerType: 'mdir', name: 'appl' }));
+        mw.writeRaw(textAtom('©nam', 'QT标题'));
+      }),
+    );
+    uw.writeRaw(textAtom('©ART', '作者'));
+  });
+  const moov = buildMoovWithUdta(udta);
+  assert.deepEqual(parseUdtaTags(moov), { '©nam': 'QT标题', '©ART': '作者' });
+});
+
+test('parseUdtaTags：udta 内含损坏子盒时仍尽力提取已解析标签且不抛（修复 D1）', () => {
+  const good = textAtom('©nam', '好标签');
+  const badMeta = new Uint8Array([0, 0, 0, 6, 0x6d, 0x65, 0x74, 0x61]); // meta 头异常：size=6 < 8
+  const udta = box('udta', (uw) => {
+    uw.writeRaw(good);
+    uw.writeRaw(badMeta);
+  });
+  const moov = buildMoovWithUdta(udta);
+  // 修复前此处会抛 "invalid box size 6"；现应尽力提取已解析的 ©nam 并返回。
+  const tags = parseUdtaTags(moov);
+  assert.deepEqual(tags, { '©nam': '好标签' });
+});
+
+/* ------------------------- interpretEdits / looksLikeQuickTime 边界 ------------------------- */
+
+test('interpretEdits：timescale=0 时 firstMediaTimeSec 为 null（防御除零）', () => {
+  const r = interpretEdits({ entries: [{ segmentDuration: 120, mediaTime: 100 }] }, 0);
+  assert.equal(r.hasEmptyEdit, false);
+  assert.equal(r.firstMediaTimeSec, null);
+});
+
+test('looksLikeQuickTime：ftyp 主品牌精确 qt  直接函数级命中', () => {
+  const ftyp = buildFtyp({ majorBrand: 'qt  ', compatible: ['qt  '] });
+  assert.equal(looksLikeQuickTime(ftyp), true);
+});
+
+test('listTopLevelAtoms：空输入返回空数组不抛', () => {
+  assert.deepEqual(listTopLevelAtoms(new Uint8Array(0)), []);
+});
+
+test('[已知缺陷 D2] looksLikeQuickTime：兼容品牌含 qt  但主品牌非 qt  时仍误判 false', () => {
+  // 真实 QT 文件常以 isom/mp42 为主品牌、qt  列于兼容品牌列表；
+  // 当前实现只看主品牌（忽略兼容品牌），会漏判这类文件——待修复。
+  const ftyp = new Uint8Array(8 + 4 + 4 + 4 * 2);
+  const dv = new DataView(ftyp.buffer);
+  dv.setUint32(0, ftyp.byteLength);
+  for (let i = 0; i < 4; i++) ftyp[4 + i] = 'f'.charCodeAt(0);
+  for (let i = 0; i < 4; i++) ftyp[8 + i] = 'isom'[i].charCodeAt(0);
+  for (let i = 0; i < 4; i++) ftyp[12 + i] = 'isom'[i].charCodeAt(0);
+  for (let i = 0; i < 4; i++) ftyp[16 + i] = 'qt  '[i].charCodeAt(0);
+  assert.equal(looksLikeQuickTime(ftyp), false, 'KNOWN DEFECT D2：兼容品牌 qt  未被识别');
+});
+
 void iterateBoxes;

@@ -129,15 +129,21 @@ export function parseUdtaTags(moovBytes) {
   }
   if (!udtaBox) return tags;
 
-  iterateBoxes(moovBytes, udtaBox.contentStart, udtaBox.end, (child) => {
-    if (child.type === 'meta') {
-      parseMetaAtom(moovBytes, child, tags);
-    } else if (isTextTagType(child.type)) {
-      const text = readTextAtom(moovBytes, child);
-      if (text !== null) tags[child.type] = text;
-    }
-    return true;
-  });
+  // udta 内部可能含损坏/截断的子盒（如 meta 头异常），应“尽力而为”提取已可解析的标签，
+  // 而不是让 box-parser 的异常中断整段元数据提取（外层扫描已 try/catch，这里需保持一致）。
+  try {
+    iterateBoxes(moovBytes, udtaBox.contentStart, udtaBox.end, (child) => {
+      if (child.type === 'meta') {
+        parseMetaAtom(moovBytes, child, tags);
+      } else if (isTextTagType(child.type)) {
+        const text = readTextAtom(moovBytes, child);
+        if (text !== null) tags[child.type] = text;
+      }
+      return true;
+    });
+  } catch {
+    /* 元数据尽力而为：损坏的 udta 子盒不应中断已经提取到的标签 */
+  }
   return tags;
 }
 

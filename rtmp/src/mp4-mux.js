@@ -199,7 +199,8 @@ export class Fmp4Remuxer {
     const sizes = samples.map((s) => s.data.length);
     const totalBytes = sizes.reduce((a, b) => a + b, 0);
     const entryCount = samples.length;
-    const trunSize = 8 + 4 + 4 + entryCount * 12;
+    // trun = box header(8) + fullbox head(4) + sample_count(4) + data_offset(4) + entries.
+    const trunSize = 8 + 4 + 4 + 4 + entryCount * 12;
     const moofSize = 8 + 16 + (8 + 16 + 16 + trunSize);
 
     const mfhd = fullbox('mfhd', 0, 0, u32(this.sequence));
