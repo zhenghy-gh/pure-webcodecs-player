@@ -113,7 +113,9 @@
 
 ### 待办（按优先级，下一波取 P1 第一条）
 - [x] **P3** flv iso-bmff 剩余面（**第九十波 `7485e97` 已完成**，flv 63→89）。下一批：rtmp player/gateway 正向管线（需网关样本）、webvtt 渲染层
-- [ ] **P3** 信息性观察（agent 报告，行为已固化测试，动前需 owner 点头）：①pipeline 渲染 emitted 顺序为 rendered 先于 firstframe（与直觉相反）；②_waitQueue guard=64 兜底空转与注释不一致
+- [x] **P3** 信息性观察**已逐条核实完毕**（第一百零六波）——两项均**非缺陷，属有意设计**，已补测试固化：
+  - ①`rendered` 先于 `firstframe`：**同一帧**先后派发是显式设计，且 `core/__tests__/core-pipeline-queue.test.js:180` 早已断言固化（期望 `[500000, 'first:500000', 300000, 400000]`）。语义上 `rendered` 是「每帧已绘制」逐帧事件、`firstframe` 是「首次出画」一次性里程碑，后者由前者内部触发，顺序必然如此。**改序会破坏已固化契约，不建议动**。
+  - ②`_waitQueue` guard=64：核实为**有意防死锁阀**——队列持续满时最多让出 64 次即放弃（`core/src/pipeline-webcodecs.js:205`），与 `player.js:413` 的 4096 次轮询阀同构。注释「默认上限 8」指 `maxDecodeQueue`（背压**阈值**），guard 是放弃**上限**，二者是不同参数，并非注释不一致。此前 `_waitQueue` **零测试覆盖**，本波补 `core/__tests__/pipeline-backpressure.test.js`（9 例）固化含 guard 耗尽在内的全部行为。
 - [x] **P3** webtorrent 手动选文件 API（**第九十三波 `18d1ec4` 已落地**）：player.selectFile(selector) 在 degraded 态调用，selector 四形态，错误码全显式
 - [ ] **P3** 重构收敛（audit-79 D，**动前需 owner 点头**）：BitReader×4 / BitWriter×2 / buildEsds×2 收敛到 core；删 `mp4/src/box-builder.js:225` 死导出 buildBtrt
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
