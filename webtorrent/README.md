@@ -165,12 +165,18 @@ player.selectFile((f, i) => f.name.endsWith('.mkv')) // 谓词，取首个匹配
 cd webtorrent && node --test "__tests__/*.test.js"    # 或 npm test（根）
 ```
 
-全程注入桩 client / 假 torrent 文件，**不需要真实网络**：
+全程注入桩 client / 假 torrent 文件，**不需要真实网络**（共 10 个测试文件，152 例）：
 
-- `source.test.js`（11）：slice 随机读/EOF 短读、顺序流前进+跨块+向后自动重启、参数校验、size 契约主名、**跨模块互验**（TorrentFileSource 直接喂 MkvDemuxer 完成 init+逐轨 pull）；
-- `player.test.js`（9）：
-- `magnet.test.js`（10）：btih 提取(hex/base32 双形态)、base32↔hex 手算向量与 crypto sha1 往返、非法输入拒绝、buildMagnet↔parseMagnet 往返；attach 全流程与事件序列、NO_CLIENT 降级映射 NETWORK_ERROR、ATTACH_FAILED 映射、destroy 幂等、loader 全局注入优先/全 CDN 失败返 null；
-- `protocol.test.js`（21）：bencode 往返/键序/二进制安全/截断拒绝、.torrent 单/多文件解析、跨 piece 映射精确切分、决策确定性与环绕策略、assembler 前缀即产/乱序续传挂起不抛/末片长度校验/ABORTED、createSource 双路径。
+- `source.test.js`（3）：slice 随机读/EOF 短读、顺序流前进+跨块+向后自动重启、参数校验、size 契约主名、**跨模块互验**（TorrentFileSource 直接喂 MkvDemuxer 完成 init+逐轨 pull）；
+- `player.test.js`（10）：attach 全流程与事件序列、NO_CLIENT 降级映射 NETWORK_ERROR、ATTACH_FAILED 映射、destroy 幂等、stats 定时器、autoSelect=false 经 selectFile 收尾；
+- `magnet.test.js`（10）：btih 提取(hex/base32 双形态)、base32↔hex 手算向量与 crypto sha1 往返、非法输入拒绝、buildMagnet↔parseMagnet 往返；
+- `protocol.test.js`（32）：bencode 往返/键序/二进制安全/截断拒绝、.torrent 单/多文件解析、跨 piece 映射精确切分、决策确定性与环绕策略、assembler 前缀即产/乱序续传挂起不抛/末片长度校验/ABORTED、createSource 双路径；
+- `loader.test.js`（18）：可选依赖加载器（全局注入优先 / 全 CDN 失败返 null / 超时降级）；
+- `utils.test.js`（15）：Emitter 订阅/退订/异常隔离、withTimeout 清理与透传、formatBytes 换算；
+- `webtorrent-bencode.test.js`（18）：bencode 编解码边界与二进制安全；
+- `webtorrent-magnet-edge.test.js`（17）：magnet 畸形输入/边角字段拒绝；
+- `webtorrent-source-edge.test.js`（22）：source/assembler/piece-map/torrent-file 错误分支与 OOB 守卫、player 守卫与 stats；
+- `webtorrent-select-file.test.js`（7）：selectFile 四形态（文件对象/文件名/索引/谓词）、非 degraded/销毁态 STATE_ERROR、FILE_NOT_FOUND/NOT_MEDIA/PARSE_ERROR 错误分支与可重试。
 
 ## 八、接口对齐声明
 
