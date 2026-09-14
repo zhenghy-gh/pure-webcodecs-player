@@ -730,14 +730,14 @@ test('probe：ftyp 非 QT/非 isom 未知品牌 → MovDemuxer.probe 让位（�
   assert.ok(hit.confidence < 0.8, `未知品牌置信度应偏低，实际 ${hit && hit.confidence}`);
 });
 
-test('probe：ftyp 品牌 "qt6 "（仅前缀匹配）不被 looksLikeQuickTime 视为 qt，但 Mp4Demuxer 仍标 mov', async () => {
+test('probe：ftyp 品牌 "qt6 "（仅前缀匹配）不被识别为 QuickTime', async () => {
   const ftyp = buildFtyp({ majorBrand: 'qt6 ', minorVersion: 0, compatible: ['qt6 '] });
   const head = ftyp.subarray(0, Math.min(64, ftyp.byteLength));
   const { looksLikeQuickTime } = await import('../src/atom-compat.js');
   assert.equal(looksLikeQuickTime(head), false, 'qt6 不等于精确 "qt  "');
   const { Mp4Demuxer } = await import('../../mp4/src/demuxer.js');
   const mp4Hit = Mp4Demuxer.probe(head);
-  assert.ok(mp4Hit && mp4Hit.container === 'mov', 'Mp4Demuxer 按 startsWith("qt") 仍归 mov');
+  assert.ok(mp4Hit && mp4Hit.container === 'mp4', 'Mp4Demuxer 应将 qt6 视为普通 ISO-BMFF');
 });
 
 /* ------------------------- 增量字节喂入（1 字节/次） ------------------------- */

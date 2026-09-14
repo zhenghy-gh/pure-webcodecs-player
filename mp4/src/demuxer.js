@@ -72,7 +72,7 @@ export class Mp4Demuxer extends Demuxer {
           bytes.byteLength >= 12
             ? String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11])
             : '';
-        if (brand.startsWith('qt')) return createProbeResult(0.5, 'mov');
+        if (brand === 'qt  ') return createProbeResult(0.5, 'mov');
         return createProbeResult(
           0.95,
           'mp4',
