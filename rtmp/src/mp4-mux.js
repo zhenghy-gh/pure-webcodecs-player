@@ -207,7 +207,9 @@ export class Fmp4Remuxer {
 
     const baseTicks = toTicks(samples[0].dtsUs ?? samples[0].ptsUs, timescale);
     const tfhd = fullbox('tfhd', 0, 0x020000 /*default-base-is-moof*/, u32(trackId));
-    const tfdt = fullbox('tfdt', 0, 0, u32(Math.max(0, baseTicks))); // v0：baseMediaDecodeTime 为 32 位
+    // v0：baseMediaDecodeTime 为 32 位无符号字段；负值以 >>>0 原样回绕（与 flv fmp4-remuxer 一致），
+    // 不钳为 0——钳 0 会静默抹掉真实解码偏移，且偏离本仓库既定无符号回绕约定。
+    const tfdt = fullbox('tfdt', 0, 0, u32(baseTicks));
 
     // trun v0：sampleCount, dataOffset, [duration,size,flags]*
     const TRUN_FLAGS = 0x000001 /*data-offset*/ | 0x000100 /*duration*/ | 0x000200 /*size*/ | 0x000400 /*flags*/;
@@ -216,8 +218,15 @@ export class Fmp4Remuxer {
       const cur = samples[i];
       const next = samples[i + 1];
       let durTicks;
-      if (next) durTicks = Math.max(1, toTicks(next.dtsUs ?? next.ptsUs, timescale) - toTicks(cur.dtsUs ?? cur.ptsUs, timescale));
-      else durTicks = Math.max(1, Math.round(((cur.durationUs || (isVideo ? 66_000 : 21_300)) * timescale) / 1e6));
+      if (next) {
+        // 对「相邻 dts 之差」做一次取整，而非分别取整后相减——避免 44.1kHz 等时基下
+        // 双舍入引入的 ±1 tick 抖动（例：等间隔音频本应全相等，却出现 939/940/939）。
+        const nextUs = next.dtsUs ?? next.ptsUs;
+        const curUs = cur.dtsUs ?? cur.ptsUs;
+        durTicks = Math.max(1, toTicks(nextUs - curUs, timescale));
+      } else {
+        durTicks = Math.max(1, Math.round(((cur.durationUs || (isVideo ? 66_000 : 21_300)) * timescale) / 1e6));
+      }
       const flags = cur.keyframe ? 0x02000000 : 0x01010000;
       entryBytes.push(u32(durTicks), u32(sizes[i]), u32(flags));
     }

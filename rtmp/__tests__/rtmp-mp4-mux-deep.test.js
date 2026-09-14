@@ -10,7 +10,7 @@
  *   - 双轨「一侧队列为空」时只产出一个 moof+mdat；
  *   - sequence / totalSamples 计数器（跨多次 buildFragment 累加）；
  *   - moov 时基接线（mvhd=1000、video mdhd=1000、audio mdhd=采样率）；
- *   - 负 dts 在 tfdt 处被 Math.max(0,*) 钳为 0。
+ *   - 负 dts 在 tfdt 处经 >>>0 无符号回绕（与 flv remuxer 一致，非钳 0）。
  * 全部纯函数、零网络。
  */
 import { test } from 'node:test';
@@ -122,10 +122,9 @@ test('音频 trun：duration 按采样率时基换算（末样本 fallback=21.3m
   r.addSample(audioSample(42_600));
   const trun = readTrun(r.buildFragment());
 
-  // 注意：源码 `toTicks` 对每个样本 dts 各自取整再相减（非对差值取整），
-  // 故中间样本 duration 为 round(42600·44100/1e6)-round(21300·44100/1e6)=1879-939=940，
-  // 末样本走 fallback 21.3ms → 939。以下为实际算法行为。
-  assert.deepEqual(trun.entries.map((e) => e.duration), [939, 940, 939]);
+  // 相邻 dts 之差单次取整（21.3ms·44100/1e6 ≈ 939.33 → 939），中间/末样本一致为 939，
+  // 不再因「先各自取整再相减」出现 939/940 抖动。
+  assert.deepEqual(trun.entries.map((e) => e.duration), [939, 939, 939]);
   assert.ok(trun.entries.every((e) => e.flags === KF), '音频样本应标记为关键帧');
 });
 
@@ -209,11 +208,13 @@ test('moov 时基接线：mvhd=1000、video mdhd=1000、audio mdhd=采样率', (
   assert.equal(new DataView(audioSlice.buffer, audioSlice.byteOffset + mdhdPos + 16, 4).getUint32(0), SR, 'audio mdhd timescale=采样率');
 });
 
-test('负 dts：tfdt baseMediaDecodeTime 被 Math.max(0,*) 钳为 0', () => {
+test('负 dts：tfdt baseMediaDecodeTime 经 >>>0 无符号回绕（与 flv remuxer 一致，非钳 0）', () => {
   const r = new Fmp4Remuxer();
   r.setVideoTrack({ description: makeAvcC(), width: 16, height: 16 });
   r.addSample(videoSample(-1000, true)); // 负 dts
   const frag = r.buildFragment();
   const traf = enter(frag, 'moof', 'traf');
-  assert.equal(readTfdt(traf), 0, '负 dts 不应产生负 baseMediaDecodeTime');
+  // dts=-1000µs 即 -1ms（视频 timescale=1000）→ baseTicks=-1 → 无符号回绕为 0xFFFFFFFF，
+  // 真实偏移被保留（而非被 Math.max(0,*) 钳为 0）。
+  assert.equal(readTfdt(traf), (-1) >>> 0, '负 dts 经无符号回绕保留真实偏移（与 flv remuxer 一致）');
 });
