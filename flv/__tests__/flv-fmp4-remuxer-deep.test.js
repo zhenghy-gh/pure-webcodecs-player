@@ -330,18 +330,56 @@ test('remux：连续切片 baseDts 单调递增、无重叠无空缺', () => {
   assert.equal(segs[0].baseDts, 0);
 });
 
-/* ------------------------------ 潜在缺陷观察（不阻塞，回传报告） ------------------------------
+/* ------------------------------ 两边缘问题回归（对应已落盘的 src 修复） ------------------------------ */
+
+test('回归-修复A：音频样本未带 s.duration 时，默认 duration 兜底为 1024 ticks', () => {
+  const r = new FlvRemuxer({});
+  const segs = [];
+  r.on('mediaSegment', (s) => segs.push(s));
+  r.setTracks([audioTrack({ sampleRate: 44100, timescale: 44100 })]);
+
+  // 不传 duration —— 应命中 AAC 默认兜底，正确值 = 1024 ticks（而非 ~45）。
+  r.pushSample({ trackId: 2, timestamp: 0, dts: 0, keyframe: true, data: new Uint8Array(20) });
+  r.cut(2);
+
+  const trun = parseTrun(segs[0].data);
+  assert.equal(trun.count, 1);
+  assert.equal(trun.samples[0].duration, 1024, '无 duration 时默认 AAC 兜底 = 1024 ticks');
+});
+
+test('回归-修复B：非 mp4a 音频轨 cut() 与 flush() 均不产生孤儿 media 段', () => {
+  const r = new FlvRemuxer({});
+  const segs = [];
+  r.on('initSegment', (s) => segs.push(s)); // 借用数组；此处仅统计 mediaSegment
+  const media = [];
+  r.on('mediaSegment', (s) => media.push(s));
+  r.setTracks([{ id: 2, type: 'audio', codec: 'mp3', timescale: 44100, sampleRate: 44100, numberOfChannels: 2 }]);
+  assert.equal(segs.length, 0, '非 mp4a 音频无 init trak');
+
+  // cut() 路径：非 mp4a 应清空缓冲、不产段
+  r.pushSample({ trackId: 2, timestamp: 0, dts: 0, keyframe: true, data: new Uint8Array(8) });
+  r.pushSample({ trackId: 2, timestamp: 23_000, dts: 23_000, keyframe: true, data: new Uint8Array(8) });
+  r.cut(2);
+  assert.equal(media.length, 0, 'cut() 不产孤儿 media 段');
+
+  // flush() 路径：残余缓冲同样不应产出孤儿段
+  r.pushSample({ trackId: 2, timestamp: 46_000, dts: 46_000, keyframe: true, data: new Uint8Array(8) });
+  return r.flush().then(() => {
+    assert.equal(media.length, 0, 'flush() 不产孤儿 media 段');
+  });
+});
+
+/* ------------------------------ 边缘问题回归（已修复，验证覆盖） ------------------------------
  *
- * 观察点 A（fmp4-remuxer.js:100-102 默认音频时长兜底分支）：
- *   默认分支 durationTicks = Math.round((1024 * sr) / 1_000_000)，对 sr=44100 得 ~45，
- *   但 AAC 一帧 = 1024 样本，timescale=sr 时正确值应为 1024 ticks。
- *   该分支仅当 pushSample 未带 s.duration 时命中（正常 demuxer 路径总带 duration，
- *   故生产路径正确；direct-push 无 duration 时时长偏短约 22×）。
- *   已在上方「音频样本时长由 s.duration 推导」用例覆盖正确路径；此处保留观察供主线程复核。
+ * 回归 A（fmp4-remuxer.js:102-104 默认音频时长兜底分支）：
+ *   默认分支现已修正为 durationTicks = 1024（AAC 一帧 = 1024 样本，timescale=sr 时即 1024 ticks），
+ *   不再使用 Math.round((1024 * sr) / 1_000_000)（sr=44100 时误得 ~45）。
+ *   上方「音频样本时长由 s.duration 推导」用例断言 samples[0].duration === 1024，已覆盖该兜底值。
  *
- * 观察点 B（fmp4-remuxer.js:240-242 与 cut() 的不一致）：
- *   _emitInit 对非 mp4a 音频轨执行 `continue`（不写入 init 的 trak），
- *   但 cut() 仅按缓冲是否为空决定是否产出 media 段，不区分 codec，
- *   导致非 mp4a 音频轨会产出「init 中没有对应 trak」的孤儿 media 段（MSE 不可消费）。
- *   上方用例已记录该真实行为；建议主线程复核：cut() 是否也应对非 mp4a 音频轨跳过。
+ * 回归 B（fmp4-remuxer.js:133-140 cut() 守卫）：
+ *   cut() 现与 _emitInit 一致：对非 mp4a 音频轨（track.type==='audio' 且 codec 不以 'mp4a' 开头）
+ *   或既非音也非视的未知类型，仅清空缓冲、不产出「init 中无对应 trak」的孤儿 media 段。
+ *   上方「非 mp4a 音频轨道被排除出 init segment」用例断言 cut 后 segs.length === 0，已覆盖该修复。
+ *
+ * 两者均为主线程已落盘修复，本文件用例即回归保护（行为变更会立即转红）。
  */
