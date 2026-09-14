@@ -303,17 +303,71 @@ test('listTopLevelAtoms：空输入返回空数组不抛', () => {
   assert.deepEqual(listTopLevelAtoms(new Uint8Array(0)), []);
 });
 
-test('[已知缺陷 D2] looksLikeQuickTime：兼容品牌含 qt  但主品牌非 qt  时仍误判 false', () => {
+test('[D2 修复回归] looksLikeQuickTime：兼容品牌含 qt  但主品牌非 qt  时应识别为 true', () => {
   // 真实 QT 文件常以 isom/mp42 为主品牌、qt  列于兼容品牌列表；
-  // 当前实现只看主品牌（忽略兼容品牌），会漏判这类文件——待修复。
+  // 修复后兼容品牌列表中的精确 'qt  ' 也应命中（D2）。
   const ftyp = new Uint8Array(8 + 4 + 4 + 4 * 2);
   const dv = new DataView(ftyp.buffer);
   dv.setUint32(0, ftyp.byteLength);
-  for (let i = 0; i < 4; i++) ftyp[4 + i] = 'f'.charCodeAt(0);
+  for (let i = 0; i < 4; i++) ftyp[4 + i] = 'ftyp'[i].charCodeAt(0);
   for (let i = 0; i < 4; i++) ftyp[8 + i] = 'isom'[i].charCodeAt(0);
   for (let i = 0; i < 4; i++) ftyp[12 + i] = 'isom'[i].charCodeAt(0);
   for (let i = 0; i < 4; i++) ftyp[16 + i] = 'qt  '[i].charCodeAt(0);
-  assert.equal(looksLikeQuickTime(ftyp), false, 'KNOWN DEFECT D2：兼容品牌 qt  未被识别');
+  assert.equal(looksLikeQuickTime(ftyp), true, 'D2：兼容品牌 qt  应被识别');
+});
+
+test('[D2 回归] 主品牌 mp42 + 兼容品牌含 qt  应识别为 true（buildFtyp 多兼容品牌）', () => {
+  const ftyp = buildFtyp({ majorBrand: 'mp42', compatible: ['mp42', 'qt  ', 'isom'] });
+  assert.equal(looksLikeQuickTime(ftyp), true, 'mp42 主品牌 + 兼容 qt  应命中');
+  // 传入截断 head 仍应命中（兼容品牌列表边界按 ftyp size 安全裁剪）
+  assert.equal(looksLikeQuickTime(ftyp.subarray(0, 64)), true, '截断 head 也应命中');
+});
+
+test('[D2 回归] 兼容品牌仅 qt6 （前缀相似）仍不算 qt  ，应返回 false', () => {
+  const ftyp = buildFtyp({ majorBrand: 'isom', compatible: ['qt6 '] });
+  assert.equal(looksLikeQuickTime(ftyp), false, 'qt6 不等于精确 "qt  "，避免前缀误判');
+});
+
+test('[D2 回归] probe：ftyp isom + 兼容 qt  应直接命中 mov 高置信 0.98', async () => {
+  const ftyp = buildFtyp({ majorBrand: 'isom', compatible: ['isom', 'qt  '] });
+  const head = ftyp.subarray(0, 64);
+  const { MovDemuxer } = await import('../src/demuxer.js');
+  const hit = MovDemuxer.probe(head);
+  assert.ok(hit && hit.container === 'mov', '应路由到 mov 而非 mp4');
+  assert.equal(hit.confidence, 0.98, '直接命中应为高置信 0.98');
+});
+
+test('[D2 边界] ftyp size=0（box 语义：延伸到输入末尾）且兼容品牌含 qt  应识别为 true', () => {
+  // size 字段为 0，按 box-parser.js iterateBoxes 约定视为“到末尾”；
+  // 此前 helper 会因 limit=0 漏扫兼容品牌列表，这是本次边界修复要点。
+  const ftyp = new Uint8Array(8 + 4 + 4 + 4); // header + major + minor + 1 compatible
+  ftyp.set([0x66, 0x74, 0x79, 0x70], 4); // 'ftyp'
+  ftyp.set([0x69, 0x73, 0x6f, 0x6d], 8); // 'isom' major
+  ftyp.set([0x00, 0x00, 0x02, 0x00], 12); // minor version
+  ftyp.set([0x71, 0x74, 0x20, 0x20], 16); // 'qt  ' compatible
+  // size 字段(0..3) 保持 0
+  assert.equal(looksLikeQuickTime(ftyp), true, 'size=0 应视为延伸到末尾并扫描兼容品牌');
+});
+
+test('[D2 边界] 截断 head（声明 size > 实际长度）仍扫描可见兼容品牌，不漏扫', () => {
+  // 声明 size=24 但仅提供 20 字节；兼容品牌 qt  位于可见的 [16..20)。
+  const ftyp = new Uint8Array(20);
+  const dv = new DataView(ftyp.buffer);
+  dv.setUint32(0, 24); // 声明大于实际，模拟截断
+  ftyp.set([0x66, 0x74, 0x79, 0x70], 4); // 'ftyp'
+  ftyp.set([0x69, 0x73, 0x6f, 0x6d], 8); // 'isom' major
+  ftyp.set([0x00, 0x00, 0x02, 0x00], 12); // minor version
+  ftyp.set([0x71, 0x74, 0x20, 0x20], 16); // 'qt  ' compatible（在截断窗口内）
+  assert.equal(looksLikeQuickTime(ftyp), true, '截断 head 中不因 size 大于实际长度而漏扫');
+});
+
+test('[D2 边界] 截断 head 末尾不足一个兼容品牌（<16B 或仅主品牌）应返回 false 不抛', () => {
+  const short = new Uint8Array(12); // 仅 header + major，无任何兼容品牌空间
+  const dv = new DataView(short.buffer);
+  dv.setUint32(0, 24);
+  short.set([0x66, 0x74, 0x79, 0x70], 4); // 'ftyp'
+  short.set([0x69, 0x73, 0x6f, 0x6d], 8); // 'isom' major
+  assert.equal(looksLikeQuickTime(short), false, '空间不足时应安全返回 false');
 });
 
 void iterateBoxes;

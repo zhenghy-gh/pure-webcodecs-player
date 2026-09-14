@@ -141,6 +141,19 @@ test('stop() 从 IDLE（未 start 即停止）→ 进入 STOPPED 且发 statecha
   assert.equal(p._source, null, '未 start 不应创建任何 source/WS 连接');
 });
 
+test('stop() 已在 STOPPED 时重复调用：不发出重复/错误 from 的 statechange', () => {
+  const p = new WsFlvPlayer({ backoff: BACKOFF });
+  const states = [];
+  p.on('statechange', ({ from, to }) => states.push(`${from}->${to}`));
+  p.stop();
+  assert.equal(p.state, PLAYER_STATES.STOPPED, '首次 stop 后进入 STOPPED');
+  assert.deepEqual(states, ['idle->stopped'], '首次 stop 仅发 IDLE→STOPPED');
+  // 重复调用 stop：应无副作用、不再发 statechange（尤其不可出现 from=idle 的伪事件）
+  p.stop();
+  assert.equal(p.state, PLAYER_STATES.STOPPED, '重复 stop 状态保持 STOPPED');
+  assert.deepEqual(states, ['idle->stopped'], '重复 stop 不应再发任何 statechange');
+});
+
 test('flushPending() 在媒体轨就绪前：remuxer 未 ready → 不调用 sink、不抛错', () => {
   const calls = { init: 0, frag: 0 };
   const p = new WsFlvPlayer({

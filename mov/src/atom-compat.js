@@ -8,7 +8,8 @@
  * 4. `udta`/`meta`：QT 的 meta 无 version/flags 头（ISO 有），内部 hdlr='mdir'；文本 atom 以 u16 长度前缀存 ©nam/©ART 等；
  * 5. `elst` media_time < 0：空编辑（编辑列表占位），播放器需按偏移平移 pts；
  * 6. `tmcd` 时间码轨：非音视频轨，归入 METADATA；
- * 7. 品牌：ftyp major brand 'qt  ' 是最直接的识别特征。
+ * 7. 品牌：ftyp major brand 'qt  ' 或兼容品牌列表含 'qt  ' 即识别为 QuickTime
+ *    （主品牌常为 isom/mp42，qt 列于兼容品牌）。
  */
 import { ByteStream } from '../../core/src/index.js';
 import { iterateBoxes } from '../../mp4/src/box-parser.js';
@@ -24,15 +25,40 @@ export function looksLikeQuickTime(bytes) {
   if (!bytes || bytes.byteLength < 8) return false;
   const type = String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]);
   if (type === 'ftyp') {
-    const brand =
-      bytes.byteLength >= 12
-        ? String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11])
-        : '';
-    return brand === 'qt  ';
+    return ftypLooksQuickTime(bytes);
   }
   if (type === 'wide' || type === 'pnot') return true;
   // 老 .mov 可以没有 ftyp：moov/mdat 开头 + 内部含 QT 特征
   return type === 'moov' && hasQuickTimeHints(bytes);
+}
+
+/**
+ * ftyp 是否像 QuickTime：主品牌精确 'qt  '，或兼容品牌列表含 'qt  '。
+ * 兼容品牌列表从偏移 16 起、每个 4 字节直到 ftyp box 末尾；
+ * 用 ftyp size 字段界定边界，并对传入的截断 head / 完整文件做安全裁剪。
+ */
+function ftypLooksQuickTime(bytes) {
+  // ftyp 布局：size(4) + 'ftyp'(4) + major(4) + minor(4) + compatible...（每个 4 字节）
+  const major =
+    bytes.byteLength >= 12
+      ? String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11])
+      : '';
+  if (major === 'qt  ') return true;
+  // size=0 按 box 语义表示“延伸到输入末尾”（与 box-parser.js iterateBoxes 一致）；
+  // 否则以 ftyp size 与输入长度中较小者界定兼容品牌列表边界，避免越界或漏扫。
+  const rawSize = bytes.byteLength >= 4 ? readU32BE(bytes, 0) : bytes.byteLength;
+  const size = rawSize === 0 ? bytes.byteLength : rawSize;
+  const limit = Math.min(size, bytes.byteLength);
+  for (let off = 16; off + 4 <= limit; off += 4) {
+    if (String.fromCharCode(bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]) === 'qt  ') {
+      return true;
+    }
+  }
+  return false;
+}
+
+function readU32BE(bytes, off) {
+  return ((bytes[off] << 24) | (bytes[off + 1] << 16) | (bytes[off + 2] << 8) | bytes[off + 3]) >>> 0;
 }
 
 function hasQuickTimeHints(bytes) {

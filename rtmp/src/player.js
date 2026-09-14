@@ -232,8 +232,8 @@ export class WsFlvPlayer extends MiniEmitter {
   /** 停止并退出状态机（不再重连） */
   stop() {
     if (this.state === PLAYER_STATES.IDLE || this.state === PLAYER_STATES.STOPPED) {
-      this.state = PLAYER_STATES.STOPPED;
-      this.emit('statechange', { from: PLAYER_STATES.IDLE, to: PLAYER_STATES.STOPPED });
+      // 已 STOPPED 时 #setState 对 from===to 去重不触发，避免重复/错误 from 的 statechange
+      this.#setStateSafe(PLAYER_STATES.STOPPED);
       return;
     }
     this._userStopped = true;
