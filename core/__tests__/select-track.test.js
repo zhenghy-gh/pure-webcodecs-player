@@ -30,6 +30,7 @@ class FakeAudioOutput {
     this.pushed = [];
     this.cleared = 0;
     this._us = 0;
+    this.destroyed = false;
   }
   async init() {}
   push(channels) { this.pushed.push(channels); }
@@ -37,7 +38,7 @@ class FakeAudioOutput {
   pause() {}
   clearBuffer() { this.cleared += 1; }
   setVolume() {}
-  destroy() {}
+  destroy() { this.destroyed = true; }
   get currentTimeUs() { return this._us; }
 }
 
@@ -327,4 +328,48 @@ test('WebCodecs 管线：新音频轨配置失败时保留旧解码器与选中�
   assert.equal(oldDecoder.closed, false);
   assert.equal(decoders.length, 2);
   assert.equal(decoders[1].closed, true);
+});
+test('WebCodecs：异步切音频轨期间 destroy 不应复活新解码器或音频输出', async () => {
+  let resolveOutput;
+  let outputCalls = 0;
+  const outputReady = new Promise((resolve) => { resolveOutput = resolve; });
+  const lateOutput = new FakeAudioOutput({ sampleRate: 44100, channelCount: 2 });
+  const decoders = [];
+  const pipeline = new WebCodecsPipeline({
+    route: 'webcodecs',
+    mediaInfo: {
+      container: 'mkv',
+      tracks: [
+        { id: 1, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 },
+        { id: 2, type: 'audio', codec: 'opus', sampleRate: 44100, numberOfChannels: 2 },
+      ],
+      durationUs: 1000000,
+      seekable: true,
+      live: false,
+    },
+    player: null,
+    options: {
+      audioDecoderFactory: (init) => {
+        const decoder = new FakeDecoder(init);
+        decoders.push(decoder);
+        return decoder;
+      },
+      audioOutputFactory: async () => {
+        if (outputCalls++ === 0) return new FakeAudioOutput();
+        return outputReady;
+      },
+    },
+  });
+
+  await pipeline.init();
+  const switching = pipeline.selectTrack('audio', 2);
+  await pipeline.destroy();
+  resolveOutput(lateOutput);
+  await switching;
+
+  assert.equal(pipeline.state, 'destroyed');
+  assert.equal(pipeline._audioDecoder, null);
+  assert.equal(pipeline.audioOutput, null);
+  assert.equal(lateOutput.destroyed, true);
+  assert.equal(decoders.at(-1).closed, true);
 });

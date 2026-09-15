@@ -78,6 +78,7 @@ export class WebCodecsPipeline extends Emitter {
     this._liveEdgeUs = -1;
     this._firstFrameEmitted = false;
     this.state = 'ready';
+    this._lifecycleGeneration = 0;
     this.counters = { videoChunks: 0, audioChunks: 0, framesRendered: 0, framesDropped: 0, cues: 0, catchups: 0 };
 
     this.avSync.attachMaster(() => this.currentTimeSec());
@@ -92,7 +93,7 @@ export class WebCodecsPipeline extends Emitter {
     const video = [...this._tracks.values()].find((t) => t.type === 'video');
     const audio = [...this._tracks.values()].find((t) => t.type === 'audio');
     if (video) await this._setupVideo(video);
-    if (audio) await this._setupAudio(audio);
+    if (audio) await this._setupAudio(audio, this._lifecycleGeneration);
     return this;
   }
 
@@ -123,7 +124,7 @@ export class WebCodecsPipeline extends Emitter {
     this._videoConfig = config;
   }
 
-  async _setupAudio(track) {
+  async _setupAudio(track, generation = this._lifecycleGeneration) {
     const factory = this.options.audioDecoderFactory ??
       (typeof AudioDecoder === 'function'
         ? (init) => new AudioDecoder(init)
@@ -163,9 +164,17 @@ export class WebCodecsPipeline extends Emitter {
         this.emit('audio-unavailable', err);
       }
     }
+    if (generation !== this._lifecycleGeneration || this.state === 'destroyed') {
+      try { decoder.close?.(); } catch { /* 过期解码器回收失败不影响销毁 */ }
+      if (nextOutput && nextOutput !== existing) {
+        try { nextOutput.destroy?.(); } catch { /* 过期音频输出回收失败不影响销毁 */ }
+      }
+      return false;
+    }
     this._audioDecoder = decoder;
     this._audioConfig = audioConfig;
     this.audioOutput = nextOutput;
+    return true;
   }
 
   /* ------------------------------ 输入 ------------------------------ */
@@ -439,16 +448,22 @@ export class WebCodecsPipeline extends Emitter {
     const track = this._tracks.get(trackId);
     if (!track || track.type !== type) throw stateError(`track not found: ${type}/${trackId}`);
     if (this.active[type] === trackId) return;
+    const generation = this._lifecycleGeneration;
+    const previousDecoder = type === 'video' ? this._videoDecoder : this._audioDecoder;
+    const previousOutput = type === 'audio' ? this.audioOutput : null;
     if (type === 'video') {
-      const previousDecoder = this._videoDecoder;
       this._setupVideo(track);
+      if (this.state === 'destroyed' || generation !== this._lifecycleGeneration) {
+        try { this._videoDecoder?.close?.(); } catch { /* 迟到的新解码器回收失败不影响销毁 */ }
+        this._videoDecoder = null;
+        return;
+      }
       this._dropPendingFrames();
       this._liveEdgeUs = -1; // 视频轨重建后 live edge 需重新累计
       try { previousDecoder?.close?.(); } catch { /* 旧解码器回收失败不影响新轨 */ }
     } else if (type === 'audio') {
-      const previousDecoder = this._audioDecoder;
-      const previousOutput = this.audioOutput;
-      await this._setupAudio(track);
+      const switched = await this._setupAudio(track, generation);
+      if (!switched || this.state === 'destroyed' || generation !== this._lifecycleGeneration) return;
       this.audioOutput?.clearBuffer?.();
       if (previousOutput && previousOutput !== this.audioOutput) {
         try { previousOutput.destroy?.(); } catch { /* 旧音频输出回收失败不影响新轨 */ }
@@ -462,6 +477,7 @@ export class WebCodecsPipeline extends Emitter {
   async destroy() {
     if (this.state === 'destroyed') return;
     this.state = 'destroyed';
+    this._lifecycleGeneration += 1;
     if (this._frameTimer) { this._frameTimer(); this._frameTimer = null; }
     this._dropPendingFrames();
     try { this._videoDecoder?.close?.(); } catch { /* 忽略 */ }
