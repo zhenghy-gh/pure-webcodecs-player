@@ -249,3 +249,82 @@ test('MSE 管线：切音频轨新建 SourceBuffer 并补 init segment', async (
   assert.equal(appends.length, before, '非选中音频轨样本不再成段');
   await assert.rejects(() => pipeline.selectTrack('audio', 1), (e) => e.code === 'STATE_ERROR');
 });
+
+test('WebCodecs 管线：新视频轨配置失败时保留旧解码器与选中态', async () => {
+  const decoders = [];
+  const pipeline = new WebCodecsPipeline({
+    route: 'webcodecs',
+    mediaInfo: {
+      container: 'mkv',
+      tracks: [
+        { id: 1, type: 'video', codec: 'avc1.42E01E' },
+        { id: 4, type: 'video', codec: 'vp09.00.10.08' },
+      ],
+      durationUs: 1000000,
+      seekable: true,
+      live: false,
+    },
+    player: null,
+    options: {
+      videoDecoderFactory: (init) => {
+        const decoder = new FakeDecoder(init);
+        const originalConfigure = decoder.configure.bind(decoder);
+        decoder.configure = (config) => {
+          if (config.codec.startsWith('vp09')) throw new Error('video configure failed');
+          originalConfigure(config);
+        };
+        decoders.push(decoder);
+        return decoder;
+      },
+      schedule: (fn) => { fn(); return () => {}; },
+    },
+  });
+  await pipeline.init();
+  const oldDecoder = decoders[0];
+  await assert.rejects(() => pipeline.selectTrack('video', 4), /video configure failed/);
+  assert.equal(pipeline.active.video, 1);
+  assert.equal(pipeline._videoDecoder, oldDecoder);
+  assert.equal(oldDecoder.closed, false);
+  assert.equal(decoders.length, 2);
+  assert.equal(decoders[1].closed, true);
+});
+
+test('WebCodecs 管线：新音频轨配置失败时保留旧解码器与选中态', async () => {
+  const decoders = [];
+  const pipeline = new WebCodecsPipeline({
+    route: 'webcodecs',
+    mediaInfo: {
+      container: 'mkv',
+      tracks: [
+        { id: 2, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 },
+        { id: 3, type: 'audio', codec: 'opus', sampleRate: 48000, numberOfChannels: 2 },
+      ],
+      durationUs: 1000000,
+      seekable: true,
+      live: false,
+    },
+    player: null,
+    options: {
+      audioDecoderFactory: (init) => {
+        const decoder = new FakeDecoder(init);
+        const originalConfigure = decoder.configure.bind(decoder);
+        decoder.configure = (config) => {
+          if (config.codec === 'opus') throw new Error('audio configure failed');
+          originalConfigure(config);
+        };
+        decoders.push(decoder);
+        return decoder;
+      },
+      audioOutputFactory: async () => new FakeAudioOutput(),
+      schedule: (fn) => { fn(); return () => {}; },
+    },
+  });
+  await pipeline.init();
+  const oldDecoder = decoders[0];
+  await assert.rejects(() => pipeline.selectTrack('audio', 3), /audio configure failed/);
+  assert.equal(pipeline.active.audio, 2);
+  assert.equal(pipeline._audioDecoder, oldDecoder);
+  assert.equal(oldDecoder.closed, false);
+  assert.equal(decoders.length, 2);
+  assert.equal(decoders[1].closed, true);
+});

@@ -102,7 +102,7 @@ export class WebCodecsPipeline extends Emitter {
         ? (init) => new VideoDecoder(init)
         : null);
     if (!factory) throw notSupported('当前环境没有 VideoDecoder', { codec: track.codec });
-    this._videoDecoder = factory({
+    const decoder = factory({
       output: (frame) => this._onVideoFrame(frame),
       error: (err) => this._onDecodeError(err, 'video'),
     });
@@ -113,8 +113,14 @@ export class WebCodecsPipeline extends Emitter {
       ...(track.height ? { codedHeight: track.height, displayAspectHeight: track.height } : {}),
       optimizeForLatency: true,
     };
+    try {
+      decoder.configure?.(config);
+    } catch (error) {
+      try { decoder.close?.(); } catch { /* 新解码器配置失败，回收临时实例 */ }
+      throw error;
+    }
+    this._videoDecoder = decoder;
     this._videoConfig = config;
-    this._videoDecoder.configure?.(config);
   }
 
   async _setupAudio(track) {
@@ -123,7 +129,7 @@ export class WebCodecsPipeline extends Emitter {
         ? (init) => new AudioDecoder(init)
         : null);
     if (!factory) throw notSupported('当前环境没有 AudioDecoder', { codec: track.codec });
-    this._audioDecoder = factory({
+    const decoder = factory({
       output: (audioData) => this._onAudioData(audioData),
       error: (err) => this._onDecodeError(err, 'audio'),
     });
@@ -133,26 +139,33 @@ export class WebCodecsPipeline extends Emitter {
       numberOfChannels: track.numberOfChannels ?? 2,
       ...(track.description ? { description: track.description } : {}),
     };
-    this._audioConfig = audioConfig;
-    this._audioDecoder.configure?.(audioConfig);
+    try {
+      decoder.configure?.(audioConfig);
+    } catch (error) {
+      try { decoder.close?.(); } catch { /* 新解码器配置失败，回收临时实例 */ }
+      throw error;
+    }
     const sampleRate = track.sampleRate ?? 48000;
     const channels = track.numberOfChannels ?? track.channelCount ?? 2;
     const existing = this.audioOutput;
+    let nextOutput = existing;
     // 同格式轨切换复用音频输出，避免重建 AudioWorklet 造成可闻断点
-    if (existing && existing.sampleRate === sampleRate && (existing.channelCount ?? existing.channels) === channels) {
-      return;
+    if (!(existing && existing.sampleRate === sampleRate && (existing.channelCount ?? existing.channels) === channels)) {
+      try {
+        nextOutput = await (this.options.audioOutputFactory ?? createDefaultAudioOutput)({
+          sampleRate,
+          channels,
+        });
+        await nextOutput.init?.();
+      } catch (err) {
+        // 无音频输出（Node/无 AudioContext）时降级为静音播放，不阻断视频
+        nextOutput = null;
+        this.emit('audio-unavailable', err);
+      }
     }
-    try {
-      this.audioOutput = await (this.options.audioOutputFactory ?? createDefaultAudioOutput)({
-        sampleRate,
-        channels,
-      });
-      await this.audioOutput.init?.();
-    } catch (err) {
-      // 无音频输出（Node/无 AudioContext）时降级为静音播放，不阻断视频
-      this.audioOutput = null;
-      this.emit('audio-unavailable', err);
-    }
+    this._audioDecoder = decoder;
+    this._audioConfig = audioConfig;
+    this.audioOutput = nextOutput;
   }
 
   /* ------------------------------ 输入 ------------------------------ */
@@ -426,19 +439,23 @@ export class WebCodecsPipeline extends Emitter {
     const track = this._tracks.get(trackId);
     if (!track || track.type !== type) throw stateError(`track not found: ${type}/${trackId}`);
     if (this.active[type] === trackId) return;
-    this.active[type] = trackId;
     if (type === 'video') {
+      const previousDecoder = this._videoDecoder;
+      this._setupVideo(track);
       this._dropPendingFrames();
       this._liveEdgeUs = -1; // 视频轨重建后 live edge 需重新累计
-      try { this._videoDecoder?.close?.(); } catch { /* 忽略 */ }
-      this._videoDecoder = null;
-      this._setupVideo(track);
+      try { previousDecoder?.close?.(); } catch { /* 旧解码器回收失败不影响新轨 */ }
     } else if (type === 'audio') {
-      try { this._audioDecoder?.close?.(); } catch { /* 忽略 */ }
-      this._audioDecoder = null;
-      this.audioOutput?.clearBuffer?.();
+      const previousDecoder = this._audioDecoder;
+      const previousOutput = this.audioOutput;
       await this._setupAudio(track);
+      this.audioOutput?.clearBuffer?.();
+      if (previousOutput && previousOutput !== this.audioOutput) {
+        try { previousOutput.destroy?.(); } catch { /* 旧音频输出回收失败不影响新轨 */ }
+      }
+      try { previousDecoder?.close?.(); } catch { /* 旧解码器回收失败不影响新轨 */ }
     }
+    this.active[type] = trackId;
     this.emit('trackchange', { type, trackId, codec: track.codec });
   }
 

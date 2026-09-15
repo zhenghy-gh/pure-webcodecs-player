@@ -324,11 +324,15 @@ export class MsePipeline extends Emitter {
       const key = this._keyOf(track);
       if (!this._initializedTracks.has(key)) {
         const mime = this.mimeFor(track);
-        await this.mse.addTrack(key, mime);
-        const init = this.remuxer.createInitSegment(track);
-        await this.mse.append(key, init);
-        this._initializedTracks.add(key);
-        this.counters.initSegments += 1;
+        if (this.mse.tracks?.has?.(key)) {
+          this._initializedTracks.add(key);
+        } else {
+          await this.mse.addTrack(key, mime);
+          const init = this.remuxer.createInitSegment(track);
+          await this.mse.append(key, init);
+          this._initializedTracks.add(key);
+          this.counters.initSegments += 1;
+        }
       }
     }
     this.active[type] = trackId;
