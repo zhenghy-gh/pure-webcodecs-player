@@ -594,6 +594,7 @@ export class MkvDemuxer extends Demuxer {
     for (const point of iterElements(body, 0, body.length, SCHEMA)) {
       if (point.id !== ID.CuePoint) continue;
       let timeNs = null;
+      const positions = [];
       for (const el of iterElements(body, point.contentStart, point.contentEnd, SCHEMA)) {
         if (el.id === ID.CueTime) {
           // Matroska 规范：CueTime 以 TimecodeScale 为单位（tick），实际纳秒 = CueTime × TimecodeScale。
@@ -603,7 +604,8 @@ export class MkvDemuxer extends Demuxer {
           timeNs = cueTimeTicks * this.timecodeScaleNs;
         } else if (el.id === ID.CueTrackPositions) {
           // 单个 CuePoint 可含多个 CueTrackPositions（多轨）；按 CueTrack 分别保留，
-          // 不可被后者覆盖（#3）。同一 CuePoint 的 timeNs 对所有轨一致。
+          // 不可被后者覆盖（#3）。先收集位置，待 CueTime 解析后再写入，
+          // 从而不依赖 EBML 子元素的出现顺序。
           let clusterPos = null;
           let track = null;
           for (const tp of iterElements(body, el.contentStart, el.contentEnd, SCHEMA)) {
@@ -613,7 +615,12 @@ export class MkvDemuxer extends Demuxer {
               track = decodeValueByType('u', body.subarray(tp.contentStart, tp.contentEnd));
             }
           }
-          if (timeNs !== null && clusterPos !== null) {
+          positions.push({ clusterPos, track });
+        }
+      }
+      if (timeNs !== null) {
+        for (const { clusterPos, track } of positions) {
+          if (clusterPos !== null) {
             this.cues.push({ timeNs, clusterOffsetInSegment: clusterPos, track });
           }
         }
