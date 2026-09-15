@@ -156,6 +156,7 @@ export class Mp4Demuxer extends Demuxer {
       durationUs: durationUs > 0 ? durationUs : null,
       seekable: true,
       live,
+      fragmented: this._fragmented,
       ...(brands ? { brands } : {}),
     };
   }

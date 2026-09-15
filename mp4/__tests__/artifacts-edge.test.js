@@ -168,7 +168,7 @@ test('remux init segment 可被 Mp4Demuxer 再次打开（fMP4 自洽性）', as
 
   const d2 = new Mp4Demuxer(new MemoryDataSource(init));
   const info2 = await d2.open();
-  assert.equal(info2.fragmented ?? false, false);
+  assert.equal(info2.fragmented, true);
   void info2;
   // init 里含 mvex → 分片模式成立；轨描述逐字节一致
   const t2 = d2.tracks[0];

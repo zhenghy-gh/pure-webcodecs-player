@@ -78,6 +78,7 @@ export const BitstreamFormat = Object.freeze({
  * @property {{title?:string,[k:string]:string}} [metadata] 仅字符串叶子字段
  * // ---- 可选扩展成员 ----
  * @property {{majorBrand:string,minorVersion:number,compatible:string[]}|null} [brands] ISO-BMFF 品牌
+ * @property {boolean}                                                            [fragmented] ISO-BMFF 是否为 fragmented MP4
  * @property {Record<string,string>}                                             [qtTags] QuickTime udta 标签
  */
 

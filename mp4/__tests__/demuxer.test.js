@@ -29,6 +29,7 @@ test('渐进 MP4：open() → MediaInfo 契约形状', async () => {
   assert.equal(info.seekable, true);
   // mvhd duration 320 ticks @1000 → 320000µs
   assert.equal(info.durationUs, 320 * TICK_US);
+  assert.equal(info.fragmented, false);
   assert.equal(info.brands.majorBrand, 'isom');
 
   assert.equal(info.tracks.length, 1);
@@ -117,7 +118,7 @@ test('分片 MP4：fragmented 标记与跨片样本迭代（µs 连续性）', a
   const d = new Mp4Demuxer(new MemoryDataSource(bytes));
   const info = await d.open();
 
-  assert.equal(info.fragmented ?? undefined, undefined); // 契约外附加诊断不强制
+  assert.equal(info.fragmented, true);
   assert.equal(info.live, false);
   assert.equal(info.seekable, true);
   assert.equal(info.durationUs, null, 'mvex 无 mehd 时长未知 → null');

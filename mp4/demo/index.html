@@ -283,7 +283,7 @@ async function loadSource(source, fileName = '') {
       const mime = `${track.type === 'audio' ? 'audio' : 'video'}/mp4; codecs="${track.codec}"`;
       await mse.addTrack(`track${track.id}`, mime); await mse.append(`track${track.id}`, remuxer.createInitSegment(track));
     }
-    $('mode').textContent = `${demuxer._fragmented ? 'fragmented' : 'progressive'} · streaming`;
+    $('mode').textContent = `${info.fragmented ? 'fragmented' : 'progressive'} · streaming`;
     setStatus('正在缓冲', 'loading');
     const flush = async (trackId, force = false) => {
       const state = pending.get(trackId); if (!state || !state.samples.length) return;
@@ -307,7 +307,7 @@ async function loadSource(source, fileName = '') {
       }
       for (const track of mediaTracks) await flush(track.id, true);
     };
-    if (demuxer._fragmented) {
+    if (info.fragmented) {
       await readAllTracks();
     } else while (done.size < mediaTracks.length && token === session) {
       let progressed = false;
