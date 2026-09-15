@@ -76,6 +76,7 @@ export class MsePipeline extends Emitter {
     this._initialized = false;
     this._firstFrameEmitted = false;
     this._elementOffs = [];
+    this._lifecycleGeneration = 0;
   }
 
   /* ------------------------------ 构建 ------------------------------ */
@@ -319,17 +320,22 @@ export class MsePipeline extends Emitter {
     const track = this._tracks.get(trackId);
     if (!track || track.type !== type) throw stateError(`track not found: ${type}/${trackId}`);
     if (this.active[type] === trackId) return;
+    const generation = this._lifecycleGeneration;
     const previousId = this.active[type];
     if (type === 'video' || type === 'audio') {
       const key = this._keyOf(track);
       if (!this._initializedTracks.has(key)) {
         const mime = this.mimeFor(track);
-        if (this.mse.tracks?.has?.(key)) {
+        const mse = this.mse;
+        const remuxer = this.remuxer;
+        if (mse.tracks?.has?.(key)) {
           this._initializedTracks.add(key);
         } else {
-          await this.mse.addTrack(key, mime);
-          const init = this.remuxer.createInitSegment(track);
-          await this.mse.append(key, init);
+          await mse.addTrack(key, mime);
+          if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return;
+          const init = remuxer.createInitSegment(track);
+          await mse.append(key, init);
+          if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return;
           this._initializedTracks.add(key);
           this.counters.initSegments += 1;
         }
@@ -347,6 +353,7 @@ export class MsePipeline extends Emitter {
   async destroy() {
     if (this.state === 'destroyed') return;
     this.state = 'destroyed';
+    this._lifecycleGeneration += 1;
     this._pending.clear();
     this._pendingUs.clear();
     for (const off of this._elementOffs) {

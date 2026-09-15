@@ -20,6 +20,7 @@ class FakeMseHelper {
     this.aheadByKey = new Map();
     this.rangesByKey = new Map();
     this.appendError = null;
+    this.appendGate = null;
   }
   async open() { this.opened = true; }
   async addTrack(key, mime) {
@@ -28,6 +29,7 @@ class FakeMseHelper {
     return ch;
   }
   async append(key, data) {
+    if (this.appendGate) await this.appendGate;
     if (this.appendError) throw this.appendError;
     this.appends.push({ key, byteLength: data.byteLength });
   }
@@ -158,7 +160,26 @@ test('selectTrack：已有 SourceBuffer 的目标轨只切活动、不重复建 
   assert.equal(remuxer.inits.length, initCountBefore, 'SB 已存在不再补写 init');
 });
 
-/* ------------------------------ 缓冲水位 / 区间 ------------------------------ */
+test('selectTrack：异步写入 init 期间 destroy 不复活已销毁管线', async () => {
+  let releaseAppend;
+  const appendGate = new Promise((resolve) => { releaseAppend = resolve; });
+  const mse = new FakeMseHelper();
+  const { pipeline, remuxer } = build({ mse });
+  await pipeline.init();
+  mse.appendGate = appendGate;
+  const switching = pipeline.selectTrack('video', 5);
+  await new Promise((resolve) => setImmediate(resolve));
+  await pipeline.destroy();
+  releaseAppend();
+  await switching;
+
+  assert.equal(pipeline.state, 'destroyed');
+  assert.equal(pipeline.active.video, 1);
+  assert.equal(pipeline.mse, null);
+  assert.deepEqual(remuxer.inits, [1, 2, 5]);
+});
+
+
 
 test('bufferedAheadUs：取活动轨中最小水位（木桶效应）并转微秒；无能力返回 null', async () => {
   const { pipeline, mse } = build();

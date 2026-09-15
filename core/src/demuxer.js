@@ -87,6 +87,7 @@ export class Demuxer extends Emitter {
     /** @type {Map<number, {gen: AsyncGenerator<Sample>, done: boolean}>} */
     this._trackIterators = new Map();
     this._openPromise = null;
+    this._openGeneration = 0;
   }
 
   /* ------------------------------ 状态机 ------------------------------ */
@@ -139,42 +140,47 @@ export class Demuxer extends Emitter {
       return Promise.reject(stateError('open(): no source (pass it to constructor or call attach())'));
     }
     this._transition(DEMUXER_STATES.OPENING);
-    this._openPromise = Promise.race([
-      (async () => {
-        try {
-          await this.source.open?.();
-          const info = await this._doOpen();
-          info.tracks = sortTracks(info.tracks);
-          this.mediaInfoValue = info;
-          this._live = info.live === true;
-          this._transition(DEMUXER_STATES.READY);
-          // 契约事件名 + 过渡期旧名双发（M2 接入波次移除旧名）
-          this.emit('media-info', info);
-          this.emit('mediaInfo', info);
-          return info;
-        } catch (err) {
-          this._transitionSafe(DEMUXER_STATES.DESTROYED);
-          this.emit('error', err);
-          throw err;
-        }
-      })(),
-      new Promise((_, reject) => {
-        const t = setTimeout(() => {
-          // 超时：回退到 idle 允许调用方换源重试
-          if (this.stateValue === DEMUXER_STATES.OPENING) this.stateValue = DEMUXER_STATES.IDLE;
-          reject(timeoutError(`open() timed out after ${this.options.initTimeoutMs}ms`));
-        }, this.options.initTimeoutMs);
-        // 不阻塞进程退出
-        if (typeof t?.unref === 'function') t.unref();
-      }),
-    ]).then(
-      (info) => info,
-      (err) => {
-        this._openPromise = null;
+    const generation = ++this._openGeneration;
+    const isCurrent = () => generation === this._openGeneration && this.stateValue === DEMUXER_STATES.OPENING;
+    let timeoutId;
+    const opening = (async () => {
+      try {
+        await this.source.open?.();
+        const info = await this._doOpen();
+        if (!isCurrent()) return null;
+        info.tracks = sortTracks(info.tracks);
+        this.mediaInfoValue = info;
+        this._live = info.live === true;
+        this._transition(DEMUXER_STATES.READY);
+        // 契约事件名 + 过渡期旧名双发（M2 接入波次移除旧名）
+        this.emit('media-info', info);
+        this.emit('mediaInfo', info);
+        return info;
+      } catch (err) {
+        if (!isCurrent()) return null;
+        this._transitionSafe(DEMUXER_STATES.DESTROYED);
+        this.emit('error', err);
         throw err;
-      },
-    );
-    return this._openPromise;
+      }
+    })();
+    let openPromise;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        if (isCurrent()) {
+          this._openGeneration += 1;
+          this.stateValue = DEMUXER_STATES.IDLE;
+        }
+        reject(timeoutError(`open() timed out after ${this.options.initTimeoutMs}ms`));
+      }, this.options.initTimeoutMs);
+      // 不阻塞进程退出
+      if (typeof timeoutId?.unref === 'function') timeoutId.unref();
+    });
+    openPromise = Promise.race([opening, timeout]).finally(() => {
+      clearTimeout(timeoutId);
+      if (this._openPromise === openPromise) this._openPromise = null;
+    });
+    this._openPromise = openPromise;
+    return openPromise;
   }
 
   _transitionSafe(next) {
@@ -329,6 +335,7 @@ export class Demuxer extends Emitter {
   async destroy() {
     if (this.stateValue === DEMUXER_STATES.DESTROYED) return;
     this._transitionSafe(DEMUXER_STATES.DESTROYED);
+    this._openGeneration += 1;
     for (const entry of this._trackIterators.values()) {
       entry.done = true;
     }

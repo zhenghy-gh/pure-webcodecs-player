@@ -59,6 +59,28 @@ test('seek：恢复来源状态并返回实际落点', async () => {
   await assert.rejects(() => p.load(new Uint8Array([1])), (e) => e.code === 'STATE_ERROR');
 });
 
+test('load/destroy 并发：迟到的 demuxer 被销毁且不创建管线', async () => {
+  let resolveOpen;
+  let demuxer;
+  let pipelineCreated = false;
+  const open = new Promise((resolve) => { resolveOpen = resolve; });
+  demuxer = {
+    open: async () => open,
+    destroy: async () => { demuxer.destroyed = true; },
+  };
+  const p = new Player({
+    demuxerFactory: async () => demuxer,
+    pipelineFactory: async () => { pipelineCreated = true; return {}; },
+  });
+  const loading = p.load(new Uint8Array([1]));
+  await new Promise((resolve) => setImmediate(resolve));
+  await p.destroy();
+  resolveOpen({ container: 'wav', tracks: [], durationUs: 0, seekable: true, live: false });
+  await assert.rejects(() => loading, (e) => e.code === 'ABORTED');
+  assert.equal(demuxer.destroyed, true);
+  assert.equal(pipelineCreated, false);
+  assert.equal(p.state, 'destroyed');
+});
 test('load 失败进入 error 并以 PlayerError 拒绝', async () => {
   const p = new Player({ demuxerFactory: async () => { throw new Error('bad source'); } });
   await assert.rejects(() => p.load(new Uint8Array([1])), (e) => e.name === 'PlayerError' && e.code === 'SOURCE_ERROR');

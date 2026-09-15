@@ -111,6 +111,7 @@ export class Player extends Emitter {
     this.clock = options.clock ?? new PlaybackClock(options.clockOptions);
     this.statsValue = options.stats ?? new Stats(options.clockOptions);
     this._loadPromise = null;
+    this._loadGeneration = 0;
     this._pumpToken = 0;
     this._lastTimeEventUs = -Infinity;
     this._volume = 1;
@@ -194,7 +195,8 @@ export class Player extends Emitter {
     if (this.stateValue === PLAYER_STATES.DESTROYED) throw stateError('load(): player destroyed');
     if (this.stateValue !== PLAYER_STATES.IDLE) throw stateError(`load(): invalid state ${this.stateValue}`);
     if (this._loadPromise) return this._loadPromise;
-    this._loadPromise = this._load(input).catch(async (error) => {
+    const generation = ++this._loadGeneration;
+    this._loadPromise = this._load(input, generation).catch(async (error) => {
       try { await this.pipeline?.destroy?.(); } catch {}
       try { await this.demuxer?.destroy?.(); } catch {}
       this.pipeline = null;
@@ -207,7 +209,15 @@ export class Player extends Emitter {
     return this._loadPromise;
   }
 
-  async _load(input) {
+  async _load(input, generation) {
+    const isCurrent = () => generation === this._loadGeneration && this.stateValue !== PLAYER_STATES.DESTROYED;
+    const destroyLate = async (resource) => {
+      if (!isCurrent() && resource) {
+        try { await resource.destroy?.(); } catch {}
+        return true;
+      }
+      return false;
+    };
     if (input == null || input === '') throw stateError('load(): input is required');
     let demuxer;
     if (input?.read && typeof input.read === 'function') {
@@ -226,14 +236,23 @@ export class Player extends Emitter {
     } else {
       throw stateError('load(): unsupported input');
     }
+    if (await destroyLate(demuxer)) throw abortedError('load() aborted');
     this.demuxer = demuxer;
     // 读取进度（网络/文件侧）透传到 Player 事件面（I2：progress 事件链路）
     if (typeof demuxer.on === 'function') {
       demuxer.on('progress', (payload) => this.emit('progress', payload));
     }
     const info = await demuxer.open();
+    if (!isCurrent()) {
+      await destroyLate(demuxer);
+      throw abortedError('load() aborted');
+    }
     this.mediaInfoValue = info;
     const caps = this.options.capabilities ?? await detectForMedia(info, this.options);
+    if (!isCurrent()) {
+      await destroyLate(demuxer);
+      throw abortedError('load() aborted');
+    }
     // 裁决尊重宿主 routePreference（默认 ['webcodecs','mse']：能用 WC 就不落 MSE）
     this.routeValue = this.options.route ?? chooseRoute(caps, info, { preference: this.options.routePreference });
     if (this.routeValue === 'none') throw notSupported('当前环境没有可用的解码播放路线', { container: info.container, tracks: info.tracks });
@@ -244,7 +263,13 @@ export class Player extends Emitter {
         : this.routeValue === 'mse' && hasMseCtor()
           ? DEFAULT_MSE_PIPELINE
           : null);
-    this.pipeline = (await factory?.({ route: this.routeValue, mediaInfo: info, player: this, options: this.options })) ?? null;
+    const pipeline = (await factory?.({ route: this.routeValue, mediaInfo: info, player: this, options: this.options })) ?? null;
+    if (!isCurrent()) {
+      await destroyLate(pipeline);
+      await destroyLate(demuxer);
+      throw abortedError('load() aborted');
+    }
+    this.pipeline = pipeline;
     if (typeof this.pipeline?.on === 'function') {
       // 只转发契约事件名（§5）；管线错误由编排层统一进入 error 态
       for (const event of ['firstframe', 'stall', 'underrun', 'cue', 'audio-unavailable', 'catchup']) {
@@ -349,6 +374,7 @@ export class Player extends Emitter {
   async destroy() {
     if (this.stateValue === PLAYER_STATES.DESTROYED) return;
     this._pumpToken++;
+    this._loadGeneration += 1;
     try { await this.pipeline?.destroy?.(); } catch {}
     try { await this.demuxer?.destroy?.(); } catch {}
     this.pipeline = null;

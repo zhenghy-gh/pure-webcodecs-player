@@ -39,6 +39,45 @@ class BlockingDemuxer extends Demuxer {
   async _doSeek(t) { return { actualTimestampUs: t }; }
 }
 
+class DelayedOpenDemuxer extends Demuxer {
+  constructor(source) {
+    super(source, { initTimeoutMs: 10 });
+    this.opens = [];
+  }
+  async _doOpen() {
+    const index = this.opens.length;
+    let resolve;
+    const promise = new Promise((r) => { resolve = r; });
+    this.opens.push({ resolve });
+    await promise;
+    return {
+      container: 'wav',
+      tracks: [{ id: index + 1, type: 'audio', codec: 'pcm-s16' }],
+      durationUs: 1,
+      seekable: true,
+      live: false,
+    };
+  }
+}
+
+test('Demuxer.open：超时后的迟到结果不污染后续重试', async () => {
+  const keepAlive = setTimeout(() => {}, 100);
+  const d = new DelayedOpenDemuxer(new MemoryDataSource(new Uint8Array([1])));
+  try {
+    await assert.rejects(() => d.open(), (e) => e.code === 'TIMEOUT');
+    const retry = d.open();
+    d.opens[0].resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(d.state, 'opening');
+    d.opens[1].resolve();
+    const info = await retry;
+    assert.equal(info.tracks[0].id, 2);
+    assert.equal(d.state, 'ready');
+  } finally {
+    clearTimeout(keepAlive);
+    await d.destroy();
+  }
+});
 test('Demuxer.destroy：迭代器被永不 resolve 的 await 卡住时也能立即完成', async () => {
   const d = new BlockingDemuxer(new MemoryDataSource(new Uint8Array([1])));
   await d.open();
