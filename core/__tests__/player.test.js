@@ -87,3 +87,21 @@ test('管线 error 进入播放器 error 态并转发 PlayerError', async () => 
   assert.equal(errors[0].code, 'SOURCE_ERROR');
   assert.match(errors[0].message, /播放管线失败/);
 });
+
+test('解复用器打开失败时清理已创建的解复用器', async () => {
+  let demuxer;
+  const p = new Player({
+    demuxerFactory: () => {
+      demuxer = {
+        open: async () => { throw new Error('demux open failed'); },
+        destroy: async () => { demuxer.destroyedByPlayer = true; },
+      };
+      return demuxer;
+    },
+  });
+  await assert.rejects(() => p.load(new Uint8Array([1])), (error) => error.name === 'PlayerError' && error.code === 'SOURCE_ERROR');
+  assert.equal(p.state, 'error');
+  assert.equal(demuxer.destroyedByPlayer, true);
+  assert.equal(p.pipeline, null);
+  assert.equal(p.demuxer, null);
+});

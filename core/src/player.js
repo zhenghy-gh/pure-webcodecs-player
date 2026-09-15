@@ -194,7 +194,11 @@ export class Player extends Emitter {
     if (this.stateValue === PLAYER_STATES.DESTROYED) throw stateError('load(): player destroyed');
     if (this.stateValue !== PLAYER_STATES.IDLE) throw stateError(`load(): invalid state ${this.stateValue}`);
     if (this._loadPromise) return this._loadPromise;
-    this._loadPromise = this._load(input).catch((error) => {
+    this._loadPromise = this._load(input).catch(async (error) => {
+      try { await this.pipeline?.destroy?.(); } catch {}
+      try { await this.demuxer?.destroy?.(); } catch {}
+      this.pipeline = null;
+      this.demuxer = null;
       const e = asPlayerError(error, '加载媒体失败');
       if (this.stateValue !== PLAYER_STATES.DESTROYED) this._transitionSafe(PLAYER_STATES.ERROR);
       this.emit('error', e);
