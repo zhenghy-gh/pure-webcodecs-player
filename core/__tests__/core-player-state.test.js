@@ -94,6 +94,151 @@ function blockingPipelineFactory(calls = [], aheadUs = 3_000_000) {
   });
 }
 
+class DelayedSampleDemuxer extends Demuxer {
+  constructor(source) {
+    super(source);
+    this.pendingReads = [];
+    this.readCount = 0;
+    this.released = false;
+  }
+  async _doOpen() {
+    return {
+      container: 'mkv',
+      tracks: [{ id: 1, type: 'video', codec: 'avc1.42E01E' }],
+      durationUs: 20_000_000,
+      seekable: true,
+      live: false,
+    };
+  }
+  async readSample(trackId) {
+    this._requireUsable('readSample');
+    const index = this.readCount++;
+    if (this.released && index >= 2) return null;
+    return new Promise((resolve) => {
+      this.pendingReads.push({ trackId, index, resolve });
+    });
+  }
+  releaseRead() {
+    this.released = true;
+    for (const { trackId, index, resolve } of this.pendingReads.splice(0)) {
+      resolve(index === 0 ? createSample({
+        trackId, codec: 'avc1.42E01E', timestamp: 10_000_000,
+        duration: 100_000, keyframe: true, data: new Uint8Array([1]), size: 1,
+      }) : createSample({
+        trackId, codec: 'avc1.42E01E', timestamp: 0,
+        duration: 100_000, keyframe: true, data: new Uint8Array([1]), size: 1,
+      }));
+    }
+  }
+  async seek(timestampUs) { return { actualTimestampUs: timestampUs }; }
+}
+
+
+function makeDelayedSamplePlayer({ pushSample } = {}) {
+  let demuxer;
+  const pushes = [];
+  const player = new Player({
+    demuxerFactory: () => (demuxer = new DelayedSampleDemuxer(new MemoryDataSource(new Uint8Array([1])))),
+    capabilities: caps,
+    bufferTargetUs: 0,
+    pipelineFactory: async () => ({
+      pushSample: pushSample ?? (async (sample) => { pushes.push(sample); }),
+      seek: async () => {},
+      destroy: async () => {},
+    }),
+  });
+  return { player, input: { read: async () => new Uint8Array([1]) }, get demuxer() { return demuxer; }, pushes };
+}
+
+const delayedReadSettle = async () => {
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+};
+
+/* ------------------------------ 生命周期竞态 ------------------------------ */
+
+test('样本泵：pause 后迟到的 readSample 不进入管线、统计或事件', async () => {
+  const { player, input, pushes } = makeDelayedSamplePlayer();
+  const samples = [];
+  player.on('sample', (sample) => samples.push(sample));
+  await player.load(input);
+  const demuxer = player.demuxer;
+  void player.play();
+  await new Promise((resolve) => setImmediate(resolve));
+  player.pause();
+  demuxer.releaseRead();
+  await delayedReadSettle();
+
+  assert.equal(pushes.length, 0);
+  assert.equal(samples.length, 0);
+  assert.equal(player.stats.samplesDecoded, 0);
+  await player.destroy();
+});
+
+test('样本泵：seek 后旧泵迟到样本不污染新时间轴', async () => {
+  const { player, input, pushes } = makeDelayedSamplePlayer();
+  await player.load(input);
+  const demuxer = player.demuxer;
+  void player.play();
+  await new Promise((resolve) => setImmediate(resolve));
+  const seeking = player.seek(0);
+  await seeking;
+  await new Promise((resolve) => setImmediate(resolve));
+  demuxer.releaseRead();
+  await delayedReadSettle();
+
+  assert.equal(pushes.length, 1, 'seek 后仅新泵样本可进入管线');
+  assert.equal(pushes[0].timestamp, 0);
+  assert.equal(player.stats.samplesDecoded, 1);
+  assert.ok(player.currentTimeValue < 10_000_000, '旧泵样本不应把时间轴跳回 10 秒');
+  await player.destroy();
+});
+
+test('样本泵：destroy 后迟到的 readSample 不复活管线或统计', async () => {
+  const { player, input, pushes } = makeDelayedSamplePlayer();
+  await player.load(input);
+  const demuxer = player.demuxer;
+  void player.play();
+  await new Promise((resolve) => setImmediate(resolve));
+  await player.destroy();
+  demuxer.releaseRead();
+  await delayedReadSettle();
+
+  assert.equal(pushes.length, 0);
+  assert.equal(player.stats.samplesDecoded, 0);
+  assert.equal(player.state, PLAYER_STATES.DESTROYED);
+});
+
+test('样本泵：管线异步推送期间 pause 后不再更新统计或事件', async () => {
+  let releasePush;
+  const pushGate = new Promise((resolve) => { releasePush = resolve; });
+  let pushStarted;
+  const pushStartedPromise = new Promise((resolve) => { pushStarted = resolve; });
+  const pushes = [];
+  const { player, input } = makeDelayedSamplePlayer({
+    pushSample: async (sample) => {
+      pushes.push(sample);
+      pushStarted();
+      await pushGate;
+    },
+  });
+  const samples = [];
+  player.on('sample', (sample) => samples.push(sample));
+  await player.load(input);
+  const demuxer = player.demuxer;
+  void player.play();
+  await new Promise((resolve) => setImmediate(resolve));
+  demuxer.releaseRead();
+  await pushStartedPromise;
+  player.pause();
+  releasePush();
+  await delayedReadSettle();
+
+  assert.equal(pushes.length, 1, '状态切换前已开始的推送不可回滚');
+  assert.equal(samples.length, 0);
+  assert.equal(player.stats.samplesDecoded, 0);
+  await player.destroy();
+});
 function makePlayer({ pipelineFactory, playerOptions = {} } = {}, demuxerOpts = {}) {
   const player = new Player({
     demuxerFactory: () => new ToyDemuxer(new MemoryDataSource(new Uint8Array([1])), demuxerOpts.perTrack ?? 8, demuxerOpts.seekError ?? null),

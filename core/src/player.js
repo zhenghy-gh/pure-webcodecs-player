@@ -405,13 +405,14 @@ export class Player extends Emitter {
           if (done.has(id)) continue;
           const sample = await this.demuxer.readSample(id);
           if (!sample) { done.add(id); continue; }
+          if (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING) return;
           progressed = true;
           count += 1;
           const ts = sample.timestamp ?? 0;
           if (minTs === null || ts < minTs) minTs = ts;
           if (maxTs === null || ts > maxTs) maxTs = ts;
           durationUs += sample.duration ?? 0;
-          await this._deliver(sample, id);
+          if (!await this._deliver(sample, id, token)) return;
           if (this._bufferSatisfied(target, minTs, maxTs, durationUs)) return;
         }
         if (!progressed && done.size === ids.length) break;
@@ -457,15 +458,18 @@ export class Player extends Emitter {
   }
 
   /** 单个样本的统一投递口：统计 → 管线 → 事件（预缓冲与常规泵共用） */
-  async _deliver(sample, trackId) {
+  async _deliver(sample, trackId, token) {
+    if (token !== undefined && (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING)) return false;
+    await this.pipeline?.pushSample?.(sample);
+    if (token !== undefined && (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING)) return false;
     this.currentTimeValue = Math.max(this.currentTimeValue, sample.timestamp ?? 0);
     const bytes = sample.size ?? sample.data?.byteLength ?? 0;
     this.statsValue.markDemuxed(bytes);
     this._markBitrate(bytes);
     this.statsValue.markSampleDecoded();
-    await this.pipeline?.pushSample?.(sample);
     this.emit('sample', { trackId, sample });
     this._emitTimeupdate();
+    return true;
   }
 
   /** 当前起播水位（µs）：直播用 liveLatencyUs，点播用 bufferTargetUs */
@@ -515,8 +519,9 @@ export class Player extends Emitter {
         try {
           const sample = await this.demuxer.readSample(id);
           if (!sample) { done.add(id); continue; }
+          if (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING) return;
           progressed = true;
-          await this._deliver(sample, id);
+          if (!await this._deliver(sample, id, token)) return;
           await this._backpressure(token);
         } catch (error) {
           const e = asPlayerError(error, '读取样本失败');
