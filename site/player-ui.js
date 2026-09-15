@@ -206,7 +206,7 @@ export function createPlayerUI(options = {}) {
   function setPlaying(v) { btnMain.setAttribute('data-playing', v ? '1' : '0'); btnMain.innerHTML = v ? ICONS.pause : ICONS.play; }
   function seekRatio(ratio) {
     if (!adapter || isLive || !curDur) return;
-    adapter.seek(Math.min(curDur, Math.max(0, ratio)) * curDur);
+    adapter.seek(Math.min(1, Math.max(0, ratio)) * curDur);
   }
   function applyVolume() {
     renderVolumeIcon();

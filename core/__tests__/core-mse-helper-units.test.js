@@ -264,7 +264,7 @@ test('resetTrack：未知轨 no-op；keepPosition 有缓冲时只清当前位置
 });
 
 test('resetTrack：无缓冲或 keepPosition=false 时 abortThenClear + 全清', async () => {
-  const { helper, sb } = await makeOpenedHelper();
+  const { helper } = await makeOpenedHelper();
   const channel = helper.channels.get('v1');
   const ops = [];
   channel.abortThenClear = async () => ops.push('abortThenClear');
@@ -276,7 +276,6 @@ test('resetTrack：无缓冲或 keepPosition=false 时 abortThenClear + 全清',
   assert.equal(ops[1][0], 'remove');
   assert.equal(ops[1][1], 0);
   assert.equal(ops[1][2], Number.MAX_SAFE_INTEGER / 1000);
-  void sb;
 });
 
 test('durationOr：有限正数用自身，否则回落', async () => {
@@ -404,8 +403,108 @@ test('open：destroyed 状态 reject；element.src 赋值抛错时 reject', asyn
     };
     const helper = new MseHelper(element);
     await assert.rejects(() => helper.open(), /src 被拒/);
+    assert.equal(helper.objectUrl, null, 'attach 失败后应回收 object URL');
+    assert.equal(helper.mediaSource, null, 'attach 失败后应清空 MediaSource 引用');
   } finally {
     URL.createObjectURL = savedCreate;
+    if (savedMS) Object.defineProperty(globalThis, 'MediaSource', savedMS);
+    else delete globalThis.MediaSource;
+  }
+});
+
+test('open：createObjectURL 失败时清空 MediaSource 引用并拒绝', async () => {
+  class FakeMS {
+    addEventListener() {}
+    removeEventListener() {}
+  }
+  const savedMS = Object.getOwnPropertyDescriptor(globalThis, 'MediaSource');
+  const savedCreate = URL.createObjectURL;
+  try {
+    URL.createObjectURL = () => { throw new Error('URL 创建失败'); };
+    Object.defineProperty(globalThis, 'MediaSource', { value: FakeMS, configurable: true });
+    const helper = new MseHelper({});
+    await assert.rejects(() => helper.open(), /URL 创建失败/);
+    assert.equal(helper.objectUrl, null);
+    assert.equal(helper.mediaSource, null);
+  } finally {
+    URL.createObjectURL = savedCreate;
+    if (savedMS) Object.defineProperty(globalThis, 'MediaSource', savedMS);
+    else delete globalThis.MediaSource;
+  }
+});
+
+test('open：MediaSource error 事件拒绝 pending open 并清理 URL', async () => {
+  class FakeMS {
+    constructor() { this.listeners = new Map(); }
+    addEventListener(type, fn) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(fn);
+    }
+    removeEventListener(type, fn) {
+      this.listeners.set(type, (this.listeners.get(type) ?? []).filter((item) => item !== fn));
+    }
+    emit(type) {
+      for (const fn of [...(this.listeners.get(type) ?? [])]) fn({});
+    }
+  }
+  const savedMS = Object.getOwnPropertyDescriptor(globalThis, 'MediaSource');
+  const savedCreate = URL.createObjectURL;
+  const savedRevoke = URL.revokeObjectURL;
+  const revoked = [];
+  try {
+    URL.createObjectURL = () => 'blob:error';
+    URL.revokeObjectURL = (url) => revoked.push(url);
+    Object.defineProperty(globalThis, 'MediaSource', { value: FakeMS, configurable: true });
+    const helper = new MseHelper({ src: '' });
+    const pending = helper.open();
+    helper.mediaSource.emit('error');
+    await assert.rejects(pending, (e) => e.code === 'DECODE_ERROR');
+    assert.equal(helper.objectUrl, null);
+    assert.equal(helper.mediaSource, null);
+    assert.deepEqual(revoked, ['blob:error']);
+  } finally {
+    URL.createObjectURL = savedCreate;
+    URL.revokeObjectURL = savedRevoke;
+    if (savedMS) Object.defineProperty(globalThis, 'MediaSource', savedMS);
+    else delete globalThis.MediaSource;
+  }
+});
+
+test('destroy：sourceopen 等待期间拒绝 open 并清理监听与 URL', async () => {
+  class FakeMS {
+    constructor() { this.listeners = new Map(); this.readyState = 'open'; }
+    addEventListener(type, fn) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(fn);
+    }
+    removeEventListener(type, fn) {
+      this.listeners.set(type, (this.listeners.get(type) ?? []).filter((item) => item !== fn));
+    }
+    endOfStream() {}
+  }
+  const savedMS = Object.getOwnPropertyDescriptor(globalThis, 'MediaSource');
+  const savedCreate = URL.createObjectURL;
+  const savedRevoke = URL.revokeObjectURL;
+  const revoked = [];
+  try {
+    URL.createObjectURL = () => 'blob:pending';
+    URL.revokeObjectURL = (url) => revoked.push(url);
+    Object.defineProperty(globalThis, 'MediaSource', { value: FakeMS, configurable: true });
+    const helper = new MseHelper({
+      src: 'blob:pending',
+      removeAttribute() {},
+      load() {},
+    });
+    const pending = helper.open();
+    helper.destroy();
+    await assert.rejects(pending, (e) => e.code === 'STATE_ERROR');
+    assert.equal(helper.objectUrl, null);
+    assert.deepEqual(revoked, ['blob:pending']);
+    assert.equal(helper._openCleanup, null);
+    assert.equal(helper._openReject, null);
+  } finally {
+    URL.createObjectURL = savedCreate;
+    URL.revokeObjectURL = savedRevoke;
     if (savedMS) Object.defineProperty(globalThis, 'MediaSource', savedMS);
     else delete globalThis.MediaSource;
   }

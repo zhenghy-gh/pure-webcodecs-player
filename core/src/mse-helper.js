@@ -117,6 +117,8 @@ export class MseHelper extends Emitter {
     this.channels = new Map();
     this.opened = false;
     this.destroyed = false;
+    this._openCleanup = null;
+    this._openReject = null;
   }
 
   _ctor() {
@@ -136,26 +138,51 @@ export class MseHelper extends Emitter {
     return new Promise((resolve, reject) => {
       const ms = new Ctor();
       this.mediaSource = ms;
-      const url = URL.createObjectURL(ms);
-      this.objectUrl = url;
+      let url;
+      try {
+        url = URL.createObjectURL(ms);
+        this.objectUrl = url;
+      } catch (err) {
+        this.mediaSource = null;
+        reject(err instanceof Error ? err : stateError(String(err)));
+        return;
+      }
       const onOpen = () => {
         cleanup();
-        ms.removeEventListener?.('sourceopen', onOpen);
         this.opened = true;
         this.emit('open');
         resolve();
       };
-      const cleanup = () => ms.removeEventListener('sourceopen', onOpen);
-      ms.addEventListener('sourceopen', onOpen);
-      // ManagedMediaSource 在部分实现里需要 startstreaming 提示
-      if (this.managed && typeof ms.startStreaming === 'function') {
-        ms.startStreaming();
-      }
+      const onError = () => failOpen(decodeError('MediaSource 打开失败'));
+      const cleanup = () => {
+        ms.removeEventListener?.('sourceopen', onOpen);
+        ms.removeEventListener?.('error', onError);
+        ms.removeEventListener?.('sourceclose', onError);
+        if (this._openCleanup === cleanup) this._openCleanup = null;
+        if (this._openReject === reject) this._openReject = null;
+      };
+      const failOpen = (err) => {
+        cleanup();
+        if (this.objectUrl) {
+          URL.revokeObjectURL(this.objectUrl);
+          this.objectUrl = null;
+        }
+        this.mediaSource = null;
+        reject(err instanceof Error ? err : stateError(String(err)));
+      };
+      this._openCleanup = cleanup;
+      this._openReject = reject;
       try {
+        ms.addEventListener('sourceopen', onOpen);
+        ms.addEventListener?.('error', onError);
+        ms.addEventListener?.('sourceclose', onError);
+        // ManagedMediaSource 在部分实现里需要 startstreaming 提示
+        if (this.managed && typeof ms.startStreaming === 'function') {
+          ms.startStreaming();
+        }
         this.element.src = url;
       } catch (err) {
-        cleanup();
-        reject(err instanceof Error ? err : stateError(String(err)));
+        failOpen(err);
       }
     });
   }
@@ -193,7 +220,7 @@ export class MseHelper extends Emitter {
     if (!channel) return;
     const sb = channel.sb;
     const ranges = this.buffered(key);
-    if (keepPosition && this.element.currentTime >= 0 && ranges.length > 0) {
+    if (keepPosition && this.element.currentTime >= 0 && ranges?.length > 0) {
       // 移除当前位置之后的全部数据
       await channel.remove(this.element.currentTime + 1e-4, this.durationOr(ranges.end(ranges.length - 1)));
     } else {
@@ -251,6 +278,10 @@ export class MseHelper extends Emitter {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
+    const openCleanup = this._openCleanup;
+    const openReject = this._openReject;
+    if (openCleanup) openCleanup();
+    if (openReject) openReject(stateError('MseHelper destroyed'));
     for (const channel of this.channels.values()) {
       channel.closed = true;
       channel.removeAllListeners();

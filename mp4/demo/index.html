@@ -1,104 +1,361 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>@player/mp4 演示 —— 本地文件 / HTTP Range 渐进播放</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MP4 Lab · PurePlay</title>
 <style>
-  :root { color-scheme: dark; }
-  body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
-         background: #0d1117; color: #e6edf3; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px; }
-  h1 { font-size: 20px; margin: 0; }
-  #drop { width: min(880px, 94vw); border: 2px dashed #30363d; border-radius: 12px;
-          padding: 28px; text-align: center; transition: border-color .15s; cursor: pointer; }
-  #drop.over { border-color: #58a6ff; }
-  #urlbox { width: min(880px, 94vw); display: flex; gap: 8px; }
-  #urlbox input { flex: 1; background: #161b22; border: 1px solid #30363d; color: inherit;
-                  border-radius: 8px; padding: 10px 12px; }
-  button { background: #238636; color: #fff; border: 0; border-radius: 8px; padding: 10px 18px; cursor: pointer; }
-  button:disabled { opacity: .5; }
-  video { width: min(880px, 94vw); max-height: 60vh; background: #000; border-radius: 12px; }
-  pre { width: min(880px, 94vw); background: #161b22; border-radius: 8px; padding: 12px;
-        font-size: 12px; overflow: auto; max-height: 220px; }
+:root {
+  color-scheme: dark;
+  --bg: #080b11;
+  --surface: #0f141d;
+  --raised: #151c27;
+  --line: #222d3b;
+  --line-strong: #344255;
+  --text: #eef4fb;
+  --muted: #8e9caf;
+  --faint: #617084;
+  --accent: #57b4ff;
+  --accent-dim: rgba(87,180,255,.13);
+  --ok: #54d58a;
+  --warn: #f5c15a;
+  --danger: #ff777e;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --shadow: 0 18px 60px rgba(0,0,0,.28);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); }
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app { width: min(1440px, 100%); margin: 0 auto; padding: 0 28px 44px; }
+.topbar { height: 68px; display: flex; align-items: center; gap: 18px; border-bottom: 1px solid var(--line); }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-weight: 650; letter-spacing: .01em; white-space: nowrap; }
+.brand-mark { width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid rgba(87,180,255,.45); border-radius: 8px; color: var(--accent); background: var(--accent-dim); font-family: var(--mono); font-size: 13px; }
+.crumb { color: var(--faint); font-family: var(--mono); font-size: 12px; }
+.top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.link-btn, .ghost-btn, .solid-btn { min-height: 36px; border-radius: 8px; padding: 0 13px; border: 1px solid var(--line-strong); color: var(--text); background: transparent; text-decoration: none; }
+.link-btn:hover, .ghost-btn:hover { background: var(--raised); }
+.solid-btn { border-color: var(--accent); color: #06121f; background: var(--accent); font-weight: 650; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 18px; padding-top: 24px; }
+.main { min-width: 0; }
+.hero { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
+.eyebrow { margin: 0 0 7px; color: var(--accent); font: 600 11px var(--mono); letter-spacing: .11em; text-transform: uppercase; }
+h1 { margin: 0; font-size: clamp(24px, 3vw, 36px); line-height: 1.15; letter-spacing: -.025em; }
+.hero-copy { margin: 9px 0 0; max-width: 700px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.status { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font: 12px var(--mono); white-space: nowrap; }
+.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.status[data-kind="ready"]::before, .status[data-kind="playing"]::before { background: var(--ok); }
+.status[data-kind="loading"]::before { background: var(--warn); animation: pulse 1.1s infinite; }
+.status[data-kind="error"]::before { background: var(--danger); }
+@keyframes pulse { 50% { opacity: .35; } }
+.player-card { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); }
+.stage { position: relative; aspect-ratio: 16 / 9; display: grid; place-items: center; overflow: hidden; background: #020407; }
+video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.stage-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 34%, rgba(87,180,255,.10), transparent 38%), #05080d; text-align: center; pointer-events: none; }
+.stage-empty[hidden] { display: none; }
+.empty-inner { max-width: 450px; }
+.empty-icon { width: 54px; height: 54px; display: grid; place-items: center; margin: 0 auto 14px; border: 1px solid var(--line-strong); border-radius: 16px; color: var(--accent); background: var(--accent-dim); font: 22px var(--mono); }
+.empty-title { margin: 0 0 6px; font-size: 18px; }
+.empty-copy { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.empty-copy kbd, .help kbd { padding: 2px 6px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; color: var(--text); font: 11px var(--mono); }
+.drop-hot { position: absolute; inset: 12px; display: none; place-items: center; border: 2px dashed var(--accent); border-radius: 10px; background: rgba(87,180,255,.10); color: var(--accent); font-weight: 650; pointer-events: none; }
+.stage.is-over .drop-hot { display: grid; }
+.controls { padding: 10px 14px 12px; background: linear-gradient(180deg, #121a25, #0e141d); border-top: 1px solid var(--line); }
+.progress-wrap { position: relative; height: 20px; display: flex; align-items: center; }
+.progress { width: 100%; height: 5px; appearance: none; border-radius: 99px; background: linear-gradient(to right, var(--accent) 0 var(--played, 0%), var(--line-strong) var(--played, 0%) var(--buffered, 0%), #27313e var(--buffered, 0%) 100%); cursor: pointer; }
+.progress::-webkit-slider-thumb { appearance: none; width: 13px; height: 13px; border: 2px solid var(--accent); border-radius: 50%; background: var(--text); transform: scale(0); transition: transform .12s ease; }
+.progress:hover::-webkit-slider-thumb, .progress:focus-visible::-webkit-slider-thumb { transform: scale(1); }
+.progress::-moz-range-thumb { width: 13px; height: 13px; border: 2px solid var(--accent); border-radius: 50%; background: var(--text); transform: scale(0); }
+.progress:hover::-moz-range-thumb, .progress:focus-visible::-moz-range-thumb { transform: scale(1); }
+.controls-row { display: flex; align-items: center; gap: 7px; }
+.control-btn { width: 36px; height: 36px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 8px; color: var(--text); background: transparent; font-size: 17px; }
+.control-btn:hover { background: rgba(255,255,255,.08); }
+.control-btn.primary { width: 40px; height: 40px; border-radius: 50%; color: #06121f; background: var(--accent); font-size: 18px; }
+.control-btn.primary:hover { background: #7ac5ff; }
+.time { min-width: 94px; color: var(--muted); font: 12px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.time strong { color: var(--text); font-weight: 500; }
+.control-spacer { flex: 1; }
+.volume { display: flex; align-items: center; gap: 4px; }
+.volume input { width: 78px; accent-color: var(--accent); }
+.rate { min-height: 32px; padding: 0 9px; border: 1px solid transparent; border-radius: 7px; color: var(--muted); background: transparent; font: 12px var(--mono); }
+.rate:hover { border-color: var(--line-strong); color: var(--text); }
+.panel { min-width: 0; align-self: start; display: flex; flex-direction: column; gap: 12px; }
+.panel-card { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 13px; color: var(--muted); font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.panel-title button { border: 0; color: var(--faint); background: transparent; font: 11px var(--mono); }
+.panel-title button:hover { color: var(--text); }
+.kv { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid rgba(34,45,59,.65); font-size: 12px; }
+.kv:last-child { border-bottom: 0; padding-bottom: 0; }
+.kv:first-of-type { padding-top: 0; }
+.kv label { color: var(--faint); }
+.kv span { max-width: 65%; color: var(--text); font-family: var(--mono); text-align: right; overflow-wrap: anywhere; }
+.track-list { display: flex; flex-direction: column; gap: 7px; }
+.track { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 7px; background: var(--raised); }
+.track-type { width: 25px; color: var(--accent); font: 600 10px var(--mono); text-transform: uppercase; }
+.track-main { min-width: 0; flex: 1; }
+.track-main strong, .track-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track-main strong { color: var(--text); font-size: 12px; font-weight: 550; }
+.track-main small { margin-top: 2px; color: var(--faint); font: 10px var(--mono); }
+.log { max-height: 196px; margin: 0; overflow: auto; color: var(--muted); font: 11px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.source { display: flex; gap: 8px; }
+.source input { min-width: 0; flex: 1; height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--text); background: var(--raised); font-size: 12px; }
+.source button { flex: none; }
+.drop-zone { margin-top: 16px; padding: 13px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px dashed var(--line-strong); border-radius: 10px; color: var(--muted); font-size: 12px; }
+.drop-zone.is-over { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.drop-zone strong { display: block; margin-bottom: 3px; color: var(--text); font-weight: 550; }
+.help { margin: 12px 0 0; color: var(--faint); font-size: 11px; line-height: 1.6; }
+.error { display: none; margin-top: 12px; padding: 10px 12px; border: 1px solid rgba(255,119,126,.4); border-radius: 8px; color: var(--danger); background: rgba(255,119,126,.08); font-size: 12px; line-height: 1.5; }
+.error.is-visible { display: block; }
+@media (max-width: 900px) {
+  .app { padding-inline: 16px; }
+  .layout { grid-template-columns: 1fr; }
+  .panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .panel-card:last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+  .topbar { height: 58px; }
+  .crumb, .top-actions .link-btn { display: none; }
+  .hero { display: block; }
+  .status { margin-top: 14px; }
+  .panel { display: flex; }
+  .controls { padding-inline: 9px; }
+  .volume input, .rate { display: none; }
+  .time { min-width: 76px; font-size: 11px; }
+  .control-btn { width: 38px; height: 38px; }
+}
 </style>
 </head>
 <body>
-<h1>@player/mp4 · ISO-BMFF Demux → fMP4 Remux → MSE</h1>
+<div class="app">
+  <header class="topbar">
+    <a class="brand" href="../../site/demo/index.html"><span class="brand-mark">▶</span><span>PurePlay</span></a>
+    <span class="crumb">/ mp4 / progressive-mse</span>
+    <div class="top-actions"><a class="link-btn" href="../../site/demo/index.html">模块总览</a><a class="solid-btn" href="../../README.md">开发文档</a></div>
+  </header>
 
-<div id="drop">把 .mp4 / .m4v 文件拖到这里（或点击选择）<br /><small>数据不离开浏览器，全部本地解析</small></div>
+  <div class="layout">
+    <main class="main">
+      <section class="hero">
+        <div><p class="eyebrow">ISO-BMFF · FMP4 · MSE</p><h1>MP4 渐进播放实验台</h1><p class="hero-copy">文件只在浏览器内解析。播放器读取一个样本、重封装一个片段并立即追加，不必等整部影片下载完成。</p></div>
+        <span id="status" class="status" data-kind="idle">等待媒体</span>
+      </section>
 
-<div id="urlbox">
-  <input id="url" placeholder="或输入 mp4 直链（服务器需支持 HTTP Range）" />
-  <button id="playUrl">渐进播放</button>
+      <section class="player-card">
+        <div id="stage" class="stage">
+          <video id="video" playsinline preload="metadata"></video>
+          <div id="stageEmpty" class="stage-empty"><div class="empty-inner"><div class="empty-icon">MP4</div><h2 class="empty-title">拖入一个 MP4 开始播放</h2><p class="empty-copy">支持本地文件与 HTTP Range 地址。也可以按 <kbd>O</kbd> 选择文件。</p></div></div>
+          <div class="drop-hot">松开以载入 MP4</div>
+        </div>
+        <div class="controls">
+          <div class="progress-wrap"><input id="progress" class="progress" type="range" min="0" max="1" step="0.001" value="0" disabled aria-label="播放进度"></div>
+          <div class="controls-row">
+            <button id="play" class="control-btn primary" type="button" aria-label="播放" disabled>▶</button>
+            <span class="time"><strong id="current">00:00</strong> / <span id="duration">--:--</span></span>
+            <span class="control-spacer"></span>
+            <div class="volume"><button id="mute" class="control-btn" type="button" aria-label="静音" disabled>🔊</button><input id="volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="音量"></div>
+            <select id="rate" class="rate" aria-label="播放速度"><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1" selected>正常</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="2">2x</option></select>
+            <button id="fullscreen" class="control-btn" type="button" aria-label="全屏">⛶</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel-card" style="margin-top:16px">
+        <div class="panel-title"><span>载入媒体</span><span class="pp-mono">local-first</span></div>
+        <div class="source"><input id="url" type="url" placeholder="输入 MP4 地址（服务器需支持 HTTP Range）" autocomplete="off"><button id="loadUrl" class="solid-btn" type="button">渐进加载</button></div>
+        <div id="dropZone" class="drop-zone"><div><strong>拖放本地文件</strong><span>MP4 / M4V / MOV · 数据不离开浏览器</span></div><button id="choose" class="ghost-btn" type="button">选择文件</button><input id="file" type="file" accept=".mp4,.m4v,.mov,video/mp4" hidden></div>
+        <p class="help">快捷键：<kbd>Space</kbd> 播放/暂停 · <kbd>←</kbd>/<kbd>→</kbd> 前后 5 秒 · <kbd>M</kbd> 静音 · <kbd>F</kbd> 全屏</p>
+        <div id="error" class="error" role="alert"></div>
+      </section>
+    </main>
+
+    <aside class="panel">
+      <section class="panel-card">
+        <h2 class="panel-title">媒体信息 <button id="clearLog" type="button">清空日志</button></h2>
+        <div class="kv"><label>容器</label><span id="container">--</span></div><div class="kv"><label>时长</label><span id="infoDuration">--</span></div><div class="kv"><label>解析模式</label><span id="mode">--</span></div><div class="kv"><label>缓冲水位</label><span id="buffered">--</span></div>
+      </section>
+      <section class="panel-card"><h2 class="panel-title">轨道</h2><div id="tracks" class="track-list"><span style="color:var(--faint);font-size:12px">载入媒体后显示</span></div></section>
+      <section class="panel-card"><h2 class="panel-title">运行日志</h2><pre id="log" class="log">等待输入…</pre></section>
+    </aside>
+  </div>
 </div>
 
-<video id="video" controls playsinline></video>
-<pre id="log">等待输入…</pre>
-
 <script type="module">
-import { Mp4Demuxer, HttpRangeDataSource, attachFileDrop, pickFile, remuxDemuxer } from '../src/index.js';
-import { BlobDataSource, MseHelper, detectCapabilities, Stats } from '../../core/src/index.js';
+import { Mp4Demuxer, Fmp4Remuxer } from '../src/index.js';
+import { BlobDataSource, HttpRangeDataSource, MseHelper } from '../../core/src/index.js';
 
-const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
-const video = document.getElementById('video');
-const stats = new Stats();
-
-detectCapabilities({}).then((cap) => {
-  log(`环境能力：WebCodecs=${cap.webcodecs?.supported} MSE=${cap.mse?.supported} AudioWorklet=${cap.audioWorklet}`);
-});
-
+const $ = (id) => document.getElementById(id);
+const video = $('video');
+const stage = $('stage');
+const empty = $('stageEmpty');
+const status = $('status');
+const progress = $('progress');
+const logEl = $('log');
+let demuxer = null;
 let mse = null;
+let session = 0;
+let durationUs = null;
+let currentFileName = '';
+let volumeBeforeMute = 1;
 
-async function playSource(source) {
-  mse?.destroy();
-  const demuxer = new Mp4Demuxer();
-  demuxer.attach(source);
-  const info = await demuxer.init();
-  log(`容器=${info.container} 分片=${info.fragmented} 时长=${(info.durationUs / 1e6).toFixed(2)}s`);
-  for (const t of info.tracks) {
-    log(`轨道 #${t.id} ${t.type} codec=${t.codec || '(未知)'} ${t.width ? `${t.width}x${t.height}` : `${t.sampleRate ?? ''}Hz`}`);
-  }
-
-  mse = new MseHelper(video);
-  await mse.open();
-  const remuxed = await remuxDemuxer(demuxer);
-  for (const { track, init, segments } of remuxed) {
-    const key = `track${track.id}`;
-    const mime = `${track.type === 'audio' ? 'audio' : 'video'}/mp4; codecs="${track.codec}"`;
-    try {
-      await mse.addTrack(key, mime);
-    } catch (err) {
-      log(`跳过不支持的轨：${mime}（${err.message}）`);
-      continue;
-    }
-    await mse.append(key, init);
-    let i = 0;
-    for (const seg of segments) {
-      await mse.append(key, seg.data);
-      stats.markAppended(seg.data.byteLength);
-      i++;
-    }
-    log(`轨 ${key} 已追加 ${i} 个媒体段（${(info.durationUs / 1e6).toFixed(1)}s）`);
-  }
-  video.play().catch(() => log('自动播放被拦截，请手动点击播放。'));
+function log(message) {
+  const stamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  logEl.textContent = `${logEl.textContent === '等待输入…' ? '' : logEl.textContent}${stamp}  ${message}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
 }
+function setStatus(text, kind = 'idle') { status.textContent = text; status.dataset.kind = kind; }
+function formatTime(us) {
+  if (!Number.isFinite(us) || us < 0) return '--:--';
+  const total = Math.floor(us / 1e6); const s = String(total % 60).padStart(2, '0'); const m = Math.floor(total / 60) % 60; const h = Math.floor(total / 3600);
+  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${String(m).padStart(2, '0')}:${s}`;
+}
+function showError(error) {
+  const message = error?.message || String(error);
+  $('error').textContent = `${error?.code ? `[${error.code}] ` : ''}${message}`;
+  $('error').classList.add('is-visible');
+  setStatus('加载失败', 'error');
+  log(`错误：${message}`);
+}
+function clearError() { $('error').textContent = ''; $('error').classList.remove('is-visible'); }
+function setEnabled(enabled) {
+  for (const el of [$('play'), $('mute'), progress]) el.disabled = !enabled;
+}
+function renderInfo(info, fileName) {
+  durationUs = info.durationUs;
+  $('container').textContent = info.container || '--';
+  $('infoDuration').textContent = formatTime(info.durationUs);
+  $('mode').textContent = info.fragmented ? 'fragmented MP4' : 'progressive MP4';
+  $('tracks').textContent = '';
+  for (const track of info.tracks) {
+    const row = document.createElement('div'); row.className = 'track';
+    const type = document.createElement('span'); type.className = 'track-type'; type.textContent = track.type;
+    const main = document.createElement('div'); main.className = 'track-main';
+    const title = document.createElement('strong'); title.textContent = track.codec || 'unknown codec';
+    const detail = document.createElement('small'); detail.textContent = track.type === 'video' ? `${track.width || '?'}×${track.height || '?'} · #${track.id}` : `${track.sampleRate || '?'} Hz · #${track.id}`;
+    main.append(title, detail); row.append(type, main); $('tracks').append(row);
+  }
+  empty.hidden = true; clearError(); setEnabled(true);
+  log(`${fileName ? fileName + ' · ' : ''}识别为 ${info.container}，${info.tracks.length} 条轨道`);
+}
+function updateProgress() {
+  const currentUs = video.currentTime * 1e6;
+  $('current').textContent = formatTime(currentUs);
+  $('duration').textContent = formatTime(durationUs);
+  if (Number.isFinite(durationUs) && durationUs > 0) {
+    const played = Math.min(100, Math.max(0, currentUs / durationUs * 100));
+    let buffered = played;
+    try { if (video.buffered.length) buffered = Math.max(played, Math.min(100, video.buffered.end(video.buffered.length - 1) * 1e6 / durationUs * 100)); } catch {}
+    progress.value = String(Math.min(1, currentUs / durationUs)); progress.style.setProperty('--played', `${played}%`); progress.style.setProperty('--buffered', `${buffered}%`);
+    $('buffered').textContent = `${Math.max(0, ((buffered - played) / 100 * durationUs / 1e6)).toFixed(1)}s ahead`;
+  } else { $('buffered').textContent = '--'; }
+}
+function resetUi() {
+  durationUs = null; $('container').textContent = '--'; $('infoDuration').textContent = '--'; $('mode').textContent = '--'; $('buffered').textContent = '--'; $('tracks').innerHTML = '<span style="color:var(--faint);font-size:12px">载入媒体后显示</span>'; progress.value = '0'; progress.style.setProperty('--played', '0%'); progress.style.setProperty('--buffered', '0%'); $('current').textContent = '00:00'; $('duration').textContent = '--:--'; empty.hidden = false; setEnabled(false);
+}
+async function closeSession(invalidate = true) {
+  if (invalidate) session += 1;
+  try { mse?.destroy?.(); } catch {}
+  try { await demuxer?.destroy?.(); } catch {}
+  mse = null; demuxer = null;
+  video.pause(); video.removeAttribute('src'); video.load();
+  resetUi();
+}
+async function loadSource(source, fileName = '') {
+  const token = ++session;
+  await closeSession(false);
+  if (token !== session) return;
+  currentFileName = fileName;
+  setStatus('正在解析', 'loading'); log(fileName ? `开始读取 ${fileName}` : '开始读取远程地址');
+  try {
+    demuxer = new Mp4Demuxer(source, { lazySamples: true });
+    const info = await demuxer.open();
+    if (token !== session) return;
+    renderInfo(info, fileName);
+    mse = new MseHelper(video);
+    await mse.open();
+    const remuxer = new Fmp4Remuxer();
+    const mediaTracks = info.tracks.filter((track) => track.type === 'video' || track.type === 'audio');
+    const pending = new Map(mediaTracks.map((track) => [track.id, { track, samples: [], durationUs: 0 }]));
+    for (const track of mediaTracks) {
+      const mime = `${track.type === 'audio' ? 'audio' : 'video'}/mp4; codecs="${track.codec}"`;
+      await mse.addTrack(`track${track.id}`, mime); await mse.append(`track${track.id}`, remuxer.createInitSegment(track));
+    }
+    $('mode').textContent = `${demuxer._fragmented ? 'fragmented' : 'progressive'} · streaming`;
+    setStatus('正在缓冲', 'loading');
+    const flush = async (trackId, force = false) => {
+      const state = pending.get(trackId); if (!state || !state.samples.length) return;
+      if (!force && state.durationUs < 1_500_000) return;
+      const segment = remuxer.createMediaSegment(state.track, state.samples);
+      await mse.append(`track${trackId}`, segment.data);
+      log(`追加 ${state.track.type} 片段 · ${(segment.durationUs / 1e6).toFixed(2)}s`);
+      state.samples = []; state.durationUs = 0;
+    };
+    const done = new Set();
+    const readAllTracks = async () => {
+      for (;;) {
+        const sample = await demuxer.readSample();
+        if (!sample) break;
+        if (!pending.has(sample.trackId)) continue;
+        if (!sample.data) await demuxer.readSampleData(sample);
+        const state = pending.get(sample.trackId);
+        if (state.track.type === 'video' && sample.keyframe && state.samples.length > 1 && state.durationUs >= 1_500_000) await flush(sample.trackId, true);
+        state.samples.push(sample); state.durationUs += sample.duration || 0;
+        await flush(sample.trackId); updateProgress();
+      }
+      for (const track of mediaTracks) await flush(track.id, true);
+    };
+    if (demuxer._fragmented) {
+      await readAllTracks();
+    } else while (done.size < mediaTracks.length && token === session) {
+      let progressed = false;
+      for (const track of mediaTracks) {
+        if (done.has(track.id)) continue;
+        const sample = await demuxer.readSample(track.id);
+        if (!sample) { await flush(track.id, true); done.add(track.id); continue; }
+        progressed = true;
+        if (!sample.data) await demuxer.readSampleData(sample);
+        const state = pending.get(track.id);
+        if (state.track.type === 'video' && sample.keyframe && state.samples.length > 1 && state.durationUs >= 1_500_000) await flush(track.id, true);
+        state.samples.push(sample); state.durationUs += sample.duration || 0;
+        await flush(track.id);
+        updateProgress();
+        if (!video.paused && video.readyState >= 2) setStatus('正在播放', 'playing');
+      }
+      if (!progressed && done.size < mediaTracks.length) await Promise.resolve();
+    }
+    if (token === session) { await mse.endOfStream(); setStatus('已就绪', 'ready'); log('媒体追加完成，可以拖动进度条回看'); video.play().catch(() => log('自动播放被拦截，请点击播放')); }
+  } catch (error) {
+    if (token === session) { await closeSession(); showError(error); }
+  }
+}
+function sourceFromFile(file) { return new BlobDataSource(file); }
 
-attachFileDrop(document.getElementById('drop'), (source) => {
-  playSource(source).catch((e) => log(`错误 [${e.code ?? '?'}]：${e.message}`));
-}, { accept: ['.mp4', '.m4v', '.mov'] });
-
-document.getElementById('drop').addEventListener('click', () => {
-  pickFile('.mp4,.m4v,.mov').then((file) => {
-    if (file) playSource(new BlobDataSource(file)).catch((e) => log(`错误 [${e.code ?? '?'}]：${e.message}`));
-  });
-});
-
-document.getElementById('playUrl').addEventListener('click', () => {
-  const url = document.getElementById('url').value.trim();
-  if (!url) return;
-  playSource(new HttpRangeDataSource(url))
-    .catch((e) => log(`错误 [${e.code ?? '?'}]：${e.message}`));
-});
+$('choose').addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', () => { const file = $('file').files?.[0]; if (file) void loadSource(sourceFromFile(file), file.name); });
+$('loadUrl').addEventListener('click', () => { const value = $('url').value.trim(); if (!value) return; try { void loadSource(new HttpRangeDataSource(value), value); } catch (error) { showError(error); } });
+$('url').addEventListener('keydown', (event) => { if (event.key === 'Enter') $('loadUrl').click(); });
+for (const zone of [$('dropZone'), stage]) {
+  zone.addEventListener('dragover', (event) => { event.preventDefault(); zone.classList.add('is-over'); stage.classList.add('is-over'); });
+  zone.addEventListener('dragleave', () => { zone.classList.remove('is-over'); stage.classList.remove('is-over'); });
+  zone.addEventListener('drop', (event) => { event.preventDefault(); zone.classList.remove('is-over'); stage.classList.remove('is-over'); const file = event.dataTransfer?.files?.[0]; if (file) void loadSource(sourceFromFile(file), file.name); });
+}
+$('play').addEventListener('click', () => { if (video.paused) video.play().catch(showError); else video.pause(); });
+$('mute').addEventListener('click', () => { if (video.muted) { video.muted = false; video.volume = volumeBeforeMute; $('volume').value = String(video.volume); } else { volumeBeforeMute = video.volume || 1; video.muted = true; } });
+$('volume').addEventListener('input', () => { video.volume = Number($('volume').value); video.muted = video.volume === 0; });
+$('rate').addEventListener('change', () => { video.playbackRate = Number($('rate').value); });
+progress.addEventListener('input', () => { if (Number.isFinite(durationUs)) video.currentTime = Number(progress.value) * durationUs / 1e6; });
+$('fullscreen').addEventListener('click', () => { if (document.fullscreenElement) void document.exitFullscreen(); else void $('stage').requestFullscreen?.(); });
+$('clearLog').addEventListener('click', () => { logEl.textContent = ''; });
+video.addEventListener('play', () => { $('play').textContent = 'Ⅱ'; $('play').setAttribute('aria-label', '暂停'); setStatus('正在播放', 'playing'); });
+video.addEventListener('pause', () => { $('play').textContent = '▶'; $('play').setAttribute('aria-label', '播放'); if (demuxer) setStatus('已暂停', 'ready'); });
+video.addEventListener('ended', () => { $('play').textContent = '▶'; setStatus('播放结束', 'ready'); });
+video.addEventListener('timeupdate', updateProgress); video.addEventListener('progress', updateProgress);
+video.addEventListener('error', () => { if (video.error) showError(new Error(`媒体元素错误（代码 ${video.error.code}）`)); });
+window.addEventListener('keydown', (event) => { if (event.target.matches?.('input,select,textarea')) return; if (event.key === ' ' && demuxer) { event.preventDefault(); $('play').click(); } else if (event.key === 'ArrowLeft' && durationUs) video.currentTime = Math.max(0, video.currentTime - 5); else if (event.key === 'ArrowRight' && durationUs) video.currentTime = Math.min(durationUs / 1e6, video.currentTime + 5); else if (event.key.toLowerCase() === 'm') $('mute').click(); else if (event.key.toLowerCase() === 'f') $('fullscreen').click(); else if (event.key.toLowerCase() === 'o') $('choose').click(); });
+resetUi();
 </script>
 </body>
 </html>

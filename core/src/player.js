@@ -242,10 +242,15 @@ export class Player extends Emitter {
           : null);
     this.pipeline = (await factory?.({ route: this.routeValue, mediaInfo: info, player: this, options: this.options })) ?? null;
     if (typeof this.pipeline?.on === 'function') {
-      // 只转发契约事件名（§5）；'error' 由编排层统一进入 error 态
+      // 只转发契约事件名（§5）；管线错误由编排层统一进入 error 态
       for (const event of ['firstframe', 'stall', 'underrun', 'cue', 'audio-unavailable', 'catchup']) {
         this.pipeline.on(event, (payload) => this.emit(event, payload));
       }
+      this.pipeline.on('error', (error) => {
+        const e = asPlayerError(error, '播放管线失败');
+        this._transitionSafe(PLAYER_STATES.ERROR);
+        this.emit('error', e);
+      });
     }
     for (const type of ['video', 'audio', 'text']) {
       const list = info.tracks.filter((t) => t.type === type);

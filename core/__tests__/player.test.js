@@ -64,3 +64,26 @@ test('load 失败进入 error 并以 PlayerError 拒绝', async () => {
   await assert.rejects(() => p.load(new Uint8Array([1])), (e) => e.name === 'PlayerError' && e.code === 'SOURCE_ERROR');
   assert.equal(p.state, 'error');
 });
+
+test('管线 error 进入播放器 error 态并转发 PlayerError', async () => {
+  let pipeline;
+  const p = new Player({
+    demuxerFactory: factory,
+    capabilities: caps,
+    pipelineFactory: async () => {
+      pipeline = {
+        on(event, fn) { if (event === 'error') this.errorHandler = fn; return () => {}; },
+        pushSample() {},
+      };
+      return pipeline;
+    },
+  });
+  const errors = [];
+  p.on('error', (error) => errors.push(error));
+  await p.load(new Uint8Array([1]));
+  pipeline.errorHandler(new Error('decoder failed'));
+  assert.equal(p.state, 'error');
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, 'SOURCE_ERROR');
+  assert.match(errors[0].message, /播放管线失败/);
+});
