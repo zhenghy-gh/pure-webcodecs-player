@@ -69,6 +69,7 @@ export class MsePipeline extends Emitter {
     this._pending = new Map();
     /** @type {Map<number, number>} 待重封装样本累计时长（µs） */
     this._pendingUs = new Map();
+    this._initializedTracks = new Set();
 
     this.state = 'ready';
     this.counters = { initSegments: 0, mediaSegments: 0, samples: 0, bytes: 0, cues: 0 };
@@ -104,6 +105,7 @@ export class MsePipeline extends Emitter {
     }
     for (const { key, init } of pendingInits) {
       await this.mse.append(key, init);
+      this._initializedTracks.add(key);
       this.counters.initSegments += 1;
     }
     const durationUs = this.mediaInfo?.durationUs;
@@ -318,21 +320,22 @@ export class MsePipeline extends Emitter {
     if (!track || track.type !== type) throw stateError(`track not found: ${type}/${trackId}`);
     if (this.active[type] === trackId) return;
     const previousId = this.active[type];
+    if (type === 'video' || type === 'audio') {
+      const key = this._keyOf(track);
+      if (!this._initializedTracks.has(key)) {
+        const mime = this.mimeFor(track);
+        await this.mse.addTrack(key, mime);
+        const init = this.remuxer.createInitSegment(track);
+        await this.mse.append(key, init);
+        this._initializedTracks.add(key);
+        this.counters.initSegments += 1;
+      }
+    }
     this.active[type] = trackId;
     // 旧轨待封装样本直接丢弃，避免串到新轨时间轴
     if (previousId != null) {
       this._pending.delete(previousId);
       this._pendingUs.delete(previousId);
-    }
-    if (type === 'video' || type === 'audio') {
-      const key = this._keyOf(track);
-      if (!this.mse?.tracks?.has?.(key) && !this.mse?.channels?.has?.(key)) {
-        const mime = this.mimeFor(track);
-        await this.mse.addTrack(key, mime);
-        const init = this.remuxer.createInitSegment(track);
-        await this.mse.append(key, init);
-        this.counters.initSegments += 1;
-      }
     }
     this.emit('trackchange', { type, trackId, codec: track.codec });
   }

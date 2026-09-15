@@ -89,6 +89,18 @@ const avInfo = {
   live: false,
 };
 
+const multiTrackInfo = {
+  container: 'mkv',
+  tracks: [
+    { id: 1, type: 'video', codec: 'avc1.42E01E' },
+    { id: 2, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 },
+    { id: 3, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 },
+  ],
+  durationUs: 1000000,
+  seekable: true,
+  live: false,
+};
+
 function build(overrides = {}) {
   const mse = overrides.mse ?? new FakeMseHelper();
   const element = overrides.element ?? new FakeMediaElement();
@@ -276,4 +288,46 @@ test('Player + MSE 管线：load → play → 成段 → endOfStream → destroy
   await player.destroy();
   assert.equal(mse.destroyed, true);
   assert.equal(player.state, 'destroyed');
+});
+
+test('切轨初始化失败时保留旧轨状态，并允许重试新轨', async () => {
+  const tracks = new Map();
+  let failInit = true;
+  const mse = {
+    async open() {},
+    async addTrack(key, mime) { tracks.set(key, { key, mime }); },
+    async append(key, data) {
+      if (key === 'a3' && failInit && data[0] === 0xf0) {
+        failInit = false;
+        throw new Error('init append failed');
+      }
+    },
+    bufferedAhead: () => 0,
+    async endOfStream() {},
+    destroy() {},
+    tracks,
+  };
+  const remuxer = {
+    createInitSegment(track) { return new Uint8Array([0xf0, track.id]); },
+    createMediaSegment(track, samples) {
+      return { data: new Uint8Array(samples.length), sampleCount: samples.length };
+    },
+  };
+  const pipeline = build({ mse, remuxer, mediaInfo: multiTrackInfo }).pipeline;
+  await pipeline.init();
+  await pipeline.pushSample(createSample({
+    trackId: 2, codec: 'mp4a.40.2', timestamp: 0, duration: 100000, keyframe: true, data: new Uint8Array([1]),
+  }));
+  const changes = [];
+  pipeline.on('trackchange', (event) => changes.push(event));
+
+  await assert.rejects(() => pipeline.selectTrack('audio', 3), /init append failed/);
+  assert.equal(pipeline.active.audio, 2);
+  const preserved = await pipeline.flush(2);
+  assert.equal(preserved.sampleCount, 1, '失败后旧轨待封装样本仍被保留');
+  assert.deepEqual(changes, []);
+
+  await pipeline.selectTrack('audio', 3);
+  assert.equal(pipeline.active.audio, 3);
+  assert.deepEqual(changes, [{ type: 'audio', trackId: 3, codec: 'mp4a.40.2' }]);
 });
