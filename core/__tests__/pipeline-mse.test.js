@@ -308,7 +308,11 @@ test('切轨初始化失败时保留旧轨状态，并允许重试新轨', async
     tracks,
   };
   const remuxer = {
-    createInitSegment(track) { return new Uint8Array([0xf0, track.id]); },
+    inits: [],
+    createInitSegment(track) {
+      this.inits.push(track.id);
+      return new Uint8Array([0xf0, track.id]);
+    },
     createMediaSegment(track, samples) {
       return { data: new Uint8Array(samples.length), sampleCount: samples.length };
     },
@@ -329,5 +333,6 @@ test('切轨初始化失败时保留旧轨状态，并允许重试新轨', async
 
   await pipeline.selectTrack('audio', 3);
   assert.equal(pipeline.active.audio, 3);
+  assert.deepEqual(remuxer.inits, [1, 2, 3, 3], '重试必须重新生成并写入新轨 init');
   assert.deepEqual(changes, [{ type: 'audio', trackId: 3, codec: 'mp4a.40.2' }]);
 });

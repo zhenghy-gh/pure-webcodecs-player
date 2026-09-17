@@ -58,6 +58,7 @@ export class MsePipeline extends Emitter {
 
     this.element = this.options.mediaElement ?? this.options.video ?? null;
     this.mse = this.options.mse ?? null;
+    this._preexistingTrackKeys = new Set(this.mse?.tracks?.keys?.() ?? []);
     this.remuxer = this.options.remuxer ?? null;
     this._mseFactory = this.options.mseFactory ?? defaultMseFactory;
     this._remuxerFactory = this.options.remuxerFactory ?? defaultRemuxerFactory;
@@ -328,17 +329,15 @@ export class MsePipeline extends Emitter {
         const mime = this.mimeFor(track);
         const mse = this.mse;
         const remuxer = this.remuxer;
-        if (mse.tracks?.has?.(key)) {
-          this._initializedTracks.add(key);
-        } else {
-          await mse.addTrack(key, mime);
-          if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return;
+        if (!mse.tracks?.has?.(key)) await mse.addTrack(key, mime);
+        if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return;
+        if (!this._preexistingTrackKeys.has(key)) {
           const init = remuxer.createInitSegment(track);
           await mse.append(key, init);
           if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return;
-          this._initializedTracks.add(key);
           this.counters.initSegments += 1;
         }
+        this._initializedTracks.add(key);
       }
     }
     this.active[type] = trackId;
