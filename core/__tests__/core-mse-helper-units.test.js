@@ -553,7 +553,48 @@ test('destroy：endOfStream + revoke objectURL + 摘除元素 blob src；幂等'
   }
 });
 
-/* ------------------------------ nowSec 导出 ------------------------------ */
+test('open：并发调用共享同一个打开流程，不重复创建 MediaSource', async () => {
+  let created = 0;
+  let current = null;
+  class FakeMS {
+    constructor() { created += 1; this.listeners = new Map(); }
+    addEventListener(type, fn) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(fn);
+    }
+    removeEventListener(type, fn) {
+      this.listeners.set(type, (this.listeners.get(type) ?? []).filter((item) => item !== fn));
+    }
+    emit(type) {
+      for (const fn of [...(this.listeners.get(type) ?? [])]) fn({});
+    }
+  }
+  const savedMS = Object.getOwnPropertyDescriptor(globalThis, 'MediaSource');
+  const savedCreate = URL.createObjectURL;
+  try {
+    URL.createObjectURL = () => 'blob:concurrent';
+    Object.defineProperty(globalThis, 'MediaSource', { value: FakeMS, configurable: true });
+    const helper = new MseHelper({
+      set src(value) { current = value; },
+      addEventListener() {},
+      removeEventListener() {},
+    });
+    const first = helper.open();
+    const second = helper.open();
+    assert.equal(first, second, '并发 open 应共享同一 Promise');
+    assert.equal(created, 1);
+    assert.equal(current, 'blob:concurrent');
+    helper.mediaSource.emit('sourceopen');
+    await Promise.all([first, second]);
+    assert.equal(helper.opened, true);
+  } finally {
+    URL.createObjectURL = savedCreate;
+    if (savedMS) Object.defineProperty(globalThis, 'MediaSource', savedMS);
+    else delete globalThis.MediaSource;
+  }
+});
+
+
 
 test('mseMonotonicTime：返回以秒为单位的数值', () => {
   const t = mseMonotonicTime();

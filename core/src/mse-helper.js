@@ -137,6 +137,7 @@ export class MseHelper extends Emitter {
     this.destroyed = false;
     this._openCleanup = null;
     this._openReject = null;
+    this._openPromise = null;
   }
 
   _ctor() {
@@ -152,8 +153,10 @@ export class MseHelper extends Emitter {
   open() {
     if (this.destroyed) return Promise.reject(stateError('MseHelper destroyed'));
     if (this.opened) return Promise.resolve();
+    if (this._openPromise) return this._openPromise;
     const Ctor = this._ctor();
-    return new Promise((resolve, reject) => {
+    let openPromise;
+    openPromise = new Promise((resolve, reject) => {
       const ms = new Ctor();
       this.mediaSource = ms;
       let url;
@@ -203,6 +206,12 @@ export class MseHelper extends Emitter {
         failOpen(err);
       }
     });
+    let trackedPromise;
+    trackedPromise = openPromise.finally(() => {
+      if (this._openPromise === trackedPromise) this._openPromise = null;
+    });
+    this._openPromise = trackedPromise;
+    return trackedPromise;
   }
 
   /**
