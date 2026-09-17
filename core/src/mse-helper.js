@@ -36,6 +36,7 @@ class SourceBufferChannel extends Emitter {
     this.label = label;
     this.queue = Promise.resolve();
     this.closed = false;
+    this._activeReject = null;
     const onError = () => {
       // 当前 update 出错时让队列继续流动并广播错误
       this.emit('error', decodeError(`${label}: sourcebuffer update failed`));
@@ -48,8 +49,9 @@ class SourceBufferChannel extends Emitter {
   enqueue(operation) {
     if (this.closed) return Promise.reject(stateError(`${this.label}: channel closed`));
     const run = this.queue.then(
-      () =>
-        new Promise((resolve, reject) => {
+      () => {
+        if (this.closed) throw stateError(`${this.label}: channel closed`);
+        return new Promise((resolve, reject) => {
           let settled = false;
           const finish = () => {
             if (settled) return;
@@ -66,7 +68,15 @@ class SourceBufferChannel extends Emitter {
           const cleanup = () => {
             this.sb.removeEventListener('updateend', finish);
             this.sb.removeEventListener('error', fail);
+            if (this._activeReject === rejectActive) this._activeReject = null;
           };
+          const rejectActive = (error) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(error);
+          };
+          this._activeReject = rejectActive;
           this.sb.addEventListener('updateend', finish);
           this.sb.addEventListener('error', fail);
           try {
@@ -77,11 +87,19 @@ class SourceBufferChannel extends Emitter {
             cleanup();
             reject(err instanceof Error ? err : stateError(String(err)));
           }
-        }),
+        });
+      },
     );
     // 队列吞错继续（错误经返回的 promise 与 error 事件双通道上报）
     this.queue = run.catch(() => {});
     return run;
+  }
+
+  /** 关闭队列并拒绝当前及后续操作 */
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    this._activeReject?.(stateError(`${this.label}: channel closed`));
   }
 
   append(data) {
@@ -283,7 +301,7 @@ export class MseHelper extends Emitter {
     if (openCleanup) openCleanup();
     if (openReject) openReject(stateError('MseHelper destroyed'));
     for (const channel of this.channels.values()) {
-      channel.closed = true;
+      channel.close();
       channel.removeAllListeners();
       channel._offError?.();
     }

@@ -203,10 +203,18 @@ test('enqueue：operation 同步抛错 → reject，不残留监听', async () =
   assert.equal(sb.listeners.get('error')?.length ?? 0, 1, '仅保留构造时的常驻 error 监听');
 });
 
-test('enqueue：channel 关闭后一律 reject STATE_ERROR', async () => {
-  const { helper, channel } = await makeOpenedHelper();
+test('destroy：正在等待 updateend 的 append 及时 reject，并清理临时监听', async () => {
+  const { helper, channel, sb } = await makeOpenedHelper();
+  const p1 = channel.append(new Uint8Array([1]));
+  const p2 = channel.append(new Uint8Array([2]));
+  await tick();
+  assert.equal(sb.appended.length, 1);
+
   helper.destroy();
-  await assert.rejects(() => channel.append(new Uint8Array([1])), (e) => e.code === 'STATE_ERROR');
+  await assert.rejects(p1, (e) => e.code === 'STATE_ERROR');
+  await assert.rejects(p2, (e) => e.code === 'STATE_ERROR');
+  assert.equal(sb.listeners.get('updateend')?.length ?? 0, 0);
+  assert.equal(sb.listeners.get('error')?.length ?? 0, 0);
 });
 
 /* ------------------------------ bufferedAhead 水位分支 ------------------------------ */
