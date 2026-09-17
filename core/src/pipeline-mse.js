@@ -93,7 +93,7 @@ export class MsePipeline extends Emitter {
     this._firstFrameEmitted = false;
     this._elementOffs = [];
     this._lifecycleGeneration = 0;
-    this._seekGeneration = 0;
+    this._timelineGeneration = 0;
   }
 
   /* ------------------------------ 构建 ------------------------------ */
@@ -230,7 +230,7 @@ export class MsePipeline extends Emitter {
   async _flushOne(trackId) {
     if (this.state === 'destroyed') return null;
     const generation = this._lifecycleGeneration;
-    const seekGeneration = this._seekGeneration;
+    const timelineGeneration = this._timelineGeneration;
     const abort = this._lifecycleAbort;
     const track = this._tracks.get(trackId);
     const batch = this._pending.get(trackId) ?? [];
@@ -239,13 +239,13 @@ export class MsePipeline extends Emitter {
     this._pendingUs.set(trackId, 0);
     const key = this._keyOf(track);
     await this._waitBuffer(key, abort);
-    if (generation !== this._lifecycleGeneration || seekGeneration !== this._seekGeneration || this.state === 'destroyed') return null;
+    if (generation !== this._lifecycleGeneration || timelineGeneration !== this._timelineGeneration || this.state === 'destroyed') return null;
     const segment = this.remuxer.createMediaSegment(track, batch);
     try {
       await Promise.race([this.mse.append(key, segment.data), abort.promise]);
-      if (generation !== this._lifecycleGeneration || seekGeneration !== this._seekGeneration || this.state === 'destroyed') return null;
+      if (generation !== this._lifecycleGeneration || timelineGeneration !== this._timelineGeneration || this.state === 'destroyed') return null;
     } catch (err) {
-      if (generation !== this._lifecycleGeneration || seekGeneration !== this._seekGeneration || this.state === 'destroyed') return null;
+      if (generation !== this._lifecycleGeneration || timelineGeneration !== this._timelineGeneration || this.state === 'destroyed') return null;
       const e = err?.code ? err : decodeError('appendBuffer 失败', { cause: err });
       this.emit('error', e);
       throw e;
@@ -265,8 +265,8 @@ export class MsePipeline extends Emitter {
   /** 全部轨收尾：flush 后 endOfStream（不调用则元素永不触发 ended）。 */
   end() {
     if (this.state === 'destroyed' || !this.mse) return Promise.resolve();
-    const seekGeneration = this._seekGeneration;
-    if (this._endPromise && this._endGeneration === seekGeneration) return this._endPromise;
+    const timelineGeneration = this._timelineGeneration;
+    if (this._endPromise && this._endGeneration === timelineGeneration) return this._endPromise;
     let endPromise;
     endPromise = (async () => {
       const ids = new Set([...this._pending.keys(), ...this._flushPromises.keys()]);
@@ -274,13 +274,13 @@ export class MsePipeline extends Emitter {
         try { await this.flush(id); } catch { /* 错误已广播 */ }
       }
       await Promise.all([...this._flushPromises.values()].map((promise) => promise.catch(() => {})));
-      if (seekGeneration !== this._seekGeneration || this.state === 'destroyed' || !this.mse) return;
+      if (timelineGeneration !== this._timelineGeneration || this.state === 'destroyed' || !this.mse) return;
       try {
         await this.mse.endOfStream?.();
-        if (seekGeneration !== this._seekGeneration || this.state === 'destroyed' || !this.mse) return;
+        if (timelineGeneration !== this._timelineGeneration || this.state === 'destroyed' || !this.mse) return;
         this.emit('eos', { reason: 'endOfStream' });
       } catch (err) {
-        if (seekGeneration !== this._seekGeneration || this.state === 'destroyed' || !this.mse) return;
+        if (timelineGeneration !== this._timelineGeneration || this.state === 'destroyed' || !this.mse) return;
         this.emit('error', decodeError('endOfStream 失败', { cause: err }));
       }
     })().finally(() => {
@@ -290,7 +290,7 @@ export class MsePipeline extends Emitter {
       }
     });
     this._endPromise = endPromise;
-    this._endGeneration = seekGeneration;
+    this._endGeneration = timelineGeneration;
     return endPromise;
   }
 
@@ -373,7 +373,7 @@ export class MsePipeline extends Emitter {
 
   /** @param {number} timestampUs 实际落点（整数微秒） */
   async seek(timestampUs) {
-    this._seekGeneration += 1;
+    this._timelineGeneration += 1;
     this._pending.clear();
     this._pendingUs.clear();
     if (!this.mse) return;
@@ -433,6 +433,7 @@ export class MsePipeline extends Emitter {
     const track = this._tracks.get(trackId);
     if (!track || track.type !== type) throw stateError(`track not found: ${type}/${trackId}`);
     if (this.active[type] === trackId) return;
+    this._timelineGeneration += 1;
     const generation = this._lifecycleGeneration;
     const previousId = this.active[type];
     if (type === 'video' || type === 'audio') {

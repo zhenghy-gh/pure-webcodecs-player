@@ -363,6 +363,50 @@ test('end：seek 取消背压中的旧收尾，seek 后仍可追加新媒体段'
   assert.equal(mse.appends.length, 3, 'seek 后新媒体段仍可追加');
 });
 
+test('end：切轨取消旧收尾，切轨后新轨仍可追加媒体段', async () => {
+  let waitCallback;
+  let waiting = true;
+  const mse = new FakeMseHelper();
+  mse.bufferedAhead = () => (waiting ? 60 : 0);
+  const { pipeline } = build({
+    mse,
+    mediaInfo: {
+      ...avInfo,
+      tracks: [
+        ...avInfo.tracks,
+        { id: 3, type: 'audio', codec: 'opus', sampleRate: 48000, numberOfChannels: 2 },
+      ],
+    },
+    options: {
+      schedule: (fn) => {
+        waitCallback = fn;
+        return () => {};
+      },
+    },
+  });
+  await pipeline.init();
+  await pipeline.pushSample(createSample({
+    trackId: 1, codec: 'avc1.42E01E', timestamp: 0, duration: 100000, keyframe: true, data: new Uint8Array([1]),
+  }));
+
+  const ending = pipeline.end();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(typeof waitCallback, 'function', '旧轨 flush 应停在背压等待');
+
+  await pipeline.selectTrack('audio', 3);
+  waiting = false;
+  waitCallback();
+  await ending;
+
+  assert.equal(mse.eos, 0, '切轨后旧收尾不得 endOfStream');
+  await pipeline.pushSample(createSample({
+    trackId: 3, codec: 'opus', timestamp: 0, duration: 100000, keyframe: true, data: new Uint8Array([2]),
+  }));
+  await pipeline.flush(3);
+  assert.equal(mse.eos, 0);
+  assert.equal(mse.appends.length, 4, '新轨 init 和媒体段均应追加');
+});
+
 test('字幕样本产出 cue 事件（不进 SourceBuffer）', async () => {
   const { pipeline, mse } = build({
     mediaInfo: { container: 'mkv', tracks: [{ id: 3, type: 'text', codec: 'x-srt' }], durationUs: 1000, seekable: true, live: false },
