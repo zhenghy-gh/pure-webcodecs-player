@@ -453,6 +453,26 @@ test('setVolume/setMuted/setPlaybackRate 透传音频输出与时钟', async () 
   assert.deepEqual(avSyncRate, [2]);
 });
 
+test('init：音频输出初始化失败会销毁已创建的临时输出并降级静音', async () => {
+  let output;
+  const { pipeline } = build({
+    options: {
+      audioOutputFactory: async () => {
+        output = new FakeAudioOutput();
+        output.init = async () => { throw new Error('audio init failed'); };
+        return output;
+      },
+    },
+  });
+  const unavailable = [];
+  pipeline.on('audio-unavailable', (error) => unavailable.push(error));
+
+  await pipeline.init();
+  assert.equal(output.destroyed, true, '初始化失败的临时输出必须销毁');
+  assert.equal(pipeline.audioOutput, null, '失败后应降级为无音频输出');
+  assert.equal(unavailable.length, 1);
+});
+
 test('selectTrack：初始化进行中等待同一建链，不并行创建第二套音频解码器', async () => {
   let releaseOutput;
   const outputReady = new Promise((resolve) => { releaseOutput = resolve; });

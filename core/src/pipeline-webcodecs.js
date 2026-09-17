@@ -179,6 +179,7 @@ export class WebCodecsPipeline extends Emitter {
         });
         await nextOutput.init?.();
       } catch (err) {
+        try { nextOutput?.destroy?.(); } catch { /* 音频输出初始化失败时回收临时实例 */ }
         // 无音频输出（Node/无 AudioContext）时降级为静音播放，不阻断视频
         nextOutput = null;
         this.emit('audio-unavailable', err);
