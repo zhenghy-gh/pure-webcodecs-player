@@ -113,6 +113,8 @@ export class Player extends Emitter {
     this._loadPromise = null;
     this._loadGeneration = 0;
     this._pumpToken = 0;
+    this._trackSwitchToken = 0;
+    this._trackSwitchPromise = null;
     this._lastTimeEventUs = -Infinity;
     this._volume = 1;
     this._muted = false;
@@ -356,17 +358,37 @@ export class Player extends Emitter {
     if (!['video', 'audio', 'text'].includes(type)) throw stateError(`selectTrack(): invalid type ${type}`);
     if (!this.mediaInfoValue.tracks.some((t) => t.type === type && t.id === trackId)) throw stateError(`track not found: ${type}/${trackId}`);
     if (this.selectedTracks[type] === trackId) return;
+    const run = () => this._selectTrack(type, trackId);
+    const previous = this._trackSwitchPromise ?? Promise.resolve();
+    const operation = previous.catch(() => {}).then(run);
+    const queued = operation.then(
+      () => {
+        if (this._trackSwitchPromise === queued) this._trackSwitchPromise = null;
+      },
+      () => {
+        if (this._trackSwitchPromise === queued) this._trackSwitchPromise = null;
+      },
+    );
+    this._trackSwitchPromise = queued;
+    return operation;
+  }
+
+  async _selectTrack(type, trackId) {
+    if (this.stateValue === PLAYER_STATES.DESTROYED || !this.demuxer) throw stateError('selectTrack(): player is not loaded');
+    if (this.selectedTracks[type] === trackId) return;
+    const switchToken = ++this._trackSwitchToken;
     const wasPlaying = this.stateValue === PLAYER_STATES.PLAYING;
     this._pumpToken++; // 中断当前泵，避免旧轨样本继续灌入
     try {
       await this.pipeline?.selectTrack?.(type, trackId);
     } catch (error) {
-      if (wasPlaying && this.stateValue === PLAYER_STATES.PLAYING) {
+      if (switchToken === this._trackSwitchToken && wasPlaying && this.stateValue === PLAYER_STATES.PLAYING) {
         const token = ++this._pumpToken;
         void this._pump(token);
       }
       throw asPlayerError(error, '切换轨道失败');
     }
+    if (switchToken !== this._trackSwitchToken || this.stateValue === PLAYER_STATES.DESTROYED || !this.demuxer) return;
     this.selectedTracks[type] = trackId;
     this.emit('trackchange', { type, trackId });
     if (wasPlaying) {
@@ -379,6 +401,7 @@ export class Player extends Emitter {
     if (this.stateValue === PLAYER_STATES.DESTROYED) return;
     this._pumpToken++;
     this._loadGeneration += 1;
+    this._trackSwitchToken += 1;
     try { await this.pipeline?.destroy?.(); } catch {}
     try { await this.demuxer?.destroy?.(); } catch {}
     this.pipeline = null;

@@ -65,6 +65,7 @@ class SwitchableToyDemuxer extends ToyDemuxer {
       tracks: [
         { id: 1, type: 'video', codec: 'avc1.42E01E' },
         { id: 2, type: 'video', codec: 'avc1.42E01E' },
+        { id: 3, type: 'video', codec: 'avc1.42E01E' },
       ],
       durationUs: 800000,
       seekable: true,
@@ -402,7 +403,58 @@ test('selectTrack 失败：playing 中恢复旧样本泵且不改变选中轨', 
 });
 
 
-test('自然结束：ended 事件、state 转 paused、ended 后 play 自动 seek(0) 重播', async () => {
+test('selectTrack：并发请求按调用顺序串行完成', async () => {
+  const calls = [];
+  let releaseFirst;
+  const firstDone = new Promise((resolve) => { releaseFirst = resolve; });
+  const player = new Player({
+    demuxerFactory: () => new SwitchableToyDemuxer(new MemoryDataSource(new Uint8Array([1])), 3),
+    capabilities: caps,
+    pipelineFactory: async () => ({
+      selectTrack: async (_type, trackId) => {
+        calls.push(`start:${trackId}`);
+        if (trackId === 2) await firstDone;
+        calls.push(`done:${trackId}`);
+      },
+      destroy: async () => {},
+    }),
+  });
+  await player.load(new Uint8Array([1]));
+  const first = player.selectTrack('video', 2);
+  const second = player.selectTrack('video', 3);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ['start:2']);
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(calls, ['start:2', 'done:2', 'start:3', 'done:3']);
+  assert.equal(player.selectedTracks.video, 3);
+  await player.destroy();
+});
+
+test('selectTrack：销毁期间迟到的切轨结果不写入播放器状态', async () => {
+  let releaseSwitch;
+  const switchReady = new Promise((resolve) => { releaseSwitch = resolve; });
+  const player = new Player({
+    demuxerFactory: () => new SwitchableToyDemuxer(new MemoryDataSource(new Uint8Array([1])), 3),
+    capabilities: caps,
+    pipelineFactory: async () => ({
+      selectTrack: async () => switchReady,
+      destroy: async () => {},
+    }),
+  });
+  await player.load(new Uint8Array([1]));
+  const changes = [];
+  player.on('trackchange', (event) => changes.push(event));
+  const switching = player.selectTrack('video', 2);
+  await new Promise((resolve) => setImmediate(resolve));
+  await player.destroy();
+  releaseSwitch();
+  await switching;
+  assert.equal(player.state, PLAYER_STATES.DESTROYED);
+  assert.equal(player.selectedTracks.video, 1);
+  assert.deepEqual(changes, []);
+});
+test('自然结束：ended 事件、state 转 paused，ended 后 play 自动 seek(0) 重播', async () => {
   const calls = [];
   const player = makePlayer({ pipelineFactory: instantPipelineFactory(calls) }, { perTrack: 2 });
   await player.load(new Uint8Array([1]));
