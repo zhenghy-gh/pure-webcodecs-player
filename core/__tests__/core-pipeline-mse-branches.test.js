@@ -216,7 +216,7 @@ test('getBufferedRanges：逐活动轨取区间转微秒；无能力返回 null'
   assert.equal(noBuf.pipeline.getBufferedRanges(), null);
 });
 
-test('bufferedAheadSec：指定 key 取该轨，缺省取全部轨最大值', async () => {
+test('bufferedAheadSec：指定 key 取该轨，缺省只取活动轨最大值', async () => {
   const { pipeline, mse } = build();
   await pipeline.init();
   mse.aheadByKey.set('v1', 3);
@@ -224,6 +224,11 @@ test('bufferedAheadSec：指定 key 取该轨，缺省取全部轨最大值', as
   assert.equal(pipeline.bufferedAheadSec(), 7);
   assert.equal(pipeline.bufferedAheadSec('v1'), 3);
   assert.equal(pipeline.bufferedAheadSec('missing'), 0);
+
+  await pipeline.selectTrack('video', 5);
+  mse.aheadByKey.set('v5', 2);
+  assert.equal(pipeline.bufferedAheadSec(), 7, '切轨后不应纳入旧视频轨水位');
+  assert.equal(pipeline.bufferedAheadSec('v1'), 3, '显式 key 仍允许查询旧轨');
 });
 
 test('stats：聚合计数器 + 缓冲水位 + underrunCount', async () => {

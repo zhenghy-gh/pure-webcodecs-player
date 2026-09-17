@@ -377,7 +377,11 @@ export class MsePipeline extends Emitter {
   }
 
   bufferedAheadSec(key = undefined) {
-    const keys = key ? [key] : [...this._tracks.values()].map((t) => this._keyOf(t));
+    const keys = key
+      ? [key]
+      : [...this._tracks.values()]
+        .filter((track) => (track.type === 'video' || track.type === 'audio') && this.active[track.type] === track.id)
+        .map((track) => this._keyOf(track));
     let max = 0;
     for (const k of keys) max = Math.max(max, this.mse?.bufferedAhead?.(k) ?? 0);
     return max;
