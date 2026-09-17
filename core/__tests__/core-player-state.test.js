@@ -58,6 +58,35 @@ class ToyDemuxer extends Demuxer {
   }
 }
 
+class SwitchableToyDemuxer extends ToyDemuxer {
+  async _doOpen() {
+    return {
+      container: 'mkv',
+      tracks: [
+        { id: 1, type: 'video', codec: 'avc1.42E01E' },
+        { id: 2, type: 'video', codec: 'avc1.42E01E' },
+      ],
+      durationUs: 800000,
+      seekable: true,
+      live: false,
+    };
+  }
+  async readSample(trackId) {
+    await new Promise((resolve) => setImmediate(resolve));
+    const timestamp = (this.nextTimestamp ?? 0);
+    this.nextTimestamp = timestamp + 100000;
+    return createSample({
+      trackId,
+      codec: 'avc1.42E01E',
+      timestamp,
+      duration: 100000,
+      keyframe: true,
+      data: new Uint8Array([1]),
+      size: 1,
+    });
+  }
+}
+
 const caps = {
   webcodecs: { supported: true, video: { 'avc1.42E01E': true }, audio: {} },
   mse: { supported: false, mimeTypes: [] },
@@ -346,7 +375,32 @@ test('load 重入：非 idle 态二次 load 拒绝、destroy 后 load 拒绝', a
   await assert.rejects(() => player.load(new Uint8Array([1])), (e) => e.code === 'STATE_ERROR');
 });
 
-/* ------------------------------ ended 与重播 ------------------------------ */
+test('selectTrack 失败：playing 中恢复旧样本泵且不改变选中轨', async () => {
+  const calls = [];
+  let failSwitch = true;
+  const player = new Player({
+    demuxerFactory: () => new SwitchableToyDemuxer(new MemoryDataSource(new Uint8Array([1])), 3),
+    capabilities: caps,
+    bufferTargetUs: 0,
+    pipelineFactory: async () => ({
+      pushSample: async () => { calls.push('pushSample'); },
+      selectTrack: async () => {
+        if (failSwitch) throw new Error('switch failed');
+      },
+      destroy: async () => {},
+    }),
+  });
+  await player.load(new Uint8Array([1]));
+  await player.play();
+  const before = calls.length;
+  await assert.rejects(() => player.selectTrack('video', 2), (e) => e.code === 'SOURCE_ERROR');
+  await settle();
+  assert.equal(player.state, PLAYER_STATES.PLAYING);
+  assert.equal(player.selectedTracks.video, 1);
+  assert.ok(calls.length > before, '切轨失败后旧轨样本泵应继续工作');
+  await player.destroy();
+});
+
 
 test('自然结束：ended 事件、state 转 paused、ended 后 play 自动 seek(0) 重播', async () => {
   const calls = [];

@@ -361,6 +361,10 @@ export class Player extends Emitter {
     try {
       await this.pipeline?.selectTrack?.(type, trackId);
     } catch (error) {
+      if (wasPlaying && this.stateValue === PLAYER_STATES.PLAYING) {
+        const token = ++this._pumpToken;
+        void this._pump(token);
+      }
       throw asPlayerError(error, '切换轨道失败');
     }
     this.selectedTracks[type] = trackId;
