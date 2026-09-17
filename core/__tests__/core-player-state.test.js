@@ -547,6 +547,69 @@ test('自然结束：ended 事件、state 转 paused，ended 后 play 自动 see
   await player.destroy();
 });
 
+test('自然结束：seek 取消旧泵收尾后不派发 ended', async () => {
+  let releaseEnd;
+  let endStarted;
+  let phase = 0;
+  let reads = 0;
+  const endGate = new Promise((resolve) => { releaseEnd = resolve; });
+  const endStartedPromise = new Promise((resolve) => { endStarted = resolve; });
+  const player = new Player({
+    demuxerFactory: async () => ({
+      async open() {
+        return {
+          container: 'mkv',
+          tracks: [{ id: 1, type: 'video', codec: 'avc1.42E01E' }],
+          durationUs: 100000,
+          seekable: true,
+          live: false,
+        };
+      },
+      async readSample() {
+        if (phase === 0) {
+          reads += 1;
+          if (reads === 1) return createSample({
+            trackId: 1, codec: 'avc1.42E01E', timestamp: 0, duration: 100000,
+            keyframe: true, data: new Uint8Array([1]), size: 1,
+          });
+          return null;
+        }
+        return new Promise(() => {});
+      },
+      async seek() {
+        phase = 1;
+        return { actualTimestampUs: 0 };
+      },
+      async destroy() {},
+    }),
+    capabilities: caps,
+    bufferTargetUs: 0,
+    pipelineFactory: async () => ({
+      pushSample: async () => {},
+      seek: async () => {},
+      end: async () => {
+        endStarted();
+        await endGate;
+      },
+      destroy: async () => {},
+    }),
+  });
+  await player.load(new Uint8Array([1]));
+  const ended = [];
+  player.on('ended', () => ended.push(true));
+  void player.play();
+  await endStartedPromise;
+
+  await player.seek(0);
+  releaseEnd();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(player.state, PLAYER_STATES.PLAYING);
+  assert.equal(player.ended, false);
+  assert.deepEqual(ended, []);
+  await player.destroy();
+});
+
 /* ------------------------------ seek 语义 ------------------------------ */
 
 test('seek：从 playing 进入并返回 playing，强制 timeupdate 携带实际落点', async () => {

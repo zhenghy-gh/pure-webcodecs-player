@@ -73,6 +73,7 @@ export class MsePipeline extends Emitter {
     /** @type {Map<number, Promise<void>>} 同轨成段队列，保证 end 等待所有 append 完成 */
     this._flushPromises = new Map();
     this._endPromise = null;
+    this._endGeneration = null;
     this._initializedTracks = new Set();
     this._announcedTrackKeys = new Set();
     this._trackSwitchPromise = null;
@@ -264,7 +265,8 @@ export class MsePipeline extends Emitter {
   /** 全部轨收尾：flush 后 endOfStream（不调用则元素永不触发 ended）。 */
   end() {
     if (this.state === 'destroyed' || !this.mse) return Promise.resolve();
-    if (this._endPromise) return this._endPromise;
+    const seekGeneration = this._seekGeneration;
+    if (this._endPromise && this._endGeneration === seekGeneration) return this._endPromise;
     let endPromise;
     endPromise = (async () => {
       const ids = new Set([...this._pending.keys(), ...this._flushPromises.keys()]);
@@ -272,17 +274,23 @@ export class MsePipeline extends Emitter {
         try { await this.flush(id); } catch { /* 错误已广播 */ }
       }
       await Promise.all([...this._flushPromises.values()].map((promise) => promise.catch(() => {})));
-      if (this.state === 'destroyed' || !this.mse) return;
+      if (seekGeneration !== this._seekGeneration || this.state === 'destroyed' || !this.mse) return;
       try {
         await this.mse.endOfStream?.();
+        if (seekGeneration !== this._seekGeneration || this.state === 'destroyed' || !this.mse) return;
         this.emit('eos', { reason: 'endOfStream' });
       } catch (err) {
+        if (seekGeneration !== this._seekGeneration || this.state === 'destroyed' || !this.mse) return;
         this.emit('error', decodeError('endOfStream 失败', { cause: err }));
       }
     })().finally(() => {
-      if (this._endPromise === endPromise) this._endPromise = null;
+      if (this._endPromise === endPromise) {
+        this._endPromise = null;
+        this._endGeneration = null;
+      }
     });
     this._endPromise = endPromise;
+    this._endGeneration = seekGeneration;
     return endPromise;
   }
 

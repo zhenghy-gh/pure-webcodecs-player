@@ -568,6 +568,7 @@ export class Player extends Emitter {
     if (token === this._pumpToken && done.size === ids.length && this.stateValue === PLAYER_STATES.PLAYING) {
       // 给管线收尾机会（MSE 需要 flush + endOfStream 才能触发元素 ended）
       try { await this.pipeline?.end?.(); } catch { /* 收尾失败不掩盖自然结束 */ }
+      if (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING) return;
       this.endedValue = true;
       this.clock.pause();
       this._transitionSafe(PLAYER_STATES.PAUSED);
