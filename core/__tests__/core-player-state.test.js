@@ -454,6 +454,55 @@ test('selectTrack：销毁期间迟到的切轨结果不写入播放器状态', 
   assert.equal(player.selectedTracks.video, 1);
   assert.deepEqual(changes, []);
 });
+test('seek：销毁期间迟到的 demuxer 结果不回写时间轴、统计或事件', async () => {
+  let releaseSeek;
+  const seekReady = new Promise((resolve) => { releaseSeek = resolve; });
+  const player = new Player({
+    demuxerFactory: () => {
+      const demuxer = new SwitchableToyDemuxer(new MemoryDataSource(new Uint8Array([1])), 3);
+      demuxer.seek = async () => seekReady;
+      return demuxer;
+    },
+    capabilities: caps,
+    pipelineFactory: async () => ({ destroy: async () => {} }),
+  });
+  await player.load(new Uint8Array([1]));
+  const seeking = player.seek(500000);
+  await new Promise((resolve) => setImmediate(resolve));
+  await player.destroy();
+  releaseSeek({ actualTimestampUs: 500000 });
+  const result = await seeking;
+  assert.deepEqual(result, { actualTimestampUs: 500000 });
+  assert.equal(player.state, PLAYER_STATES.DESTROYED);
+  assert.equal(player.currentTimeValue, 0);
+  assert.equal(player.stats.seekCount, 0);
+});
+
+test('seek：进行中拒绝切轨，不在 seek 完成后偷偷执行', async () => {
+  let releaseSeek;
+  const seekReady = new Promise((resolve) => { releaseSeek = resolve; });
+  const calls = [];
+  const player = new Player({
+    demuxerFactory: () => {
+      const demuxer = new SwitchableToyDemuxer(new MemoryDataSource(new Uint8Array([1])), 3);
+      demuxer.seek = async () => seekReady;
+      return demuxer;
+    },
+    capabilities: caps,
+    pipelineFactory: async () => ({
+      selectTrack: async () => { calls.push('selectTrack'); },
+      destroy: async () => {},
+    }),
+  });
+  await player.load(new Uint8Array([1]));
+  const seeking = player.seek(500000);
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(() => player.selectTrack('video', 2), (e) => e.code === 'STATE_ERROR');
+  releaseSeek({ actualTimestampUs: 500000 });
+  await seeking;
+  assert.deepEqual(calls, []);
+  await player.destroy();
+});
 test('自然结束：ended 事件、state 转 paused，ended 后 play 自动 seek(0) 重播', async () => {
   const calls = [];
   const player = makePlayer({ pipelineFactory: instantPipelineFactory(calls) }, { perTrack: 2 });

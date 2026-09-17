@@ -113,6 +113,7 @@ export class Player extends Emitter {
     this._loadPromise = null;
     this._loadGeneration = 0;
     this._pumpToken = 0;
+    this._seekToken = 0;
     this._trackSwitchToken = 0;
     this._trackSwitchPromise = null;
     this._lastTimeEventUs = -Infinity;
@@ -324,15 +325,18 @@ export class Player extends Emitter {
     this._requireLoaded('seek');
     if (!Number.isFinite(timestampUs) || timestampUs < 0) throw stateError(`seek(): invalid timestampUs ${timestampUs}`);
     const previous = this.stateValue;
+    const seekToken = ++this._seekToken;
     this._pumpToken++;
     this._transition(PLAYER_STATES.SEEKING);
     try {
       const result = await this.demuxer.seek(Math.round(timestampUs));
+      if (seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.DESTROYED) return result;
       this.currentTimeValue = result.actualTimestampUs;
       this.endedValue = false; // 任何 seek 均清除 ended（HTMLMediaElement 语义；此前 play() 自动重播后 ended 恒为 true）
       this.clock.seekTo(this.currentTimeValue / 1e6);
       this.statsValue.markSeek();
       await this.pipeline?.seek?.(this.currentTimeValue);
+      if (seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.DESTROYED) return result;
       const returnState = previous === PLAYER_STATES.PLAYING
         ? PLAYER_STATES.PLAYING
         : previous === PLAYER_STATES.READY ? PLAYER_STATES.READY : PLAYER_STATES.PAUSED;
@@ -356,6 +360,7 @@ export class Player extends Emitter {
   async selectTrack(type, trackId) {
     this._requireLoaded('selectTrack');
     if (!['video', 'audio', 'text'].includes(type)) throw stateError(`selectTrack(): invalid type ${type}`);
+    if (this.stateValue === PLAYER_STATES.SEEKING) throw stateError('selectTrack(): seek in progress');
     if (!this.mediaInfoValue.tracks.some((t) => t.type === type && t.id === trackId)) throw stateError(`track not found: ${type}/${trackId}`);
     if (this.selectedTracks[type] === trackId) return;
     const run = () => this._selectTrack(type, trackId);
