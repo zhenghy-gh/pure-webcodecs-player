@@ -272,16 +272,23 @@ export class WebCodecsPipeline extends Emitter {
   }
 
   _onAudioData(audioData, decoder = this._audioDecoder) {
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      try { audioData?.close?.(); } catch { /* 音频帧释放失败不影响管线 */ }
+    };
     if (this.state === 'destroyed' || decoder !== this._audioDecoder) {
-      try { audioData?.close?.(); } catch { /* 过期音频帧释放失败不影响管线 */ }
+      close();
       return;
     }
     try {
       const channels = audioDataToPlanar(audioData);
       this.audioOutput?.push?.(channels);
-      if (typeof audioData.close === 'function') audioData.close();
+      close();
       this.emit('audio-frame', { frames: channels[0]?.length ?? 0 });
     } catch (err) {
+      close();
       this._onDecodeError(err, 'audio');
     }
   }

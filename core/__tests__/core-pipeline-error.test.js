@@ -152,17 +152,35 @@ test('解码器 error 回调 → 派发 DECODE_ERROR 事件（视频）', async 
 });
 
 test('音频输出 push 抛错 → 派发 DECODE_ERROR 事件（音频）', async () => {
-  const { pipeline, createdDecoders } = harness(avInfo);
+  const { pipeline } = harness(avInfo);
   await pipeline.init();
   pipeline.audioOutput.push = () => { throw new Error('sink full'); };
+  const audioData = {
+    numberOfChannels: 1, numberOfFrames: 2, closed: false,
+    close() { this.closed = true; }, copyTo(dst) { dst.fill(1); },
+  };
   let err = null;
   pipeline.on('error', (e) => (err = e));
-  onlyAudio(createdDecoders).emit({
-    numberOfChannels: 1, numberOfFrames: 2, close() {}, copyTo(dst) { dst.fill(1); },
-  });
+  pipeline._audioDecoder.init.output(audioData);
   assert.ok(err, '应派发 error 事件');
   assert.equal(err.code, 'DECODE_ERROR');
   assert.match(err.message, /audio/);
+  assert.equal(audioData.closed, true, '输出失败时仍必须释放 AudioData');
+});
+
+test('AudioData 转 planar 抛错时仍释放 AudioData', async () => {
+  const { pipeline } = harness(avInfo);
+  await pipeline.init();
+  const audioData = {
+    numberOfChannels: 1, numberOfFrames: 2, closed: false,
+    close() { this.closed = true; },
+    copyTo() { throw new Error('copy failed'); },
+  };
+  let err = null;
+  pipeline.on('error', (e) => (err = e));
+  pipeline._audioDecoder.init.output(audioData);
+  assert.equal(audioData.closed, true);
+  assert.equal(err.code, 'DECODE_ERROR');
 });
 
 test('渲染器 draw 抛错 → 派发 DECODE_ERROR 事件（render）', async () => {
