@@ -170,8 +170,8 @@ test('selectTrack：异步写入 init 期间 destroy 不复活已销毁管线', 
   const switching = pipeline.selectTrack('video', 5);
   await new Promise((resolve) => setImmediate(resolve));
   await pipeline.destroy();
+  await assert.rejects(switching, (error) => error.code === 'STATE_ERROR');
   releaseAppend();
-  await switching;
 
   assert.equal(pipeline.state, 'destroyed');
   assert.equal(pipeline.active.video, 1);
@@ -181,6 +181,33 @@ test('selectTrack：异步写入 init 期间 destroy 不复活已销毁管线', 
 
 
 
+test('selectTrack：destroy 期间当前与排队请求都结束且不写回状态', async () => {
+  let releaseAppend;
+  const appendGate = new Promise((resolve) => { releaseAppend = resolve; });
+  const mse = new FakeMseHelper();
+  const { pipeline } = build({ mse });
+  await pipeline.init();
+  mse.appendGate = appendGate;
+
+  const changes = [];
+  pipeline.on('trackchange', (event) => changes.push(event));
+  const first = pipeline.selectTrack('video', 5);
+  await new Promise((resolve) => setImmediate(resolve));
+  const second = pipeline.selectTrack('video', 1);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  await pipeline.destroy();
+  const results = await Promise.allSettled([first, second]);
+  releaseAppend();
+
+  assert.deepEqual(results.map(({ status, reason }) => [status, reason?.code]), [
+    ['rejected', 'STATE_ERROR'],
+    ['rejected', 'STATE_ERROR'],
+  ]);
+  assert.equal(pipeline.active.video, 1);
+  assert.deepEqual(changes, []);
+  assert.equal(pipeline._trackSwitchPromise, null);
+});
 test('bufferedAheadUs：取活动轨中最小水位（木桶效应）并转微秒；无能力返回 null', async () => {
   const { pipeline, mse } = build();
   await pipeline.init();

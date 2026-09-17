@@ -73,6 +73,10 @@ export class MsePipeline extends Emitter {
     this._initializedTracks = new Set();
     this._announcedTrackKeys = new Set();
     this._trackSwitchPromise = null;
+    this._trackSwitchAbort = { aborted: false, promise: null, resolve: null };
+    this._trackSwitchAbort.promise = new Promise((resolve) => {
+      this._trackSwitchAbort.resolve = resolve;
+    });
 
     this.state = 'ready';
     this.counters = { initSegments: 0, mediaSegments: 0, samples: 0, bytes: 0, cues: 0 };
@@ -347,7 +351,11 @@ export class MsePipeline extends Emitter {
    * @param {number} trackId
    */
   async selectTrack(type, trackId) {
-    const run = () => this._selectTrack(type, trackId);
+    const abort = this._trackSwitchAbort;
+    const run = () => {
+      if (abort?.aborted) throw stateError('selectTrack(): pipeline destroyed');
+      return this._selectTrack(type, trackId, abort);
+    };
     const previous = this._trackSwitchPromise ?? Promise.resolve();
     const operation = previous.catch(() => {}).then(run);
     const queued = operation.then(
@@ -362,10 +370,16 @@ export class MsePipeline extends Emitter {
     return operation;
   }
 
-  async _selectTrack(type, trackId) {
-    if (this.state === 'destroyed') throw stateError('selectTrack(): pipeline destroyed');
-    if (!this._initialized) await this.init();
-    if (this.state === 'destroyed') throw stateError('selectTrack(): pipeline destroyed');
+  async _selectTrack(type, trackId, abort = this._trackSwitchAbort) {
+    if (this.state === 'destroyed' || abort?.aborted) {
+      throw stateError('selectTrack(): pipeline destroyed');
+    }
+    if (!this._initialized) {
+      await Promise.race([this.init(), abort?.promise]);
+    }
+    if (this.state === 'destroyed' || abort?.aborted) {
+      throw stateError('selectTrack(): pipeline destroyed');
+    }
     const track = this._tracks.get(trackId);
     if (!track || track.type !== type) throw stateError(`track not found: ${type}/${trackId}`);
     if (this.active[type] === trackId) return;
@@ -377,12 +391,18 @@ export class MsePipeline extends Emitter {
         const mime = this.mimeFor(track);
         const mse = this.mse;
         const remuxer = this.remuxer;
-        if (!mse.tracks?.has?.(key)) await mse.addTrack(key, mime);
-        if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return;
+        if (!mse.tracks?.has?.(key)) {
+          await Promise.race([mse.addTrack(key, mime), abort?.promise]);
+        }
+        if (generation !== this._lifecycleGeneration || this.state === 'destroyed' || abort?.aborted) {
+          throw stateError('selectTrack(): pipeline destroyed');
+        }
         if (!this._preexistingTrackKeys.has(key)) {
           const init = remuxer.createInitSegment(track);
-          await mse.append(key, init);
-          if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return;
+          await Promise.race([mse.append(key, init), abort?.promise]);
+          if (generation !== this._lifecycleGeneration || this.state === 'destroyed' || abort?.aborted) {
+            throw stateError('selectTrack(): pipeline destroyed');
+          }
           this.counters.initSegments += 1;
         }
         this._initializedTracks.add(key);
@@ -401,6 +421,10 @@ export class MsePipeline extends Emitter {
     if (this.state === 'destroyed') return;
     this.state = 'destroyed';
     this._lifecycleGeneration += 1;
+    const abort = this._trackSwitchAbort;
+    abort.aborted = true;
+    abort.resolve?.(undefined);
+    this._trackSwitchAbort = null;
     this._pending.clear();
     this._pendingUs.clear();
     for (const off of this._elementOffs) {
