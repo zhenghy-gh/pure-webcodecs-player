@@ -150,6 +150,29 @@ test('init：并发调用共享同一 Promise，不重复创建轨道或写 init
   assert.equal(pipeline.counters.initSegments, 2);
 });
 
+test('init：部分轨道 init 成功后失败，重试只补写未完成轨道', async () => {
+  let failInit = true;
+  const mse = new FakeMseHelper();
+  const append = mse.append.bind(mse);
+  mse.append = async (key, data) => {
+    if (key === 'a2' && failInit && data[0] === 0xf0) {
+      failInit = false;
+      throw new Error('audio init append failed');
+    }
+    return append(key, data);
+  };
+  const { pipeline, remuxer } = build({ mse });
+
+  await assert.rejects(() => pipeline.init(), /audio init append failed/);
+  assert.deepEqual(remuxer.inits, [1, 2]);
+  assert.deepEqual([...pipeline._initializedTracks], ['v1']);
+  assert.equal(pipeline.counters.initSegments, 1);
+
+  await pipeline.init();
+  assert.deepEqual(remuxer.inits, [1, 2, 2]);
+  assert.deepEqual([...pipeline._initializedTracks], ['v1', 'a2']);
+  assert.equal(pipeline.counters.initSegments, 2);
+});
 test('init：mseFactory 迟到于 destroy 时回收未挂载的 MediaSource', async () => {
   let releaseMse;
   const mseReady = new Promise((resolve) => { releaseMse = resolve; });
