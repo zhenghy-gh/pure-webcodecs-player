@@ -603,6 +603,7 @@ test('selectTrack：seek 抢占管线切轨后恢复失败时 seek 失败且不�
     }),
   });
   await player.load(new Uint8Array([1]));
+  await player.play();
 
   const switching = player.selectTrack('video', 2);
   await new Promise((resolve) => setImmediate(resolve));
@@ -615,7 +616,7 @@ test('selectTrack：seek 抢占管线切轨后恢复失败时 seek 失败且不�
   assert.deepEqual(calls, ['selectTrack:2', 'selectTrack:1']);
   assert.equal(activeTrack, 2);
   assert.equal(player.selectedTracks.video, 1);
-  assert.equal(player.state, PLAYER_STATES.READY);
+  assert.equal(player.state, PLAYER_STATES.ERROR);
   await player.destroy();
 });
 

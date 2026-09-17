@@ -355,11 +355,17 @@ export class Player extends Emitter {
       this._emitTimeupdate(true);
       return result;
     } catch (error) {
+      const e = asPlayerError(error, 'seek 失败');
+      if (e.detail?.trackRecovery) {
+        this._transitionSafe(PLAYER_STATES.ERROR);
+        this.emit('error', e);
+        throw e;
+      }
       const returnState = previous === PLAYER_STATES.PLAYING
         ? PLAYER_STATES.PLAYING
         : previous === PLAYER_STATES.READY ? PLAYER_STATES.READY : PLAYER_STATES.PAUSED;
       this._transitionSafe(returnState);
-      throw asPlayerError(error, 'seek 失败');
+      throw e;
     }
   }
 
