@@ -581,6 +581,44 @@ test('selectTrack：seek 抢占管线切轨后恢复旧轨，再执行 seek', as
   await player.destroy();
 });
 
+test('selectTrack：seek 抢占管线切轨后恢复失败时 seek 失败且不启动新泵', async () => {
+  let releaseSwitch;
+  const switchReady = new Promise((resolve) => { releaseSwitch = resolve; });
+  const calls = [];
+  let activeTrack = 1;
+  const player = new Player({
+    demuxerFactory: () => new SwitchableToyDemuxer(new MemoryDataSource(new Uint8Array([1])), 3),
+    capabilities: caps,
+    bufferTargetUs: 0,
+    pipelineFactory: async () => ({
+      selectTrack: async (_type, trackId) => {
+        calls.push(`selectTrack:${trackId}`);
+        if (trackId === 2) await switchReady;
+        if (trackId === 1 && activeTrack === 2) throw new Error('restore failed');
+        activeTrack = trackId;
+      },
+      seek: async () => { calls.push('seek'); },
+      pushSample: async () => { calls.push('pushSample'); },
+      destroy: async () => {},
+    }),
+  });
+  await player.load(new Uint8Array([1]));
+
+  const switching = player.selectTrack('video', 2);
+  await new Promise((resolve) => setImmediate(resolve));
+  const seeking = player.seek(500000);
+  releaseSwitch();
+  await assert.rejects(() => seeking, (error) => error.code === 'SOURCE_ERROR');
+  const switchingResult = await switching.then(() => null, (error) => error);
+  assert.equal(switchingResult.code, 'SOURCE_ERROR');
+
+  assert.deepEqual(calls, ['selectTrack:2', 'selectTrack:1']);
+  assert.equal(activeTrack, 2);
+  assert.equal(player.selectedTracks.video, 1);
+  assert.equal(player.state, PLAYER_STATES.READY);
+  await player.destroy();
+});
+
 test('自然结束：ended 事件、state 转 paused，ended 后 play 自动 seek(0) 重播', async () => {
   const calls = [];
   const player = makePlayer({ pipelineFactory: instantPipelineFactory(calls) }, { perTrack: 2 });

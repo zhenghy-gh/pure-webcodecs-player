@@ -338,7 +338,11 @@ export class Player extends Emitter {
       this.clock.seekTo(this.currentTimeValue / 1e6);
       this.statsValue.markSeek();
       if (pendingSwitch) {
-        try { await pendingSwitch; } catch { /* 过期切轨失败不影响 seek */ }
+        try {
+          await pendingSwitch;
+        } catch (error) {
+          if (error?.detail?.trackRecovery) throw error;
+        }
       }
       if (seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.DESTROYED) return result;
       await this.pipeline?.seek?.(this.currentTimeValue);
@@ -373,15 +377,15 @@ export class Player extends Emitter {
     const run = () => this._selectTrack(type, trackId, seekToken);
     const previous = this._trackSwitchPromise ?? Promise.resolve();
     const operation = previous.catch(() => {}).then(run);
-    const queued = operation.then(
+    operation.then(
       () => {
-        if (this._trackSwitchPromise === queued) this._trackSwitchPromise = null;
+        if (this._trackSwitchPromise === operation) this._trackSwitchPromise = null;
       },
       () => {
-        if (this._trackSwitchPromise === queued) this._trackSwitchPromise = null;
+        if (this._trackSwitchPromise === operation) this._trackSwitchPromise = null;
       },
     );
-    this._trackSwitchPromise = queued;
+    this._trackSwitchPromise = operation;
     return operation;
   }
 
@@ -409,7 +413,13 @@ export class Player extends Emitter {
       || !this.demuxer;
     if (stale) {
       if (seekToken !== this._seekToken && this.stateValue !== PLAYER_STATES.DESTROYED && previousTrackId != null) {
-        try { await this.pipeline?.selectTrack?.(type, previousTrackId); } catch {}
+        try {
+          await this.pipeline?.selectTrack?.(type, previousTrackId);
+        } catch (error) {
+          const recoveryError = asPlayerError(error, '恢复切换前轨道失败');
+          recoveryError.detail = { ...(recoveryError.detail ?? {}), trackRecovery: true };
+          throw recoveryError;
+        }
       }
       return;
     }
