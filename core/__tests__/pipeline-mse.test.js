@@ -165,6 +165,22 @@ test('msePipelineFactory：初始化失败时回收已创建的 MediaSource', as
   );
   assert.equal(mse.destroyed, true, '工厂初始化失败应回收已创建的 MediaSource');
 });
+test('init：trackAdded 监听器 destroy 后不再写入 init segment', async () => {
+  const mse = new FakeMseHelper();
+  const { pipeline, remuxer } = build({ mse });
+  let addedCount = 0;
+  pipeline.on('trackAdded', () => {
+    addedCount += 1;
+    if (addedCount === 2) void pipeline.destroy();
+  });
+
+  await pipeline.init();
+
+  assert.equal(mse.appends.length, 0);
+  assert.deepEqual(remuxer.inits, [1, 2]);
+  assert.equal(pipeline._initialized, false);
+  assert.equal(pipeline.state, 'destroyed');
+});
 test('init：部分轨道 init 成功后失败，重试只补写未完成轨道', async () => {
   let failInit = true;
   const mse = new FakeMseHelper();

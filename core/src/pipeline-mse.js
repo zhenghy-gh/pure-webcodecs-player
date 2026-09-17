@@ -141,6 +141,7 @@ export class MsePipeline extends Emitter {
           this.emit('trackAdded', { trackId: track.id, key, mime });
         }
         for (const { key, init } of pendingInits) {
+          if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
           await this.mse.append(key, init);
           if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
           this._initializedTracks.add(key);
