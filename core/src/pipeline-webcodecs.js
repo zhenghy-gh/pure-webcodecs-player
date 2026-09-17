@@ -81,6 +81,7 @@ export class WebCodecsPipeline extends Emitter {
     this._initialized = false;
     this._initPromise = null;
     this._lifecycleGeneration = 0;
+    this._trackSwitchPromise = null;
     this.counters = { videoChunks: 0, audioChunks: 0, framesRendered: 0, framesDropped: 0, cues: 0, catchups: 0 };
 
     this.avSync.attachMaster(() => this.currentTimeSec());
@@ -476,7 +477,21 @@ export class WebCodecsPipeline extends Emitter {
    * @param {'video'|'audio'|'text'} type
    * @param {number} trackId
    */
-  async selectTrack(type, trackId) {
+  selectTrack(type, trackId) {
+    const previous = this._trackSwitchPromise;
+    const operation = previous
+      ? previous.catch(() => {}).then(() => this._selectTrack(type, trackId))
+      : this._selectTrack(type, trackId);
+    let queued;
+    const clearQueue = () => {
+      if (this._trackSwitchPromise === queued) this._trackSwitchPromise = null;
+    };
+    queued = operation.then(clearQueue, clearQueue);
+    this._trackSwitchPromise = queued;
+    return operation;
+  }
+
+  async _selectTrack(type, trackId) {
     if (this.state === 'destroyed') throw stateError('selectTrack(): pipeline destroyed');
     if (!this._initialized) await this.init();
     if (this.state === 'destroyed') throw stateError('selectTrack(): pipeline destroyed');

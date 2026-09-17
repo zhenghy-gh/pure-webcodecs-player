@@ -518,6 +518,50 @@ test('selectTrack：初始化进行中等待同一建链，不并行创建第二
   assert.equal(pipeline.active.audio, 4);
 });
 
+test('selectTrack：并发请求按调用顺序串行完成', async () => {
+  let releaseOutput;
+  const outputReady = new Promise((resolve) => { releaseOutput = resolve; });
+  const createdAudio = [];
+  let outputCalls = 0;
+  const { pipeline } = build({
+    mediaInfo: {
+      container: 'mkv',
+      tracks: [
+        { id: 1, type: 'video', codec: 'avc1.42E01E' },
+        { id: 3, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 },
+        { id: 4, type: 'audio', codec: 'opus', sampleRate: 44100, numberOfChannels: 2 },
+      ],
+      durationUs: 1_000_000, seekable: true, live: false,
+    },
+    options: {
+      audioDecoderFactory: (init) => {
+        const decoder = new FakeDecoder(init);
+        createdAudio.push(decoder);
+        return decoder;
+      },
+      audioOutputFactory: async () => {
+        outputCalls += 1;
+        if (outputCalls === 2) await outputReady;
+        return new FakeAudioOutput();
+      },
+    },
+  });
+  await pipeline.init();
+  const changes = [];
+  pipeline.on('trackchange', (event) => changes.push(event.trackId));
+
+  const first = pipeline.selectTrack('audio', 4);
+  await new Promise((resolve) => setImmediate(resolve));
+  const second = pipeline.selectTrack('audio', 3);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(createdAudio.length, 2, '第二个切轨不能在第一个完成前创建解码器');
+
+  releaseOutput();
+  await Promise.all([first, second]);
+  assert.equal(createdAudio.length, 3);
+  assert.deepEqual(changes, [4, 3]);
+  assert.equal(pipeline.active.audio, 3);
+});
 test('解码器迟到回调：旧视频帧和音频数据释放且不进入当前管线', async () => {
   const createdVideo = [];
   const createdAudio = [];
