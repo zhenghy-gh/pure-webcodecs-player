@@ -92,6 +92,7 @@ export class MsePipeline extends Emitter {
     this._firstFrameEmitted = false;
     this._elementOffs = [];
     this._lifecycleGeneration = 0;
+    this._seekGeneration = 0;
   }
 
   /* ------------------------------ 构建 ------------------------------ */
@@ -228,6 +229,7 @@ export class MsePipeline extends Emitter {
   async _flushOne(trackId) {
     if (this.state === 'destroyed') return null;
     const generation = this._lifecycleGeneration;
+    const seekGeneration = this._seekGeneration;
     const abort = this._lifecycleAbort;
     const track = this._tracks.get(trackId);
     const batch = this._pending.get(trackId) ?? [];
@@ -236,13 +238,13 @@ export class MsePipeline extends Emitter {
     this._pendingUs.set(trackId, 0);
     const key = this._keyOf(track);
     await this._waitBuffer(key, abort);
-    if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return null;
+    if (generation !== this._lifecycleGeneration || seekGeneration !== this._seekGeneration || this.state === 'destroyed') return null;
     const segment = this.remuxer.createMediaSegment(track, batch);
     try {
       await Promise.race([this.mse.append(key, segment.data), abort.promise]);
-      if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return null;
+      if (generation !== this._lifecycleGeneration || seekGeneration !== this._seekGeneration || this.state === 'destroyed') return null;
     } catch (err) {
-      if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return null;
+      if (generation !== this._lifecycleGeneration || seekGeneration !== this._seekGeneration || this.state === 'destroyed') return null;
       const e = err?.code ? err : decodeError('appendBuffer 失败', { cause: err });
       this.emit('error', e);
       throw e;
@@ -363,6 +365,7 @@ export class MsePipeline extends Emitter {
 
   /** @param {number} timestampUs 实际落点（整数微秒） */
   async seek(timestampUs) {
+    this._seekGeneration += 1;
     this._pending.clear();
     this._pendingUs.clear();
     if (!this.mse) return;

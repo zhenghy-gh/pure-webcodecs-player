@@ -279,6 +279,40 @@ test('seek：丢弃待封装样本、逐轨清缓冲、对齐元素时间轴', a
   assert.equal(await pipeline.flush(1), null, 'seek 后待封装样本已丢弃');
 });
 
+test('seek：背压等待中的 flush 丢弃 seek 前媒体段', async () => {
+  let waitCallback;
+  let waiting = true;
+  const mse = new FakeMseHelper();
+  mse.bufferedAhead = () => (waiting ? 60 : 0);
+  const { pipeline } = build({
+    mse,
+    options: {
+      schedule: (fn) => {
+        waitCallback = fn;
+        return () => {};
+      },
+    },
+  });
+  await pipeline.init();
+  await pipeline.pushSample(createSample({
+    trackId: 1, codec: 'avc1.42E01E', timestamp: 0, duration: 100000, keyframe: true, data: new Uint8Array([1]),
+  }));
+  const segments = [];
+  pipeline.on('segment', (segment) => segments.push(segment));
+
+  const flushing = pipeline.flush(1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(typeof waitCallback, 'function', 'flush 应停在背压等待');
+
+  await pipeline.seek(2_000_000);
+  waiting = false;
+  waitCallback();
+  assert.equal(await flushing, null);
+  assert.equal(mse.appends.length, 2, 'seek 前媒体段不应追加');
+  assert.equal(pipeline.counters.mediaSegments, 0);
+  assert.deepEqual(segments, []);
+});
+
 test('end：收尾 flush 后 endOfStream（否则元素永不 ended）', async () => {
   const { pipeline, mse } = build();
   await pipeline.init();
