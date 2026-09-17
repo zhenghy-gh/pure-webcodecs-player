@@ -220,7 +220,48 @@ test('pushSample：背压 _waitQueue 在解码队列超阈值时按调度器让�
   assert.ok(scheduler.length >= 2 && scheduler.length <= 3, `队列从 10 降到 <8 应让出约 2~3 次（实得 ${scheduler.length}）`);
 });
 
-/* ------------------------------ 解码错误与渲染错误 ------------------------------ */
+test('pushSample：背压等待期间切轨后，旧样本不进入新解码器', async () => {
+  const created = [];
+  let releaseQueue;
+  const queueReady = new Promise((resolve) => { releaseQueue = resolve; });
+  const { pipeline } = build({
+    mediaInfo: {
+      container: 'mkv',
+      tracks: [
+        { id: 1, type: 'video', codec: 'avc1.42E01E' },
+        { id: 2, type: 'video', codec: 'avc1.640028' },
+      ],
+      durationUs: 1_000_000, seekable: true, live: false,
+    },
+    options: {
+      videoDecoderFactory: (init) => {
+        const decoder = new FakeDecoder(init);
+        created.push(decoder);
+        return decoder;
+      },
+      schedule: (fn) => {
+        void pipeline.selectTrack('video', 2);
+        releaseQueue();
+        fn();
+        return () => {};
+      },
+    },
+  });
+  await pipeline.init();
+  const oldDecoder = created[0];
+  oldDecoder.decodeQueueSize = 8;
+  const pushing = pipeline.pushSample(createSample({
+    trackId: 1, codec: 'avc1.42E01E', timestamp: 0, keyframe: true, data: new Uint8Array([1]),
+  }));
+  await queueReady;
+  await pushing;
+
+  assert.equal(created.length, 2);
+  assert.equal(oldDecoder.chunks.length, 0, '切轨后旧样本不应进入新解码链');
+  assert.equal(created[1].chunks.length, 0);
+  assert.equal(pipeline.counters.videoChunks, 0);
+});
+
 
 test('_onDecodeError：emit error(DECODE_ERROR) 并上报 player.statsValue', async () => {
   let captured = null;

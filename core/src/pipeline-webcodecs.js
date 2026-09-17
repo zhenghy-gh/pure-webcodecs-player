@@ -210,8 +210,10 @@ export class WebCodecsPipeline extends Emitter {
     if (!track) return;
     if (this.active[track.type] != null && this.active[track.type] !== track.id) return; // 非选中轨
     if (track.type === 'video') {
-      if (!this._videoDecoder) return;
-      await this._waitQueue(this._videoDecoder);
+      const decoder = this._videoDecoder;
+      if (!decoder) return;
+      await this._waitQueue(decoder);
+      if (this.state === 'destroyed' || this.active.video !== track.id || decoder !== this._videoDecoder) return;
       // 直播落后判定需要「最新已见视频时间戳」作 live edge
       if (sample.timestamp > this._liveEdgeUs) this._liveEdgeUs = sample.timestamp;
       // TS/裸流等 annexb 轨：WebCodecs avc1/hev1 期望 AVCC（length-prefixed），
@@ -220,12 +222,14 @@ export class WebCodecsPipeline extends Emitter {
       const payload = track.bitstreamFormat === 'annexb' && sample.data
         ? { ...sample, data: annexbToAvcc(sample.data) }
         : sample;
-      this._videoDecoder.decode(this._createChunk('video', payload));
+      decoder.decode(this._createChunk('video', payload));
       this.counters.videoChunks += 1;
     } else if (track.type === 'audio') {
-      if (!this._audioDecoder) return;
-      await this._waitQueue(this._audioDecoder);
-      this._audioDecoder.decode(this._createChunk('audio', sample));
+      const decoder = this._audioDecoder;
+      if (!decoder) return;
+      await this._waitQueue(decoder);
+      if (this.state === 'destroyed' || this.active.audio !== track.id || decoder !== this._audioDecoder) return;
+      decoder.decode(this._createChunk('audio', sample));
       this.counters.audioChunks += 1;
     } else if (track.type === 'text') {
       this._emitCue(sample);
