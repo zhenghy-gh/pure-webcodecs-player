@@ -382,6 +382,22 @@ test('Player + MSE 管线：load → play → 成段 → endOfStream → destroy
   assert.equal(player.state, 'destroyed');
 });
 
+test('selectTrack：未初始化时等待 init 完成后再切轨', async () => {
+  let releaseOpen;
+  const openGate = new Promise((resolve) => { releaseOpen = resolve; });
+  const mse = new FakeMseHelper();
+  mse.open = async () => openGate;
+  const { pipeline, remuxer } = build({ mse, mediaInfo: multiTrackInfo });
+
+  const switching = pipeline.selectTrack('audio', 3);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(mse.tracks.size, 0, '切轨不能绕过进行中的初始化');
+
+  releaseOpen();
+  await switching;
+  assert.equal(pipeline.active.audio, 3);
+  assert.deepEqual(remuxer.inits, [1, 2, 3]);
+});
 test('切轨初始化失败时保留旧轨状态，并允许重试新轨', async () => {
   const tracks = new Map();
   let failInit = true;
