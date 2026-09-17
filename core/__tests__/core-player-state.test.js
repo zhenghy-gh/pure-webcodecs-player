@@ -478,6 +478,28 @@ test('seek：销毁期间迟到的 demuxer 结果不回写时间轴、统计或�
   assert.equal(player.stats.seekCount, 0);
 });
 
+test('seek：并发 seek 被拒绝时不使当前 seek 失效', async () => {
+  let releaseSeek;
+  const seekReady = new Promise((resolve) => { releaseSeek = resolve; });
+  const player = new Player({
+    demuxerFactory: () => {
+      const demuxer = new SwitchableToyDemuxer(new MemoryDataSource(new Uint8Array([1])), 3);
+      demuxer.seek = async () => seekReady;
+      return demuxer;
+    },
+    capabilities: caps,
+    pipelineFactory: async () => ({ destroy: async () => {} }),
+  });
+  await player.load(new Uint8Array([1]));
+  const first = player.seek(500000);
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(() => player.seek(600000), (e) => e.code === 'STATE_ERROR');
+  releaseSeek({ actualTimestampUs: 500000 });
+  await first;
+  assert.equal(player.state, PLAYER_STATES.READY);
+  assert.equal(player.currentTimeValue, 500000);
+  await player.destroy();
+});
 test('seek：进行中拒绝切轨，不在 seek 完成后偷偷执行', async () => {
   let releaseSeek;
   const seekReady = new Promise((resolve) => { releaseSeek = resolve; });

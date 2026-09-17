@@ -325,9 +325,9 @@ export class Player extends Emitter {
     this._requireLoaded('seek');
     if (!Number.isFinite(timestampUs) || timestampUs < 0) throw stateError(`seek(): invalid timestampUs ${timestampUs}`);
     const previous = this.stateValue;
-    const seekToken = ++this._seekToken;
     this._pumpToken++;
     this._transition(PLAYER_STATES.SEEKING);
+    const seekToken = ++this._seekToken;
     try {
       const result = await this.demuxer.seek(Math.round(timestampUs));
       if (seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.DESTROYED) return result;
