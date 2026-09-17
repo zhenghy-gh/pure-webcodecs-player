@@ -72,6 +72,7 @@ export class MsePipeline extends Emitter {
     this._pendingUs = new Map();
     this._initializedTracks = new Set();
     this._announcedTrackKeys = new Set();
+    this._trackSwitchPromise = null;
 
     this.state = 'ready';
     this.counters = { initSegments: 0, mediaSegments: 0, samples: 0, bytes: 0, cues: 0 };
@@ -346,6 +347,22 @@ export class MsePipeline extends Emitter {
    * @param {number} trackId
    */
   async selectTrack(type, trackId) {
+    const run = () => this._selectTrack(type, trackId);
+    const previous = this._trackSwitchPromise ?? Promise.resolve();
+    const operation = previous.catch(() => {}).then(run);
+    const queued = operation.then(
+      () => {
+        if (this._trackSwitchPromise === queued) this._trackSwitchPromise = null;
+      },
+      () => {
+        if (this._trackSwitchPromise === queued) this._trackSwitchPromise = null;
+      },
+    );
+    this._trackSwitchPromise = queued;
+    return operation;
+  }
+
+  async _selectTrack(type, trackId) {
     if (this.state === 'destroyed') throw stateError('selectTrack(): pipeline destroyed');
     if (!this._initialized) await this.init();
     if (this.state === 'destroyed') throw stateError('selectTrack(): pipeline destroyed');

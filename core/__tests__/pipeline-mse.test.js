@@ -398,6 +398,32 @@ test('selectTrack：未初始化时等待 init 完成后再切轨', async () => 
   assert.equal(pipeline.active.audio, 3);
   assert.deepEqual(remuxer.inits, [1, 2, 3]);
 });
+test('selectTrack：并发请求按调用顺序串行完成', async () => {
+  let releaseAppend;
+  const appendReady = new Promise((resolve) => { releaseAppend = resolve; });
+  const mse = new FakeMseHelper();
+  const append = mse.append.bind(mse);
+  mse.append = async (key, data) => {
+    if (key === 'a3' && data[0] === 0xf0) await appendReady;
+    return append(key, data);
+  };
+  const { pipeline } = build({ mse, mediaInfo: multiTrackInfo });
+  await pipeline.init();
+
+  const changes = [];
+  pipeline.on('trackchange', (event) => changes.push(event.trackId));
+  const first = pipeline.selectTrack('audio', 3);
+  await new Promise((resolve) => setImmediate(resolve));
+  const second = pipeline.selectTrack('audio', 2);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(pipeline.active.audio, 2);
+
+  releaseAppend();
+  await Promise.all([first, second]);
+  assert.equal(pipeline.active.audio, 2);
+  assert.deepEqual(changes, [3, 2]);
+});
+
 test('切轨初始化失败时保留旧轨状态，并允许重试新轨', async () => {
   const tracks = new Map();
   let failInit = true;
