@@ -162,14 +162,18 @@ test('init：部分轨道 init 成功后失败，重试只补写未完成轨道'
     return append(key, data);
   };
   const { pipeline, remuxer } = build({ mse });
+  const added = [];
+  pipeline.on('trackAdded', (event) => added.push(event));
 
   await assert.rejects(() => pipeline.init(), /audio init append failed/);
   assert.deepEqual(remuxer.inits, [1, 2]);
+  assert.deepEqual(added.map(({ key }) => key), ['v1', 'a2']);
   assert.deepEqual([...pipeline._initializedTracks], ['v1']);
   assert.equal(pipeline.counters.initSegments, 1);
 
   await pipeline.init();
   assert.deepEqual(remuxer.inits, [1, 2, 2]);
+  assert.deepEqual(added.map(({ key }) => key), ['v1', 'a2']);
   assert.deepEqual([...pipeline._initializedTracks], ['v1', 'a2']);
   assert.equal(pipeline.counters.initSegments, 2);
 });

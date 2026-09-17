@@ -71,6 +71,7 @@ export class MsePipeline extends Emitter {
     /** @type {Map<number, number>} 待重封装样本累计时长（µs） */
     this._pendingUs = new Map();
     this._initializedTracks = new Set();
+    this._announcedTrackKeys = new Set();
 
     this.state = 'ready';
     this.counters = { initSegments: 0, mediaSegments: 0, samples: 0, bytes: 0, cues: 0 };
@@ -117,6 +118,8 @@ export class MsePipeline extends Emitter {
           await this.mse.addTrack(key, mime);
           if (this._initializedTracks.has(key)) continue;
           pendingInits.push({ track, key, mime, init: this.remuxer.createInitSegment(track) });
+          if (this._announcedTrackKeys.has(key)) continue;
+          this._announcedTrackKeys.add(key);
           this.emit('trackAdded', { trackId: track.id, key, mime });
         }
         for (const { key, init } of pendingInits) {
