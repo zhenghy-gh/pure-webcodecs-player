@@ -78,6 +78,8 @@ export class WebCodecsPipeline extends Emitter {
     this._liveEdgeUs = -1;
     this._firstFrameEmitted = false;
     this.state = 'ready';
+    this._initialized = false;
+    this._initPromise = null;
     this._lifecycleGeneration = 0;
     this.counters = { videoChunks: 0, audioChunks: 0, framesRendered: 0, framesDropped: 0, cues: 0, catchups: 0 };
 
@@ -87,14 +89,32 @@ export class WebCodecsPipeline extends Emitter {
   /* ------------------------------ 构建 ------------------------------ */
 
   /** 建管线（解码器/渲染器/音频输出）。幂等。 */
-  async init() {
-    if (this._initialized) return this;
-    this._initialized = true;
-    const video = [...this._tracks.values()].find((t) => t.type === 'video');
-    const audio = [...this._tracks.values()].find((t) => t.type === 'audio');
-    if (video) await this._setupVideo(video);
-    if (audio) await this._setupAudio(audio, this._lifecycleGeneration);
-    return this;
+  init() {
+    if (this._initialized) return Promise.resolve(this);
+    if (this._initPromise) return this._initPromise;
+    const generation = this._lifecycleGeneration;
+    let initPromise;
+    initPromise = Promise.resolve().then(async () => {
+      try {
+        const video = [...this._tracks.values()].find((t) => t.type === 'video');
+        const audio = [...this._tracks.values()].find((t) => t.type === 'audio');
+        if (video) await this._setupVideo(video);
+        if (audio) await this._setupAudio(audio, generation);
+        if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
+        this._initialized = true;
+        return this;
+      } catch (error) {
+        try { this._videoDecoder?.close?.(); } catch { /* 初始化失败时回收视频解码器 */ }
+        try { this._audioDecoder?.close?.(); } catch { /* 初始化失败时回收音频解码器 */ }
+        this._videoDecoder = null;
+        this._audioDecoder = null;
+        throw error;
+      } finally {
+        if (this._initPromise === initPromise) this._initPromise = null;
+      }
+    });
+    this._initPromise = initPromise;
+    return initPromise;
   }
 
   _setupVideo(track) {

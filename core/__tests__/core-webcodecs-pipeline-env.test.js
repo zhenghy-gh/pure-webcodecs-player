@@ -113,6 +113,40 @@ test('audioDataToPlanar：copyTo / planes / 兜底零填充 与通道数回落',
   assert.equal(audioDataToPlanar({ numberOfFrames: 2 }).length, 1);
 });
 
+test('init：解码器配置失败会清理已创建实例，并允许后续重试', async () => {
+  const created = [];
+  let failFirst = true;
+  const { pipeline } = build({
+    options: {
+      videoDecoderFactory: (init) => {
+        const decoder = new FakeDecoder();
+        decoder.init = init;
+        const configure = decoder.configure.bind(decoder);
+        decoder.configure = (config) => {
+          if (failFirst) {
+            failFirst = false;
+            throw new Error('configure failed');
+          }
+          configure(config);
+        };
+        created.push(decoder);
+        return decoder;
+      },
+    },
+  });
+
+  await assert.rejects(() => pipeline.init(), /configure failed/);
+  assert.equal(created.length, 1);
+  assert.equal(created[0].closed, true, '配置失败的解码器必须关闭');
+  assert.equal(pipeline._initialized, false);
+  assert.equal(pipeline._videoDecoder, null);
+
+  await pipeline.init();
+  assert.equal(created.length, 2);
+  assert.equal(created[1].closed, false);
+  assert.equal(pipeline._initialized, true);
+});
+
 /* ------------------------------ _createChunk ------------------------------ */
 
 test('_createChunk：key/delta 判定、duration 条件带、createChunk 覆盖与降级纯对象', async () => {
