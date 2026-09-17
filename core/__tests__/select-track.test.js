@@ -364,12 +364,15 @@ test('WebCodecs：异步切音频轨期间 destroy 不应复活新解码器或�
   await pipeline.init();
   const switching = pipeline.selectTrack('audio', 2);
   await pipeline.destroy();
-  resolveOutput(lateOutput);
   await switching;
-
   assert.equal(pipeline.state, 'destroyed');
   assert.equal(pipeline._audioDecoder, null);
   assert.equal(pipeline.audioOutput, null);
+  assert.equal(lateOutput.destroyed, false);
+
+  resolveOutput(lateOutput);
+  await new Promise((resolve) => setImmediate(resolve));
+
   assert.equal(lateOutput.destroyed, true);
   assert.equal(decoders.at(-1).closed, true);
 });

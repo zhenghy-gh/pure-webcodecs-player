@@ -81,6 +81,10 @@ export class WebCodecsPipeline extends Emitter {
     this._initialized = false;
     this._initPromise = null;
     this._lifecycleGeneration = 0;
+    this._lifecycleAbort = { aborted: false, promise: null, resolve: null };
+    this._lifecycleAbort.promise = new Promise((resolve) => {
+      this._lifecycleAbort.resolve = resolve;
+    });
     this._trackSwitchPromise = null;
     this.counters = { videoChunks: 0, audioChunks: 0, framesRendered: 0, framesDropped: 0, cues: 0, catchups: 0 };
 
@@ -147,6 +151,7 @@ export class WebCodecsPipeline extends Emitter {
   }
 
   async _setupAudio(track, generation = this._lifecycleGeneration) {
+    const lifecycleAbort = this._lifecycleAbort;
     const factory = this.options.audioDecoderFactory ??
       (typeof AudioDecoder === 'function'
         ? (init) => new AudioDecoder(init)
@@ -175,17 +180,34 @@ export class WebCodecsPipeline extends Emitter {
     let nextOutput = existing;
     // 同格式轨切换复用音频输出，避免重建 AudioWorklet 造成可闻断点
     if (!(existing && existing.sampleRate === sampleRate && (existing.channelCount ?? existing.channels) === channels)) {
-      try {
-        nextOutput = await (this.options.audioOutputFactory ?? createDefaultAudioOutput)({
+      let createdOutput = null;
+      const destroyOutput = (output) => {
+        if (output && output !== existing) {
+          try { output.destroy?.(); } catch { /* 音频输出释放失败不影响管线 */ }
+        }
+      };
+      const outputPromise = Promise.resolve().then(async () => {
+        createdOutput = await (this.options.audioOutputFactory ?? createDefaultAudioOutput)({
           sampleRate,
           channels,
         });
-        await nextOutput.init?.();
+        await createdOutput.init?.();
+        return createdOutput;
+      });
+      try {
+        nextOutput = await Promise.race([
+          outputPromise,
+          lifecycleAbort.promise.then(() => lifecycleAbort),
+        ]);
       } catch (err) {
-        try { nextOutput?.destroy?.(); } catch { /* 音频输出初始化失败时回收临时实例 */ }
-        // 无音频输出（Node/无 AudioContext）时降级为静音播放，不阻断视频
+        destroyOutput(createdOutput);
         nextOutput = null;
         this.emit('audio-unavailable', err);
+      }
+      if (nextOutput === lifecycleAbort || lifecycleAbort.aborted || generation !== this._lifecycleGeneration || this.state === 'destroyed') {
+        outputPromise.then(destroyOutput, () => destroyOutput(createdOutput));
+        try { decoder.close?.(); } catch { /* 过期解码器回收失败不影响销毁 */ }
+        return false;
       }
     }
     if (generation !== this._lifecycleGeneration || this.state === 'destroyed') {
@@ -539,6 +561,10 @@ export class WebCodecsPipeline extends Emitter {
     if (this.state === 'destroyed') return;
     this.state = 'destroyed';
     this._lifecycleGeneration += 1;
+    const lifecycleAbort = this._lifecycleAbort;
+    lifecycleAbort.aborted = true;
+    lifecycleAbort.resolve?.();
+    this._lifecycleAbort = null;
     if (this._frameTimer) { this._frameTimer(); this._frameTimer = null; }
     this._dropPendingFrames();
     try { this._videoDecoder?.close?.(); } catch { /* 忽略 */ }
