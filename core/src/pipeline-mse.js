@@ -133,6 +133,7 @@ export class MsePipeline extends Emitter {
           const key = this._keyOf(track);
           const mime = this.mimeFor(track);
           await this.mse.addTrack(key, mime);
+          if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
           if (this._initializedTracks.has(key)) continue;
           pendingInits.push({ track, key, mime, init: this.remuxer.createInitSegment(track) });
           if (this._announcedTrackKeys.has(key)) continue;

@@ -240,6 +240,31 @@ test('init：open 完成后 destroy 不再创建 SourceBuffer 或写入 init', a
   assert.equal(pipeline._initialized, false);
   assert.equal(pipeline.state, 'destroyed');
 });
+test('init：addTrack 完成后 destroy 不再创建或写入 init segment', async () => {
+  let releaseAddTrack;
+  const addTrackReady = new Promise((resolve) => { releaseAddTrack = resolve; });
+  const mse = new FakeMseHelper();
+  const addTrack = mse.addTrack.bind(mse);
+  mse.addTrack = async (...args) => {
+    await addTrackReady;
+    return addTrack(...args);
+  };
+  const { pipeline, remuxer } = build({ mse });
+  const added = [];
+  pipeline.on('trackAdded', (event) => added.push(event));
+
+  const initializing = pipeline.init();
+  await new Promise((resolve) => setImmediate(resolve));
+  await pipeline.destroy();
+  releaseAddTrack();
+  await initializing;
+
+  assert.deepEqual(remuxer.inits, []);
+  assert.deepEqual(added, []);
+  assert.equal(mse.appends.length, 0);
+  assert.equal(pipeline._initialized, false);
+  assert.equal(pipeline.state, 'destroyed');
+});
 test('init：destroy 发生在 setDuration 期间时不绑定监听或标记初始化完成', async () => {
   let releaseDuration;
   const durationReady = new Promise((resolve) => { releaseDuration = resolve; });
