@@ -208,6 +208,59 @@ test('selectTrack：destroy 期间当前与排队请求都结束且不写回状�
   assert.deepEqual(changes, []);
   assert.equal(pipeline._trackSwitchPromise, null);
 });
+test('end：等待正在进行的媒体段 append 后再 endOfStream', async () => {
+  let releaseAppend;
+  const appendGate = new Promise((resolve) => { releaseAppend = resolve; });
+  const mse = new FakeMseHelper();
+  const { pipeline } = build({ mse });
+  await pipeline.init();
+  mse.appendGate = appendGate;
+  await pipeline.pushSample(vsample(1));
+
+  const ending = pipeline.end();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(mse.eos, 0, 'append 未完成时不能提前 endOfStream');
+
+  releaseAppend();
+  await ending;
+  assert.equal(mse.eos, 1);
+  assert.equal(pipeline.counters.mediaSegments, 1);
+});
+
+test('end：并发调用共享同一收尾 Promise，避免重复 endOfStream', async () => {
+  const { pipeline, mse } = build();
+  await pipeline.init();
+  const eos = [];
+  pipeline.on('eos', (event) => eos.push(event));
+
+  const first = pipeline.end();
+  const second = pipeline.end();
+  assert.equal(first, second);
+  await Promise.all([first, second]);
+
+  assert.equal(mse.eos, 1);
+  assert.equal(eos.length, 1);
+});
+test('destroy：挂起的 flush 结束后不计数、不派发 segment', async () => {
+  let releaseAppend;
+  const appendGate = new Promise((resolve) => { releaseAppend = resolve; });
+  const mse = new FakeMseHelper();
+  const { pipeline } = build({ mse });
+  await pipeline.init();
+  mse.appendGate = appendGate;
+  await pipeline.pushSample(vsample(1));
+  const segments = [];
+  pipeline.on('segment', (segment) => segments.push(segment));
+
+  const flushing = pipeline.flush(1);
+  await new Promise((resolve) => setImmediate(resolve));
+  await pipeline.destroy();
+  assert.equal(await flushing, null);
+  releaseAppend();
+
+  assert.equal(pipeline.counters.mediaSegments, 0);
+  assert.deepEqual(segments, []);
+});
 test('bufferedAheadUs：取活动轨中最小水位（木桶效应）并转微秒；无能力返回 null', async () => {
   const { pipeline, mse } = build();
   await pipeline.init();

@@ -70,12 +70,19 @@ export class MsePipeline extends Emitter {
     this._pending = new Map();
     /** @type {Map<number, number>} 待重封装样本累计时长（µs） */
     this._pendingUs = new Map();
+    /** @type {Map<number, Promise<void>>} 同轨成段队列，保证 end 等待所有 append 完成 */
+    this._flushPromises = new Map();
+    this._endPromise = null;
     this._initializedTracks = new Set();
     this._announcedTrackKeys = new Set();
     this._trackSwitchPromise = null;
     this._trackSwitchAbort = { aborted: false, promise: null, resolve: null };
     this._trackSwitchAbort.promise = new Promise((resolve) => {
       this._trackSwitchAbort.resolve = resolve;
+    });
+    this._lifecycleAbort = { aborted: false, promise: null, resolve: null };
+    this._lifecycleAbort.promise = new Promise((resolve) => {
+      this._lifecycleAbort.resolve = resolve;
     });
 
     this.state = 'ready';
@@ -207,18 +214,35 @@ export class MsePipeline extends Emitter {
   }
 
   /** 把某轨待封装样本立即成段并 append（受缓冲水位背压）。 */
-  async flush(trackId) {
+  flush(trackId) {
+    const previous = this._flushPromises.get(trackId) ?? Promise.resolve();
+    const operation = previous.catch(() => {}).then(() => this._flushOne(trackId));
+    let tracked;
+    tracked = operation.finally(() => {
+      if (this._flushPromises.get(trackId) === tracked) this._flushPromises.delete(trackId);
+    });
+    this._flushPromises.set(trackId, tracked);
+    return tracked;
+  }
+
+  async _flushOne(trackId) {
+    if (this.state === 'destroyed') return null;
+    const generation = this._lifecycleGeneration;
+    const abort = this._lifecycleAbort;
     const track = this._tracks.get(trackId);
     const batch = this._pending.get(trackId) ?? [];
     if (!track || batch.length === 0) return null;
     this._pending.set(trackId, []);
     this._pendingUs.set(trackId, 0);
     const key = this._keyOf(track);
-    await this._waitBuffer(key);
+    await this._waitBuffer(key, abort);
+    if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return null;
     const segment = this.remuxer.createMediaSegment(track, batch);
     try {
-      await this.mse.append(key, segment.data);
+      await Promise.race([this.mse.append(key, segment.data), abort.promise]);
+      if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return null;
     } catch (err) {
+      if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return null;
       const e = err?.code ? err : decodeError('appendBuffer 失败', { cause: err });
       this.emit('error', e);
       throw e;
@@ -236,26 +260,41 @@ export class MsePipeline extends Emitter {
   }
 
   /** 全部轨收尾：flush 后 endOfStream（不调用则元素永不触发 ended）。 */
-  async end() {
-    if (this.state === 'destroyed' || !this.mse) return;
-    for (const id of [...this._pending.keys()]) {
-      try { await this.flush(id); } catch { /* 错误已广播 */ }
-    }
-    try {
-      await this.mse.endOfStream?.();
-      this.emit('eos', { reason: 'endOfStream' });
-    } catch (err) {
-      this.emit('error', decodeError('endOfStream 失败', { cause: err }));
-    }
+  end() {
+    if (this.state === 'destroyed' || !this.mse) return Promise.resolve();
+    if (this._endPromise) return this._endPromise;
+    let endPromise;
+    endPromise = (async () => {
+      const ids = new Set([...this._pending.keys(), ...this._flushPromises.keys()]);
+      for (const id of ids) {
+        try { await this.flush(id); } catch { /* 错误已广播 */ }
+      }
+      await Promise.all([...this._flushPromises.values()].map((promise) => promise.catch(() => {})));
+      if (this.state === 'destroyed' || !this.mse) return;
+      try {
+        await this.mse.endOfStream?.();
+        this.emit('eos', { reason: 'endOfStream' });
+      } catch (err) {
+        this.emit('error', decodeError('endOfStream 失败', { cause: err }));
+      }
+    })().finally(() => {
+      if (this._endPromise === endPromise) this._endPromise = null;
+    });
+    this._endPromise = endPromise;
+    return endPromise;
   }
 
   /** 背压：缓冲水位超阈值时让出事件循环。 */
-  async _waitBuffer(key) {
+  async _waitBuffer(key, abort = this._lifecycleAbort) {
     const ahead = () => this.mse?.bufferedAhead?.(key) ?? 0;
     let guard = 0;
     while (ahead() > this._maxBufferAheadSec && guard < 256) {
       guard += 1;
-      await new Promise((resolve) => this._schedule(resolve, 50));
+      await Promise.race([
+        new Promise((resolve) => this._schedule(resolve, 50)),
+        abort?.promise,
+      ]);
+      if (abort?.aborted || this.state === 'destroyed') return;
     }
   }
 
@@ -425,8 +464,13 @@ export class MsePipeline extends Emitter {
     abort.aborted = true;
     abort.resolve?.(undefined);
     this._trackSwitchAbort = null;
+    const lifecycleAbort = this._lifecycleAbort;
+    lifecycleAbort.aborted = true;
+    lifecycleAbort.resolve?.(undefined);
+    this._lifecycleAbort = null;
     this._pending.clear();
     this._pendingUs.clear();
+    this._flushPromises.clear();
     for (const off of this._elementOffs) {
       try { off(); } catch { /* 忽略 */ }
     }
