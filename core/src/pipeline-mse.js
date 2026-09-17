@@ -117,7 +117,9 @@ export class MsePipeline extends Emitter {
           this.mse = mse;
         }
         await this.mse.open?.();
+        if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
         this.remuxer = this.remuxer ?? (await this._remuxerFactory());
+        if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
 
         // 两阶段建轨：① 先为所有活动轨建齐 SourceBuffer —— 真实 Chrome 一旦某 SB 写过数据，
         // 再新建 SB 会以 QuotaExceededError 拒绝（"reached the limit of SourceBuffer objects"）；
@@ -127,6 +129,7 @@ export class MsePipeline extends Emitter {
           if (track.type !== 'video' && track.type !== 'audio') continue;
           // 只为当前选中轨建 SourceBuffer（其余等 selectTrack 时再建）
           if (this.active[track.type] !== track.id) continue;
+          if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
           const key = this._keyOf(track);
           const mime = this.mimeFor(track);
           await this.mse.addTrack(key, mime);

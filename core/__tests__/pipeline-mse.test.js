@@ -207,6 +207,39 @@ test('init：mseFactory 迟到于 destroy 时回收未挂载的 MediaSource', as
   assert.equal(pipeline.state, 'destroyed');
 });
 
+test('init：open 完成后 destroy 不再创建 SourceBuffer 或写入 init', async () => {
+  let releaseOpen;
+  const openReady = new Promise((resolve) => { releaseOpen = resolve; });
+  const mse = new FakeMseHelper();
+  let addTrackCalls = 0;
+  const addTrack = mse.addTrack.bind(mse);
+  mse.addTrack = async (...args) => {
+    addTrackCalls += 1;
+    return addTrack(...args);
+  };
+  let releaseRemuxer;
+  const remuxerReady = new Promise((resolve) => { releaseRemuxer = resolve; });
+  const { pipeline } = build({
+    mse,
+    options: {
+      remuxer: null,
+      remuxerFactory: async () => remuxerReady,
+    },
+  });
+
+  const initializing = pipeline.init();
+  await new Promise((resolve) => setImmediate(resolve));
+  releaseOpen();
+  await new Promise((resolve) => setImmediate(resolve));
+  await pipeline.destroy();
+  releaseRemuxer(new FakeRemuxer());
+  await initializing;
+
+  assert.equal(addTrackCalls, 0);
+  assert.equal(mse.appends.length, 0);
+  assert.equal(pipeline._initialized, false);
+  assert.equal(pipeline.state, 'destroyed');
+});
 test('init：destroy 发生在 setDuration 期间时不绑定监听或标记初始化完成', async () => {
   let releaseDuration;
   const durationReady = new Promise((resolve) => { releaseDuration = resolve; });
