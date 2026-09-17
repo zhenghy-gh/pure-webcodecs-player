@@ -525,6 +525,62 @@ test('seek：进行中拒绝切轨，不在 seek 完成后偷偷执行', async (
   assert.deepEqual(calls, []);
   await player.destroy();
 });
+test('selectTrack：排队后被 seek 抢占时不执行切轨', async () => {
+  const calls = [];
+  const player = new Player({
+    demuxerFactory: () => new SwitchableToyDemuxer(new MemoryDataSource(new Uint8Array([1])), 3),
+    capabilities: caps,
+    pipelineFactory: async () => ({
+      selectTrack: async () => { calls.push('selectTrack'); },
+      seek: async () => { calls.push('seek'); },
+      destroy: async () => {},
+    }),
+  });
+  await player.load(new Uint8Array([1]));
+
+  const switching = player.selectTrack('video', 2);
+  const seeking = player.seek(500000);
+  await assert.rejects(() => switching, (e) => e.code === 'STATE_ERROR');
+  await seeking;
+
+  assert.deepEqual(calls, ['seek']);
+  assert.equal(player.selectedTracks.video, 1);
+  await player.destroy();
+});
+
+test('selectTrack：seek 抢占管线切轨后恢复旧轨，再执行 seek', async () => {
+  let releaseSwitch;
+  const switchReady = new Promise((resolve) => { releaseSwitch = resolve; });
+  const calls = [];
+  let activeTrack = 1;
+  const player = new Player({
+    demuxerFactory: () => new SwitchableToyDemuxer(new MemoryDataSource(new Uint8Array([1])), 3),
+    capabilities: caps,
+    pipelineFactory: async () => ({
+      selectTrack: async (_type, trackId) => {
+        calls.push(`selectTrack:${trackId}`);
+        if (trackId === 2) await switchReady;
+        activeTrack = trackId;
+      },
+      seek: async () => { calls.push('seek'); },
+      destroy: async () => {},
+    }),
+  });
+  await player.load(new Uint8Array([1]));
+
+  const switching = player.selectTrack('video', 2);
+  await new Promise((resolve) => setImmediate(resolve));
+  const seeking = player.seek(500000);
+  releaseSwitch();
+  await assert.doesNotReject(() => seeking);
+  await switching;
+
+  assert.deepEqual(calls, ['selectTrack:2', 'selectTrack:1', 'seek']);
+  assert.equal(activeTrack, 1);
+  assert.equal(player.selectedTracks.video, 1);
+  await player.destroy();
+});
+
 test('自然结束：ended 事件、state 转 paused，ended 后 play 自动 seek(0) 重播', async () => {
   const calls = [];
   const player = makePlayer({ pipelineFactory: instantPipelineFactory(calls) }, { perTrack: 2 });

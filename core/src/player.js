@@ -325,6 +325,8 @@ export class Player extends Emitter {
     this._requireLoaded('seek');
     if (!Number.isFinite(timestampUs) || timestampUs < 0) throw stateError(`seek(): invalid timestampUs ${timestampUs}`);
     const previous = this.stateValue;
+    const pendingSwitch = this._trackSwitchPromise;
+    this._trackSwitchToken++;
     this._pumpToken++;
     this._transition(PLAYER_STATES.SEEKING);
     const seekToken = ++this._seekToken;
@@ -335,6 +337,10 @@ export class Player extends Emitter {
       this.endedValue = false; // 任何 seek 均清除 ended（HTMLMediaElement 语义；此前 play() 自动重播后 ended 恒为 true）
       this.clock.seekTo(this.currentTimeValue / 1e6);
       this.statsValue.markSeek();
+      if (pendingSwitch) {
+        try { await pendingSwitch; } catch { /* 过期切轨失败不影响 seek */ }
+      }
+      if (seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.DESTROYED) return result;
       await this.pipeline?.seek?.(this.currentTimeValue);
       if (seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.DESTROYED) return result;
       const returnState = previous === PLAYER_STATES.PLAYING
@@ -363,7 +369,8 @@ export class Player extends Emitter {
     if (this.stateValue === PLAYER_STATES.SEEKING) throw stateError('selectTrack(): seek in progress');
     if (!this.mediaInfoValue.tracks.some((t) => t.type === type && t.id === trackId)) throw stateError(`track not found: ${type}/${trackId}`);
     if (this.selectedTracks[type] === trackId) return;
-    const run = () => this._selectTrack(type, trackId);
+    const seekToken = this._seekToken;
+    const run = () => this._selectTrack(type, trackId, seekToken);
     const previous = this._trackSwitchPromise ?? Promise.resolve();
     const operation = previous.catch(() => {}).then(run);
     const queued = operation.then(
@@ -378,22 +385,34 @@ export class Player extends Emitter {
     return operation;
   }
 
-  async _selectTrack(type, trackId) {
+  async _selectTrack(type, trackId, seekToken) {
     if (this.stateValue === PLAYER_STATES.DESTROYED || !this.demuxer) throw stateError('selectTrack(): player is not loaded');
+    if (seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.SEEKING) throw stateError('selectTrack(): seek in progress');
     if (this.selectedTracks[type] === trackId) return;
+    const previousTrackId = this.selectedTracks[type];
     const switchToken = ++this._trackSwitchToken;
     const wasPlaying = this.stateValue === PLAYER_STATES.PLAYING;
     this._pumpToken++; // 中断当前泵，避免旧轨样本继续灌入
     try {
       await this.pipeline?.selectTrack?.(type, trackId);
     } catch (error) {
-      if (switchToken === this._trackSwitchToken && wasPlaying && this.stateValue === PLAYER_STATES.PLAYING) {
+      if (switchToken === this._trackSwitchToken && seekToken === this._seekToken && this.stateValue === PLAYER_STATES.PLAYING) {
         const token = ++this._pumpToken;
         void this._pump(token);
       }
       throw asPlayerError(error, '切换轨道失败');
     }
-    if (switchToken !== this._trackSwitchToken || this.stateValue === PLAYER_STATES.DESTROYED || !this.demuxer) return;
+    const stale = switchToken !== this._trackSwitchToken
+      || seekToken !== this._seekToken
+      || this.stateValue === PLAYER_STATES.SEEKING
+      || this.stateValue === PLAYER_STATES.DESTROYED
+      || !this.demuxer;
+    if (stale) {
+      if (seekToken !== this._seekToken && this.stateValue !== PLAYER_STATES.DESTROYED && previousTrackId != null) {
+        try { await this.pipeline?.selectTrack?.(type, previousTrackId); } catch {}
+      }
+      return;
+    }
     this.selectedTracks[type] = trackId;
     this.emit('trackchange', { type, trackId });
     if (wasPlaying) {
