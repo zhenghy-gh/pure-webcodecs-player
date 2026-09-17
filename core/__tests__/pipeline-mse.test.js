@@ -150,6 +150,21 @@ test('init：并发调用共享同一 Promise，不重复创建轨道或写 init
   assert.equal(pipeline.counters.initSegments, 2);
 });
 
+test('msePipelineFactory：初始化失败时回收已创建的 MediaSource', async () => {
+  const mse = new FakeMseHelper();
+  mse.append = async (key, data) => {
+    if (key === 'v1') throw new Error('init append failed');
+    mse.appends.push({ key, byteLength: data.byteLength });
+  };
+
+  await assert.rejects(
+    () => msePipelineFactory({ mediaElement: new FakeMediaElement(), mse, remuxer: new FakeRemuxer() })({
+      route: 'mse', mediaInfo: avInfo, player: null, options: {},
+    }),
+    /init append failed/,
+  );
+  assert.equal(mse.destroyed, true, '工厂初始化失败应回收已创建的 MediaSource');
+});
 test('init：部分轨道 init 成功后失败，重试只补写未完成轨道', async () => {
   let failInit = true;
   const mse = new FakeMseHelper();

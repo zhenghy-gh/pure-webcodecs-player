@@ -7,7 +7,8 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WebCodecsPipeline, audioDataToPlanar } from '../src/pipeline-webcodecs.js';
+import { WebCodecsPipeline, audioDataToPlanar, webcodecsPipelineFactory } from '../src/pipeline-webcodecs.js';
+import { VideoFrameRenderer } from '../src/video-frame-renderer.js';
 import { createSample } from '../src/types.js';
 
 class FakeDecoder {
@@ -147,7 +148,46 @@ test('init：解码器配置失败会清理已创建实例，并允许后续重�
   assert.equal(pipeline._initialized, true);
 });
 
-/* ------------------------------ _createChunk ------------------------------ */
+test('webcodecsPipelineFactory：初始化失败时回收已创建的 renderer', async () => {
+  const originalDocument = globalThis.document;
+  const originalDestroy = VideoFrameRenderer.prototype.destroy;
+  const canvas = { getContext: (kind) => kind === '2d' ? {} : null };
+  let destroyed = false;
+  try {
+    globalThis.document = {};
+    VideoFrameRenderer.prototype.destroy = function destroyRenderer() {
+      destroyed = true;
+      return originalDestroy.call(this);
+    };
+    await assert.rejects(
+      () => webcodecsPipelineFactory({
+        canvas,
+        videoDecoderFactory: (init) => {
+          const decoder = new FakeDecoder(init);
+          decoder.configure = () => { throw new Error('decoder init failed'); };
+          return decoder;
+        },
+      })({
+        route: 'webcodecs',
+        mediaInfo: {
+          container: 'mkv',
+          tracks: [{ id: 1, type: 'video', codec: 'avc1.42E01E' }],
+          durationUs: 1_000_000,
+          seekable: true,
+          live: false,
+        },
+        player: null,
+        options: {},
+      }),
+      /decoder init failed/,
+    );
+    assert.equal(destroyed, true, '工厂初始化失败应回收已创建的 renderer');
+  } finally {
+    VideoFrameRenderer.prototype.destroy = originalDestroy;
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+  }
+});
 
 test('_createChunk：key/delta 判定、duration 条件带、createChunk 覆盖与降级纯对象', async () => {
   const { pipeline } = build();

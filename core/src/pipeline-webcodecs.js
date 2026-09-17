@@ -647,8 +647,13 @@ export function webcodecsPipelineFactory(options = {}) {
         fit: merged.fit ?? 'contain',
       });
     }
-    await pipeline.init();
-    return pipeline;
+    try {
+      await pipeline.init();
+      return pipeline;
+    } catch (error) {
+      try { await pipeline.destroy(); } catch { /* 初始化失败时尽力回收底层资源 */ }
+      throw error;
+    }
   };
 }
 

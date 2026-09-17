@@ -537,7 +537,12 @@ export function msePipelineFactory(options = {}) {
   return async function createPipeline(ctx) {
     const merged = { ...ctx.options, ...options };
     const pipeline = new MsePipeline({ ...ctx, options: merged });
-    await pipeline.init();
-    return pipeline;
+    try {
+      await pipeline.init();
+      return pipeline;
+    } catch (error) {
+      try { await pipeline.destroy(); } catch { /* 初始化失败时尽力回收底层资源 */ }
+      throw error;
+    }
   };
 }
