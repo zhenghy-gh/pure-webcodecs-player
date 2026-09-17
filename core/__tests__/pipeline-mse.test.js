@@ -541,6 +541,81 @@ test('selectTrack：并发请求按调用顺序串行完成', async () => {
   assert.deepEqual(changes, [3, 2]);
 });
 
+test('切轨目标轨初始化失败时不丢失背压中的旧轨 flush', async () => {
+  let waitCallback;
+  let waiting = true;
+  let failInit = true;
+  const tracks = new Map();
+  const appends = [];
+  const mse = {
+    async open() {},
+    async addTrack(key, mime) { tracks.set(key, { key, mime }); },
+    async append(key, data) {
+      if (key === 'a3' && failInit && data[0] === 0xf0) {
+        failInit = false;
+        throw new Error('target init append failed');
+      }
+      appends.push({ key, data });
+    },
+    bufferedAhead: () => (waiting ? 60 : 0),
+    async endOfStream() {},
+    destroy() {},
+    tracks,
+  };
+  const remuxer = {
+    createInitSegment(track) { return new Uint8Array([0xf0, track.id]); },
+    createMediaSegment(track, samples) {
+      return {
+        data: new Uint8Array(samples.length),
+        sequenceNumber: 0,
+        sampleCount: samples.length,
+        baseMediaDecodeTimeUs: samples[0].timestamp,
+        durationUs: samples.reduce((sum, sample) => sum + (sample.duration ?? 0), 0),
+      };
+    },
+  };
+  const { pipeline } = build({
+    mse,
+    remuxer,
+    mediaInfo: multiTrackInfo,
+    options: {
+      schedule: (fn) => {
+        waitCallback = fn;
+        return () => {};
+      },
+    },
+  });
+  await pipeline.init();
+  await pipeline.pushSample(createSample({
+    trackId: 2,
+    codec: 'mp4a.40.2',
+    timestamp: 0,
+    duration: 100000,
+    keyframe: true,
+    data: new Uint8Array([1]),
+  }));
+  const segments = [];
+  pipeline.on('segment', (segment) => segments.push(segment));
+
+  const flushing = pipeline.flush(2);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(typeof waitCallback, 'function', '旧轨 flush 应停在背压等待');
+
+  await assert.rejects(() => pipeline.selectTrack('audio', 3), /target init append failed/);
+  assert.equal(pipeline.active.audio, 2);
+
+  waiting = false;
+  waitCallback();
+  const segment = await flushing;
+  assert.equal(segment.sampleCount, 1, '旧轨 flush 应在失败切轨后继续完成');
+  assert.equal(pipeline.counters.mediaSegments, 1);
+  assert.equal(segments.length, 1);
+  assert.equal(segments[0].trackId, 2);
+  assert.equal(pipeline.active.audio, 2);
+  assert.equal(pipeline._initializedTracks.has('a3'), false);
+  assert.equal(appends.filter(({ key }) => key === 'a3').length, 0, '失败 init 不应留下目标轨媒体数据');
+});
+
 test('切轨初始化失败时保留旧轨状态，并允许重试新轨', async () => {
   const tracks = new Map();
   let failInit = true;

@@ -433,7 +433,6 @@ export class MsePipeline extends Emitter {
     const track = this._tracks.get(trackId);
     if (!track || track.type !== type) throw stateError(`track not found: ${type}/${trackId}`);
     if (this.active[type] === trackId) return;
-    this._timelineGeneration += 1;
     const generation = this._lifecycleGeneration;
     const previousId = this.active[type];
     if (type === 'video' || type === 'audio') {
@@ -459,6 +458,7 @@ export class MsePipeline extends Emitter {
         this._initializedTracks.add(key);
       }
     }
+    this._timelineGeneration += 1;
     this.active[type] = trackId;
     // 旧轨待封装样本直接丢弃，避免串到新轨时间轴
     if (previousId != null) {
