@@ -465,6 +465,9 @@ export class WebCodecsPipeline extends Emitter {
    * @param {number} trackId
    */
   async selectTrack(type, trackId) {
+    if (this.state === 'destroyed') throw stateError('selectTrack(): pipeline destroyed');
+    if (!this._initialized) await this.init();
+    if (this.state === 'destroyed') throw stateError('selectTrack(): pipeline destroyed');
     const track = this._tracks.get(trackId);
     if (!track || track.type !== type) throw stateError(`track not found: ${type}/${trackId}`);
     if (this.active[type] === trackId) return;

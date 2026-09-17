@@ -453,6 +453,51 @@ test('setVolume/setMuted/setPlaybackRate 透传音频输出与时钟', async () 
   assert.deepEqual(avSyncRate, [2]);
 });
 
+test('selectTrack：初始化进行中等待同一建链，不并行创建第二套音频解码器', async () => {
+  let releaseOutput;
+  const outputReady = new Promise((resolve) => { releaseOutput = resolve; });
+  const createdAudio = [];
+  let outputCalls = 0;
+  const { pipeline } = build({
+    mediaInfo: {
+      container: 'mkv',
+      tracks: [
+        { id: 1, type: 'video', codec: 'avc1.42E01E' },
+        { id: 3, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 },
+        { id: 4, type: 'audio', codec: 'opus', sampleRate: 48000, numberOfChannels: 2 },
+      ],
+      durationUs: 1_000_000, seekable: true, live: false,
+    },
+    options: {
+      audioDecoderFactory: (init) => {
+        const decoder = new FakeDecoder();
+        decoder.init = init;
+        createdAudio.push(decoder);
+        return decoder;
+      },
+      audioOutputFactory: async () => {
+        outputCalls += 1;
+        if (outputCalls === 1) await outputReady;
+        return new FakeAudioOutput();
+      },
+    },
+  });
+
+  const initializing = pipeline.init();
+  await new Promise((resolve) => setImmediate(resolve));
+  const switching = pipeline.selectTrack('audio', 4);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(createdAudio.length, 1, '初始化未完成时不应并行创建切轨解码器');
+
+  releaseOutput();
+  await initializing;
+  await switching;
+  assert.equal(createdAudio.length, 2, '初始化完成后才创建新轨解码器');
+  assert.equal(createdAudio[0].closed, true);
+  assert.equal(createdAudio[1].config.codec, 'opus');
+  assert.equal(pipeline.active.audio, 4);
+});
+
 test('selectTrack：视频轨重建解码链并丢弃待渲染帧；音频轨重建并清缓冲', async () => {
   const audioOutput = new FakeAudioOutput();
   const { pipeline } = build({
