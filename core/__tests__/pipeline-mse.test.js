@@ -132,6 +132,71 @@ test('init：双轨建 SourceBuffer 并写 init segment，mime 按轨类型组�
   assert.equal(pipeline.counters.initSegments, 2);
 });
 
+test('init：并发调用共享同一 Promise，不重复创建轨道或写 init', async () => {
+  let releaseOpen;
+  const openGate = new Promise((resolve) => { releaseOpen = resolve; });
+  const mse = new FakeMseHelper();
+  mse.open = async () => openGate;
+  const { pipeline, remuxer } = build({ mse });
+
+  const first = pipeline.init();
+  const second = pipeline.init();
+  assert.equal(first, second, '并发 init 应共享同一 Promise');
+  releaseOpen();
+  await Promise.all([first, second]);
+
+  assert.equal(mse.tracks.size, 2);
+  assert.deepEqual(remuxer.inits, [1, 2]);
+  assert.equal(pipeline.counters.initSegments, 2);
+});
+
+test('init：mseFactory 迟到于 destroy 时回收未挂载的 MediaSource', async () => {
+  let releaseMse;
+  const mseReady = new Promise((resolve) => { releaseMse = resolve; });
+  const lateMse = new FakeMseHelper();
+  const element = new FakeMediaElement();
+  const pipeline = new MsePipeline({
+    route: 'mse',
+    mediaInfo: avInfo,
+    player: null,
+    options: {
+      mediaElement: element,
+      mseFactory: async () => {
+        await mseReady;
+        return lateMse;
+      },
+      remuxer: new FakeRemuxer(),
+    },
+  });
+
+  const initializing = pipeline.init();
+  await new Promise((resolve) => setImmediate(resolve));
+  await pipeline.destroy();
+  releaseMse();
+  await initializing;
+
+  assert.equal(lateMse.destroyed, true, '迟到的 MediaSource 必须回收');
+  assert.equal(pipeline.mse, null);
+  assert.equal(pipeline.state, 'destroyed');
+});
+
+test('init：destroy 发生在 setDuration 期间时不绑定监听或标记初始化完成', async () => {
+  let releaseDuration;
+  const durationReady = new Promise((resolve) => { releaseDuration = resolve; });
+  const mse = new FakeMseHelper();
+  mse.setDuration = async () => durationReady;
+  const { pipeline, element } = build({ mse });
+
+  const initializing = pipeline.init();
+  await new Promise((resolve) => setImmediate(resolve));
+  await pipeline.destroy();
+  releaseDuration();
+  await initializing;
+
+  assert.equal(pipeline.state, 'destroyed');
+  assert.equal(pipeline._initialized, false);
+  assert.equal(element.listeners.size, 0);
+});
 test('缺少 mediaElement：init 报 NOT_SUPPORTED', async () => {
   const pipeline = new MsePipeline({
     route: 'mse',

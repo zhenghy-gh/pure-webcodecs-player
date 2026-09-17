@@ -75,6 +75,7 @@ export class MsePipeline extends Emitter {
     this.state = 'ready';
     this.counters = { initSegments: 0, mediaSegments: 0, samples: 0, bytes: 0, cues: 0 };
     this._initialized = false;
+    this._initPromise = null;
     this._firstFrameEmitted = false;
     this._elementOffs = [];
     this._lifecycleGeneration = 0;
@@ -83,40 +84,63 @@ export class MsePipeline extends Emitter {
   /* ------------------------------ 构建 ------------------------------ */
 
   /** 建管线：开 MediaSource、建 SourceBuffer、写 init segment。幂等。 */
-  async init() {
-    if (this._initialized) return this;
-    if (!this.element) throw notSupported('MSE 管线需要 mediaElement（<video>/<audio>）');
-    // mse 可注入（测试/宿主复用），未注入时用默认 MseHelper 打开
-    this.mse = this.mse ?? (await this._mseFactory({ element: this.element, managed: this.options.managed }));
-    await this.mse.open?.();
-    this.remuxer = this.remuxer ?? (await this._remuxerFactory());
+  init() {
+    if (this._initialized) return Promise.resolve(this);
+    if (this._initPromise) return this._initPromise;
+    const generation = this._lifecycleGeneration;
+    let initPromise;
+    initPromise = Promise.resolve().then(async () => {
+      try {
+        if (!this.element) throw notSupported('MSE 管线需要 mediaElement（<video>/<audio>）');
+        // mse 可注入（测试/宿主复用），未注入时用默认 MseHelper 打开
+        if (!this.mse) {
+          const mse = await this._mseFactory({ element: this.element, managed: this.options.managed });
+          if (generation !== this._lifecycleGeneration || this.state === 'destroyed') {
+            try { mse?.destroy?.(); } catch { /* 过期 MediaSource 回收失败不影响销毁 */ }
+            return this;
+          }
+          this.mse = mse;
+        }
+        await this.mse.open?.();
+        this.remuxer = this.remuxer ?? (await this._remuxerFactory());
 
-    // 两阶段建轨：① 先为所有活动轨建齐 SourceBuffer —— 真实 Chrome 一旦某 SB 写过数据，
-    // 再新建 SB 会以 QuotaExceededError 拒绝（"reached the limit of SourceBuffer objects"）；
-    // ② 再统一写 init segment。两者不能交错。
-    const pendingInits = [];
-    for (const track of this._tracks.values()) {
-      if (track.type !== 'video' && track.type !== 'audio') continue;
-      // 只为当前选中轨建 SourceBuffer（其余等 selectTrack 时再建）
-      if (this.active[track.type] !== track.id) continue;
-      const key = this._keyOf(track);
-      const mime = this.mimeFor(track);
-      await this.mse.addTrack(key, mime);
-      pendingInits.push({ track, key, mime, init: this.remuxer.createInitSegment(track) });
-      this.emit('trackAdded', { trackId: track.id, key, mime });
-    }
-    for (const { key, init } of pendingInits) {
-      await this.mse.append(key, init);
-      this._initializedTracks.add(key);
-      this.counters.initSegments += 1;
-    }
-    const durationUs = this.mediaInfo?.durationUs;
-    if (Number.isFinite(durationUs) && durationUs > 0) {
-      try { await this.mse.setDuration?.(durationUs / 1_000_000); } catch { /* 直播流无时长 */ }
-    }
-    this._attachElementEvents();
-    this._initialized = true;
-    return this;
+        // 两阶段建轨：① 先为所有活动轨建齐 SourceBuffer —— 真实 Chrome 一旦某 SB 写过数据，
+        // 再新建 SB 会以 QuotaExceededError 拒绝（"reached the limit of SourceBuffer objects"）；
+        // ② 再统一写 init segment。两者不能交错。
+        const pendingInits = [];
+        for (const track of this._tracks.values()) {
+          if (track.type !== 'video' && track.type !== 'audio') continue;
+          // 只为当前选中轨建 SourceBuffer（其余等 selectTrack 时再建）
+          if (this.active[track.type] !== track.id) continue;
+          const key = this._keyOf(track);
+          const mime = this.mimeFor(track);
+          await this.mse.addTrack(key, mime);
+          pendingInits.push({ track, key, mime, init: this.remuxer.createInitSegment(track) });
+          this.emit('trackAdded', { trackId: track.id, key, mime });
+        }
+        for (const { key, init } of pendingInits) {
+          await this.mse.append(key, init);
+          if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
+          this._initializedTracks.add(key);
+          this.counters.initSegments += 1;
+        }
+        const durationUs = this.mediaInfo?.durationUs;
+        if (Number.isFinite(durationUs) && durationUs > 0) {
+          try { await this.mse.setDuration?.(durationUs / 1_000_000); } catch { /* 直播流无时长 */ }
+        }
+        if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
+        this._attachElementEvents();
+        this._initialized = true;
+        return this;
+      } catch (error) {
+        if (generation === this._lifecycleGeneration && this.state !== 'destroyed') throw error;
+        return this;
+      } finally {
+        if (this._initPromise === initPromise) this._initPromise = null;
+      }
+    });
+    this._initPromise = initPromise;
+    return initPromise;
   }
 
   _keyOf(track) {
