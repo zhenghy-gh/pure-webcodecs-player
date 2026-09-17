@@ -123,9 +123,10 @@ export class WebCodecsPipeline extends Emitter {
         ? (init) => new VideoDecoder(init)
         : null);
     if (!factory) throw notSupported('当前环境没有 VideoDecoder', { codec: track.codec });
-    const decoder = factory({
-      output: (frame) => this._onVideoFrame(frame),
-      error: (err) => this._onDecodeError(err, 'video'),
+    let decoder;
+    decoder = factory({
+      output: (frame) => this._onVideoFrame(frame, decoder),
+      error: (err) => this._onDecodeError(err, 'video', decoder),
     });
     const config = {
       codec: track.codec,
@@ -150,9 +151,10 @@ export class WebCodecsPipeline extends Emitter {
         ? (init) => new AudioDecoder(init)
         : null);
     if (!factory) throw notSupported('当前环境没有 AudioDecoder', { codec: track.codec });
-    const decoder = factory({
-      output: (audioData) => this._onAudioData(audioData),
-      error: (err) => this._onDecodeError(err, 'audio'),
+    let decoder;
+    decoder = factory({
+      output: (audioData) => this._onAudioData(audioData, decoder),
+      error: (err) => this._onDecodeError(err, 'audio', decoder),
     });
     const audioConfig = {
       codec: track.codec,
@@ -254,13 +256,21 @@ export class WebCodecsPipeline extends Emitter {
 
   /* ------------------------------ 输出回调 ------------------------------ */
 
-  _onVideoFrame(frame) {
+  _onVideoFrame(frame, decoder = this._videoDecoder) {
+    if (this.state === 'destroyed' || decoder !== this._videoDecoder) {
+      this._closeFrame(frame);
+      return;
+    }
     const ts = typeof frame?.timestamp === 'number' ? frame.timestamp : 0;
     this._frames.push({ frame, ts });
     this._pumpFrames();
   }
 
-  _onAudioData(audioData) {
+  _onAudioData(audioData, decoder = this._audioDecoder) {
+    if (this.state === 'destroyed' || decoder !== this._audioDecoder) {
+      try { audioData?.close?.(); } catch { /* 过期音频帧释放失败不影响管线 */ }
+      return;
+    }
     try {
       const channels = audioDataToPlanar(audioData);
       this.audioOutput?.push?.(channels);
@@ -271,7 +281,8 @@ export class WebCodecsPipeline extends Emitter {
     }
   }
 
-  _onDecodeError(err, kind) {
+  _onDecodeError(err, kind, decoder = kind === 'video' ? this._videoDecoder : this._audioDecoder) {
+    if (this.state === 'destroyed' || decoder !== (kind === 'video' ? this._videoDecoder : this._audioDecoder)) return;
     const e = decodeError(`${kind} 解码失败`, { cause: err });
     this.player?.statsValue?.markDecodeError?.({ kind, message: err?.message });
     this.emit('error', e);

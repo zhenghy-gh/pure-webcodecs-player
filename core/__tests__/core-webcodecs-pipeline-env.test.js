@@ -518,6 +518,51 @@ test('selectTrack：初始化进行中等待同一建链，不并行创建第二
   assert.equal(pipeline.active.audio, 4);
 });
 
+test('解码器迟到回调：旧视频帧和音频数据释放且不进入当前管线', async () => {
+  const createdVideo = [];
+  const createdAudio = [];
+  const { pipeline } = build({ mediaInfo: {
+    container: 'mkv',
+    tracks: [
+      { id: 1, type: 'video', codec: 'avc1.42E01E' },
+      { id: 2, type: 'video', codec: 'avc1.640028' },
+      { id: 3, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 },
+      { id: 4, type: 'audio', codec: 'opus', sampleRate: 48000, numberOfChannels: 2 },
+    ],
+    durationUs: 1_000_000, seekable: true, live: false,
+  }, options: {
+    videoDecoderFactory: (init) => { const decoder = new FakeDecoder(init); createdVideo.push(decoder); return decoder; },
+    audioDecoderFactory: (init) => { const decoder = new FakeDecoder(init); createdAudio.push(decoder); return decoder; },
+  } });
+  await pipeline.init();
+  const oldVideo = createdVideo[0];
+  const oldAudio = createdAudio[0];
+  await pipeline.selectTrack('video', 2);
+  await pipeline.selectTrack('audio', 4);
+
+  const staleVideo = new FakeFrame(0);
+  const staleAudio = { numberOfChannels: 1, numberOfFrames: 1, close() { this.closed = true; } };
+  oldVideo.emit(staleVideo);
+  oldAudio.emit(staleAudio);
+
+  assert.equal(staleVideo.closed, true);
+  assert.equal(staleAudio.closed, true);
+  assert.equal(pipeline._frames.length, 0);
+  assert.equal(pipeline.counters.framesDropped, 0);
+  assert.equal(pipeline.counters.cues, 0);
+});
+
+test('destroy 后解码器迟到视频回调立即释放帧', async () => {
+  const { pipeline, videoDecoder } = build();
+  await pipeline.init();
+  await pipeline.destroy();
+
+  const stale = new FakeFrame(0);
+  videoDecoder.emit(stale);
+
+  assert.equal(stale.closed, true);
+  assert.equal(pipeline._frames.length, 0);
+});
 test('selectTrack：视频轨重建解码链并丢弃待渲染帧；音频轨重建并清缓冲', async () => {
   const audioOutput = new FakeAudioOutput();
   const { pipeline } = build({
