@@ -497,18 +497,30 @@ export class WebCodecsPipeline extends Emitter {
 
   /** @param {number} timestampUs 实际落点（整数微秒） */
   seek(timestampUs) {
-    this._offsetUs = Math.round(timestampUs);
-    this._liveEdgeUs = -1; // 跳转后按新时间轴的视频样本重新累计 live edge
+    if (this.state === 'destroyed') return;
+    const generation = this._lifecycleGeneration;
+    const isCurrent = () => generation === this._lifecycleGeneration && this.state !== 'destroyed';
+    const nextOffsetUs = Math.round(timestampUs);
     this._dropPendingFrames();
+    if (!isCurrent()) return;
     // reset() 后必须重新 configure 才能 decode（WebCodecs 约束；由浏览器 seek 端到端验收暴露）
     this._videoDecoder?.reset?.();
+    if (!isCurrent()) return;
     if (this._videoConfig) this._videoDecoder?.configure?.(this._videoConfig);
+    if (!isCurrent()) return;
     this._audioDecoder?.reset?.();
+    if (!isCurrent()) return;
     if (this._audioConfig) this._audioDecoder?.configure?.(this._audioConfig);
+    if (!isCurrent()) return;
     this.audioOutput?.clearBuffer?.();
-    this._clock.seekTo(timestampUs / 1_000_000);
-    this.avSync.seekTo(timestampUs / 1_000_000);
-    this.emit('seeked', { timestampUs: this._offsetUs });
+    if (!isCurrent()) return;
+    this._offsetUs = nextOffsetUs;
+    this._liveEdgeUs = -1; // 跳转后按新时间轴的视频样本重新累计 live edge
+    this._clock.seekTo(nextOffsetUs / 1_000_000);
+    if (!isCurrent()) return;
+    this.avSync.seekTo(nextOffsetUs / 1_000_000);
+    if (!isCurrent()) return;
+    this.emit('seeked', { timestampUs: nextOffsetUs });
   }
 
   setVolume(v) { this.audioOutput?.setVolume?.(v); }

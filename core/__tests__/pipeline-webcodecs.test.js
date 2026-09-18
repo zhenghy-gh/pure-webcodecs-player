@@ -170,6 +170,25 @@ test('seek：清缓冲、重置解码器并叠加时间偏移', async () => {
   assert.ok(pipeline.currentTimeUs >= 900000);
 });
 
+test('seek：视频 decoder 重配置期间 destroy 后不再更新时间轴或派发完成事件', async () => {
+  const { pipeline, videoDecoder, audioDecoder } = build({ mediaInfo: avInfo });
+  await pipeline.init();
+  const seekEvents = [];
+  pipeline.on('seeked', (event) => seekEvents.push(event));
+  const originalConfigure = videoDecoder.configure.bind(videoDecoder);
+  videoDecoder.configure = (config) => {
+    void pipeline.destroy();
+    originalConfigure(config);
+  };
+
+  pipeline.seek(900000);
+
+  assert.equal(pipeline.state, 'destroyed');
+  assert.equal(pipeline.currentTimeUs, 0, '销毁后的 seek 不应提交新时间轴');
+  assert.equal(audioDecoder.resets, 0, '视频配置失效后不应继续重置音频解码器');
+  assert.deepEqual(seekEvents, []);
+});
+
 test('字幕样本产出 cue 事件', async () => {
   const { pipeline } = build({
     mediaInfo: { container: 'mkv', tracks: [{ id: 3, type: 'text', codec: 'x-srt' }], durationUs: 1000, seekable: true, live: false },
