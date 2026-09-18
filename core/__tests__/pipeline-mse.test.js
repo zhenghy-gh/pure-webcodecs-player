@@ -375,6 +375,46 @@ test('背压：缓冲水位超阈值时让出事件循环再 append', async () =
   assert.equal(mse.appends.length, 3, '水位回落后完成 append');
 });
 
+test('seek：resetTrack 等待期间 destroy 后不再写入时间轴、派发 seeked 或错误', async () => {
+  let releaseReset;
+  const resetReady = new Promise((resolve) => { releaseReset = resolve; });
+  const errors = [];
+  const seeked = [];
+  const { pipeline, mse, element } = build();
+  mse.resetTrack = async () => resetReady;
+  pipeline.on('error', (error) => errors.push(error));
+  pipeline.on('seeked', (event) => seeked.push(event));
+  await pipeline.init();
+
+  const seeking = pipeline.seek(2500000);
+  await new Promise((resolve) => setImmediate(resolve));
+  await pipeline.destroy();
+  releaseReset();
+  await seeking;
+
+  assert.equal(element.currentTime, 0);
+  assert.deepEqual(seeked, []);
+  assert.deepEqual(errors, []);
+});
+
+test('seek：迟到 reset 失败在 destroy 后不再广播错误', async () => {
+  let rejectReset;
+  const resetReady = new Promise((_, reject) => { rejectReset = reject; });
+  const errors = [];
+  const { pipeline, mse } = build();
+  mse.resetTrack = async () => resetReady;
+  pipeline.on('error', (error) => errors.push(error));
+  await pipeline.init();
+
+  const seeking = pipeline.seek(2500000);
+  await new Promise((resolve) => setImmediate(resolve));
+  await pipeline.destroy();
+  rejectReset(new Error('reset failed after destroy'));
+  await seeking;
+
+  assert.deepEqual(errors, []);
+});
+
 test('seek：丢弃待封装样本、逐轨清缓冲、对齐元素时间轴', async () => {
   const { pipeline, mse, element } = build();
   await pipeline.init();

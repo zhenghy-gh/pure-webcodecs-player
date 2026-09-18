@@ -379,20 +379,28 @@ export class MsePipeline extends Emitter {
 
   /** @param {number} timestampUs 实际落点（整数微秒） */
   async seek(timestampUs) {
-    this._timelineGeneration += 1;
+    const lifecycleGeneration = this._lifecycleGeneration;
+    const timelineGeneration = ++this._timelineGeneration;
+    const isCurrent = () => lifecycleGeneration === this._lifecycleGeneration
+      && timelineGeneration === this._timelineGeneration
+      && this.state !== 'destroyed';
     this._pending.clear();
     this._pendingUs.clear();
-    if (!this.mse) return;
+    if (!this.mse || !isCurrent()) return;
     for (const track of this._tracks.values()) {
       if (track.type !== 'video' && track.type !== 'audio') continue;
       if (this.active[track.type] !== track.id) continue;
       try {
         await this.mse.resetTrack?.(this._keyOf(track), false);
       } catch (err) {
+        if (!isCurrent()) return;
         this.emit('error', decodeError('seek 清缓冲失败', { cause: err }));
       }
+      if (!isCurrent()) return;
     }
+    if (!isCurrent()) return;
     if (this.element) this.element.currentTime = Math.round(timestampUs) / 1_000_000;
+    if (!isCurrent()) return;
     this.emit('seeked', { timestampUs: Math.round(timestampUs) });
   }
 
