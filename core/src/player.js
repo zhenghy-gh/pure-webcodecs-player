@@ -266,7 +266,13 @@ export class Player extends Emitter {
         : this.routeValue === 'mse' && hasMseCtor()
           ? DEFAULT_MSE_PIPELINE
           : null);
-    const pipeline = (await factory?.({ route: this.routeValue, mediaInfo: info, player: this, options: this.options })) ?? null;
+    let pipeline;
+    try {
+      pipeline = (await factory?.({ route: this.routeValue, mediaInfo: info, player: this, options: this.options })) ?? null;
+    } catch (error) {
+      if (!isCurrent()) throw abortedError('load() aborted');
+      throw error;
+    }
     if (!isCurrent()) {
       await destroyLate(pipeline);
       await destroyLate(demuxer);
