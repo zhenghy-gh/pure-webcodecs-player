@@ -111,13 +111,22 @@ export class WavPlayer {
     if (!this.planar) throw stateError('先调用 load() 再 play()');
     await this.#ensureGraph();
 
-    // ended 后再按 play：从头重播
-    if (this.state === 'ended') await this.seek(0);
-    if (this.state !== 'paused') await this.#prefill(this.#baseFrame);
+    // ended 后再按 play：从头重播（seek 内部已完成 flush + 预填充）
+    const wasEnded = this.state === 'ended';
+    const wasPaused = this.state === 'paused';
+    if (wasEnded) await this.seek(0);
+
+    // 先置 playing 再装载：#maybePushRest 的循环守卫要求 playing 态，
+    // 否则循环在预填充阶段即自灭，播完一块后断流且 eof 永不发出。
+    this.state = 'playing';
+    if (wasEnded || wasPaused) {
+      this.#maybePushRest(this.#nextPushFrame); // seek/暂停后循环已自灭：续启而非重复装载
+    } else {
+      await this.#prefill(this.#baseFrame);
+    }
 
     this.#node.port.postMessage({ type: 'pause', value: false });
     if (this.#ctx.state === 'suspended') await this.#ctx.resume();
-    this.state = 'playing';
     this.emitter.emit('play', undefined);
   }
 
@@ -141,7 +150,7 @@ export class WavPlayer {
     this.#eofSent = false;
 
     if (this.#node) {
-      this.#pushGen++; // 使旧的推送循环立即失效
+      // 不再无条件 gen++：存活循环经 #maybePushRest 更新游标后自动采纳新位置
       this.#node.port.postMessage({ type: 'flush', baseFrame: targetFrame });
       await this.#prefill(targetFrame);
       if (this.state === 'playing') this.#node.port.postMessage({ type: 'pause', value: false });
@@ -272,9 +281,9 @@ export class WavPlayer {
   /** 从 fromFrame 起持续推送直到文件尾（分块、拷贝后 transferable） */
   #maybePushRest(fromFrame) {
     if (!this.#node) return;
-    const gen = ++this.#pushGen; // 新推送循环使旧循环失效（seek 场景）
     this.#nextPushFrame = fromFrame;
-    if (this.#pushing) return;
+    if (this.#pushing) return; // 已有循环在跑：只更新游标，循环下一跳自动采纳（seek 场景）
+    const gen = ++this.#pushGen; // 新推送循环使旧循环失效（load/stop 场景）
     this.#pushing = true;
     const pushNext = () => {
       if (!this.#node || gen !== this.#pushGen || this.state !== 'playing') {
