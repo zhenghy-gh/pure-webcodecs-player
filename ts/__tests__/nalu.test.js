@@ -7,8 +7,10 @@ import assert from 'node:assert/strict';
 import {
   findStartCode, splitAnnexB, classify, annexbToAvcc, nalusToAnnexB,
   buildAvcc, buildHvcc,
-  parseH264SpsDimensions, parseHevcSpsDimensions,
+  parseH264SpsDimensions, parseHevcSpsDimensions, parseHevcSpsConfig,
+  h264NalType, isH264Keyframe, hevcNalType, isHevcKeyframe,
 } from '../src/nalu.js';
+import { BitWriter } from '../../core/src/bit-reader.js';
 
 import {
   h264Sps, h264Pps,
@@ -120,4 +122,143 @@ test('classify：按 codec 选择类型字段', () => {
   const units = splitAnnexB(annexb(new Uint8Array([0x26, 0x01, 0xaa])));
   const hevcUnits = classify(units, 'hevc');
   assert.equal(hevcUnits[0].type, 19);   // IDR_W_RADL
+});
+
+/* ------------------------------ 深分支补测（第一百一十七波） ------------------------------ */
+
+const HIGH_PROFILES = [100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135];
+
+/** 按解析器读取序构造 H.264 SPS（与 flv/__tests__/codec-info-sps.test.js 同构） */
+function buildH264Sps(opts = {}) {
+  const {
+    profileIdc = 66, width = 320, height = 240,
+    chromaFormatIdc = 1, scalingMatrix = false, pocType = 2, frameMbsOnly = true,
+  } = opts;
+  const w = new BitWriter();
+  w.writeBits(0x67, 8);
+  w.writeBits(profileIdc, 8);
+  w.writeBits(0xc0, 8);
+  w.writeBits(30, 8);
+  w.writeUE(0);
+  if (HIGH_PROFILES.includes(profileIdc)) {
+    w.writeUE(chromaFormatIdc);
+    if (chromaFormatIdc === 3) w.writeBits(0, 1);
+    w.writeUE(0); w.writeUE(0);
+    w.writeBits(0, 1);
+    w.writeBits(scalingMatrix ? 1 : 0, 1);
+    if (scalingMatrix) {
+      const lists = chromaFormatIdc === 3 ? 12 : 8;
+      for (let i = 0; i < lists; i++) {
+        w.writeBits(1, 1);
+        for (let j = 0; j < (i < 6 ? 16 : 64); j++) w.writeSE(0);
+      }
+    }
+  }
+  w.writeUE(4);
+  w.writeUE(pocType);
+  if (pocType === 0) w.writeUE(0);
+  else if (pocType === 1) { w.writeBits(0, 1); w.writeSE(0); w.writeSE(0); w.writeSE(0); }
+  w.writeUE(1);
+  w.writeBits(0, 1);
+  w.writeUE(width / 16 - 1);
+  w.writeUE(height / 16 - 1);
+  w.writeBits(frameMbsOnly ? 1 : 0, 1);
+  if (!frameMbsOnly) w.writeBits(0, 1);
+  w.writeBits(0, 1); w.writeBits(0, 1); w.writeBits(0, 1);
+  w.writeBits(1, 1);
+  return w.finish();
+}
+
+/**
+ * 按解析器读取序构造 HEVC SPS。可选项覆盖 parseHevcSpsDimensions 与
+ * parseHevcSpsConfig 两套读取路径（后者多读 bit_depth 两字段）。
+ */
+function buildHevcSps(opts = {}) {
+  const {
+    maxSubLayers = 0, width = 1920, height = 1080,
+    chromaFormatIdc = 1, conformance = false,
+    bitDepthLumaMinus8 = 0, bitDepthChromaMinus8 = 0, temporalIdNesting = 1,
+  } = opts;
+  const w = new BitWriter();
+  w.writeBits(0x42, 8); w.writeBits(0x01, 8);
+  w.writeBits(0, 4);
+  w.writeBits(maxSubLayers, 3);
+  w.writeBits(temporalIdNesting, 1);
+  w.writeBits(1, 8);   // profile_space(2)+tier(1)+profile_idc(5)
+  w.writeBits(0, 32);
+  w.writeBits(0, 48);
+  w.writeBits(93, 8);
+  w.writeUE(0);
+  w.writeUE(chromaFormatIdc);
+  if (chromaFormatIdc === 3) w.writeBits(0, 1);
+  w.writeUE(width);
+  w.writeUE(height);
+  if (conformance) {
+    w.writeBits(1, 1);
+    w.writeUE(0); w.writeUE(0); w.writeUE(0); w.writeUE(0);
+  } else {
+    w.writeBits(0, 1);
+  }
+  w.writeUE(bitDepthLumaMinus8);
+  w.writeUE(bitDepthChromaMinus8);
+  w.writeBits(1, 1);
+  return w.finish();
+}
+
+test('NALU 类型判定：h264/hevc nal type 与关键帧判定', () => {
+  assert.equal(h264NalType(new Uint8Array([0x65])), 5);   // IDR
+  assert.equal(h264NalType(new Uint8Array([0x41])), 1);   // 非 IDR slice
+  assert.equal(isH264Keyframe([1, 6, 7]), false);
+  assert.equal(isH264Keyframe([1, 5]), true);
+  assert.equal(hevcNalType(new Uint8Array([0x26])), 19);  // IDR_W_RADL
+  assert.equal(hevcNalType(new Uint8Array([0x44])), 34);  // PPS
+  assert.equal(isHevcKeyframe([1, 33, 34]), false);
+  assert.equal(isHevcKeyframe([21]), true);   // CRA 上界
+  assert.equal(isHevcKeyframe([16]), true);   // BLA_W_LP 下界
+  assert.equal(isHevcKeyframe([15, 24]), false);
+});
+
+test('H264 SPS 高档位 profile=100：chroma=1 位序对齐', () => {
+  const dims = parseH264SpsDimensions(buildH264Sps({ profileIdc: 100, width: 640, height: 352 }));
+  assert.deepEqual(dims, { width: 640, height: 352 });
+});
+
+test('H264 SPS chroma=3 + scaling matrix：12 组列表（16/64）全消费', () => {
+  const dims = parseH264SpsDimensions(
+    buildH264Sps({ profileIdc: 100, chromaFormatIdc: 3, scalingMatrix: true, width: 1280, height: 720 })
+  );
+  assert.deepEqual(dims, { width: 1280, height: 720 });
+});
+
+test('H264 SPS pocType=0 / pocType=1 分支', () => {
+  assert.deepEqual(parseH264SpsDimensions(buildH264Sps({ pocType: 0 })), { width: 320, height: 240 });
+  assert.deepEqual(parseH264SpsDimensions(buildH264Sps({ pocType: 1 })), { width: 320, height: 240 });
+});
+
+test('H264 SPS 截断：catch 返回 null', () => {
+  assert.equal(parseH264SpsDimensions(buildH264Sps({ profileIdc: 100, scalingMatrix: true }).slice(0, 6)), null);
+});
+
+test('HEVC SPS conformance window：四个 ue 偏移被消费', () => {
+  assert.deepEqual(parseHevcSpsDimensions(buildHevcSps({ conformance: true })), { width: 1920, height: 1080 });
+});
+
+test('HEVC SPS 截断：parseHevcSpsDimensions catch 返回 null', () => {
+  assert.equal(parseHevcSpsDimensions(buildHevcSps().slice(0, 4)), null);
+});
+
+test('parseHevcSpsConfig：色深/嵌套/conformance 全字段读取', () => {
+  assert.deepEqual(
+    parseHevcSpsConfig(buildHevcSps({ temporalIdNesting: 1 })),
+    { chromaFormatIdc: 1, bitDepthLumaMinus8: 0, bitDepthChromaMinus8: 0, temporalIdNesting: 1 }
+  );
+  assert.deepEqual(
+    parseHevcSpsConfig(buildHevcSps({ chromaFormatIdc: 3, bitDepthLumaMinus8: 2, bitDepthChromaMinus8: 2, conformance: true })),
+    { chromaFormatIdc: 3, bitDepthLumaMinus8: 2, bitDepthChromaMinus8: 2, temporalIdNesting: 1 }
+  );
+});
+
+test('parseHevcSpsConfig：多层流抛错降级 null / 截断 null', () => {
+  assert.equal(parseHevcSpsConfig(buildHevcSps({ maxSubLayers: 1 })), null);
+  assert.equal(parseHevcSpsConfig(buildHevcSps().slice(0, 3)), null);
 });
