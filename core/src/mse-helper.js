@@ -299,7 +299,7 @@ export class MseHelper extends Emitter {
   }
 
   _ensureOpen() {
-    if (!this.opened) throw stateError('MseHelper.open() must complete first');
+    if (this.destroyed || !this.opened) throw stateError('MseHelper.open() must complete first');
   }
 
   destroy() {

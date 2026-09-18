@@ -518,6 +518,16 @@ test('destroy：sourceopen 等待期间拒绝 open 并清理监听与 URL', asyn
   }
 });
 
+test('destroy 后所有 MediaSource 写入 API 都拒绝', async () => {
+  const { helper } = await makeOpenedHelper();
+  helper.destroy();
+
+  await assert.rejects(() => helper.addTrack('a2', 'audio/mp4'), (e) => e.code === 'STATE_ERROR');
+  assert.throws(() => helper.append('v1', new Uint8Array([1])), (e) => e.code === 'STATE_ERROR');
+  await assert.rejects(() => helper.setDuration(1), (e) => e.code === 'STATE_ERROR');
+  await assert.rejects(() => helper.endOfStream(), (e) => e.code === 'STATE_ERROR');
+});
+
 test('destroy：endOfStream + revoke objectURL + 摘除元素 blob src；幂等', async () => {
   const savedURL = { revoke: URL.revokeObjectURL };
   const revoked = [];
