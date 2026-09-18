@@ -417,8 +417,10 @@ export class WebCodecsPipeline extends Emitter {
     const targetUs = this._liveEdgeUs - liveLatencyUs;
     const behindUs = targetUs - this.currentTimeUs;
     if (behindUs <= this._catchUpThresholdUs()) return;
+    const generation = this._lifecycleGeneration;
     const fromUs = this.currentTimeUs;
     const reanchored = this._masterRealignToUs(targetUs);
+    if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return;
     this.counters.catchups += 1;
     this.emit('catchup', { fromUs, toUs: Math.round(targetUs), behindUs, reanchored });
   }
@@ -430,16 +432,22 @@ export class WebCodecsPipeline extends Emitter {
    * @returns {boolean} 是否真正重锚
    */
   _masterRealignToUs(timestampUs) {
+    if (this.state === 'destroyed') return false;
+    const generation = this._lifecycleGeneration;
+    const isCurrent = () => generation === this._lifecycleGeneration && this.state !== 'destroyed';
     if (this.audioOutput) {
       if (typeof this.audioOutput.clearBuffer === 'function') {
         this.audioOutput.clearBuffer();
+        if (!isCurrent()) return false;
       } else if (typeof this.audioOutput.currentTimeUs === 'number') {
         return false; // 外部不可控钟
       }
     }
     this._offsetUs = Math.round(timestampUs);
     this._clock.seekTo(timestampUs / 1_000_000);
+    if (!isCurrent()) return false;
     this.avSync.seekTo(timestampUs / 1_000_000);
+    if (!isCurrent()) return false;
     return true;
   }
 

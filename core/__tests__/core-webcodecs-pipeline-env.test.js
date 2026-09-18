@@ -514,6 +514,38 @@ test('直播落后追赶：_maybeLiveCatchUp 把主钟重锚到 live 边缘目�
   assert.equal(pipeline.counters.catchups, 1);
 });
 
+test('_masterRealignToUs：clearBuffer 期间 destroy 后不再写入时钟或派发追赶事件', async () => {
+  const audioOutput = new FakeAudioOutput({ currentTimeUs: 0 });
+  const { pipeline } = build({
+    mediaInfo: {
+      container: 'mkv', live: true, durationUs: 0, seekable: false,
+      tracks: [
+        { id: 1, type: 'video', codec: 'avc1.42E01E' },
+        { id: 2, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 },
+      ],
+    },
+    options: { liveLatencyUs: 4_000_000 },
+    audioOutput,
+  });
+  await pipeline.init();
+  pipeline.play();
+  const catchups = [];
+  pipeline.on('catchup', (event) => catchups.push(event));
+  const clearBuffer = audioOutput.clearBuffer.bind(audioOutput);
+  audioOutput.clearBuffer = () => {
+    void pipeline.destroy();
+    clearBuffer();
+  };
+  pipeline._liveEdgeUs = 10_000_000;
+
+  pipeline._maybeLiveCatchUp();
+
+  assert.equal(pipeline.state, 'destroyed');
+  assert.equal(pipeline._offsetUs, 0, '销毁后的重锚不应提交偏移');
+  assert.equal(pipeline.counters.catchups, 0);
+  assert.deepEqual(catchups, []);
+});
+
 test('_catchUpThresholdUs：显式覆盖优先，否则取 liveLatency/2（下限 500ms）', async () => {
   const { pipeline } = build({ options: { catchUpThresholdUs: 1234, liveLatencyUs: 4_000_000 } });
   await pipeline.init();
