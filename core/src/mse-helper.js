@@ -290,6 +290,7 @@ export class MseHelper extends Emitter {
   async endOfStream(reason = undefined) {
     this._ensureOpen();
     await this.drainAll();
+    this._ensureOpen();
     if (reason !== undefined) this.mediaSource.endOfStream(reason);
     else this.mediaSource.endOfStream();
   }

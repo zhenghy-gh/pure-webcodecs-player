@@ -314,6 +314,21 @@ test('setDuration / endOfStream：reason 有值/无值分支，且先 drainAll',
   assert.equal(ms.ended, '__noarg__', '无参调用 endOfStream() 不带 reason');
 });
 
+test('endOfStream：drain 等待期间 destroy 后不再写入 MediaSource', async () => {
+  let releaseDrain;
+  const drainReady = new Promise((resolve) => { releaseDrain = resolve; });
+  const { helper, ms } = await makeOpenedHelper();
+  helper.drainAll = () => drainReady;
+
+  const ending = helper.endOfStream();
+  await new Promise((resolve) => setImmediate(resolve));
+  helper.destroy();
+  releaseDrain();
+
+  await assert.rejects(() => ending, (e) => e.code === 'STATE_ERROR');
+  assert.equal(ms.ended, undefined);
+});
+
 /* ------------------------------ _ctor 选择与兜底 ------------------------------ */
 
 test('_ctor：managed 优先 ManagedMediaSource，缺失回落 MediaSource；都没有则 NOT_SUPPORTED', async () => {
