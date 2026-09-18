@@ -106,6 +106,7 @@ export class MsePipeline extends Emitter {
     let initPromise;
     initPromise = Promise.resolve().then(async () => {
       try {
+        if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
         if (!this.element) throw notSupported('MSE 管线需要 mediaElement（<video>/<audio>）');
         // mse 可注入（测试/宿主复用），未注入时用默认 MseHelper 打开
         if (!this.mse) {

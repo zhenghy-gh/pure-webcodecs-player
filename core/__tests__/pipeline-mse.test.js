@@ -238,6 +238,28 @@ test('init：mseFactory 迟到于 destroy 时回收未挂载的 MediaSource', as
   assert.equal(pipeline.state, 'destroyed');
 });
 
+test('init：destroy 抢在初始化开始前时不创建 MediaSource', async () => {
+  let factoryCalls = 0;
+  const lateMse = new FakeMseHelper();
+  const { pipeline } = build({
+    mse: null,
+    options: {
+      mseFactory: async () => {
+        factoryCalls += 1;
+        return lateMse;
+      },
+    },
+  });
+
+  const initializing = pipeline.init();
+  await pipeline.destroy();
+  await initializing;
+
+  assert.equal(factoryCalls, 0);
+  assert.equal(lateMse.destroyed, false);
+  assert.equal(pipeline.state, 'destroyed');
+});
+
 test('init：open 完成后 destroy 不再创建 SourceBuffer 或写入 init', async () => {
   let releaseOpen;
   const openReady = new Promise((resolve) => { releaseOpen = resolve; });
