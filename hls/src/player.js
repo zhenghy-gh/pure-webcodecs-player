@@ -26,7 +26,7 @@ import { LevelController } from './level-controller.js';
 import { MseController } from './mse-controller.js';
 import { Transmuxer } from './transmuxer.js';
 import { Aes128Decrypter } from './decrypter.js';
-import { EventBus, buildMime, logger } from './utils.js';
+import { EventBus, buildMime, logger, computeResumeIndexBySn } from './utils.js';
 import { ErrorCode, stateError } from '../../core/src/errors.js';
 
 const log = logger('player');
@@ -158,6 +158,7 @@ export class HlsPlayer {
     try {
       const text = await this.loader.loadText(url, this._abortCtrl.signal);
       const parsed = parseMedia(text, url);
+      this.playlistUrl = url; // 切档/续播后轮询目标必须跟随当前档位（直播 ABR 切换后 reload 旧档是错的）
       // 续播放位置：优先按"最后装载 sn+1"衔接（直播/切档），VOD 按播放时刻映射，
       // 均不可用才回到列表头。绝不静默回退到 0 重放。
       const anchorSn = this._lastAppendedSn;
