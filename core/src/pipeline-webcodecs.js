@@ -104,7 +104,8 @@ export class WebCodecsPipeline extends Emitter {
         if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
         const video = [...this._tracks.values()].find((t) => t.type === 'video');
         const audio = [...this._tracks.values()].find((t) => t.type === 'audio');
-        if (video) await this._setupVideo(video);
+        if (video && this._setupVideo(video, generation) === false) return this;
+        if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
         if (audio) await this._setupAudio(audio, generation);
         if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
         this._initialized = true;
@@ -123,7 +124,7 @@ export class WebCodecsPipeline extends Emitter {
     return initPromise;
   }
 
-  _setupVideo(track) {
+  _setupVideo(track, generation = this._lifecycleGeneration) {
     const factory = this.options.videoDecoderFactory ??
       (typeof VideoDecoder === 'function'
         ? (init) => new VideoDecoder(init)
@@ -146,6 +147,10 @@ export class WebCodecsPipeline extends Emitter {
     } catch (error) {
       try { decoder.close?.(); } catch { /* 新解码器配置失败，回收临时实例 */ }
       throw error;
+    }
+    if (generation !== this._lifecycleGeneration || this.state === 'destroyed') {
+      try { decoder.close?.(); } catch { /* 迟到的新解码器回收失败不影响销毁 */ }
+      return false;
     }
     this._videoDecoder = decoder;
     this._videoConfig = config;

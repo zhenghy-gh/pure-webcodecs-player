@@ -176,6 +176,38 @@ test('init：destroy 抢在初始化开始前时不创建解码器', async () =>
   assert.equal(pipeline.state, 'destroyed');
 });
 
+test('init：视频 decoder 配置期间 destroy 时不提交已销毁 decoder', async () => {
+  let pipeline;
+  let decoder;
+  pipeline = build({
+    mediaInfo: {
+      container: 'mkv',
+      tracks: [{ id: 1, type: 'video', codec: 'avc1.42E01E' }],
+      durationUs: 1_000_000,
+      seekable: true,
+      live: false,
+    },
+    options: {
+      videoDecoderFactory: (init) => {
+        decoder = new FakeDecoder(init);
+        const configure = decoder.configure.bind(decoder);
+        decoder.configure = (config) => {
+          void pipeline.destroy();
+          configure(config);
+        };
+        return decoder;
+      },
+    },
+  }).pipeline;
+
+  await pipeline.init();
+
+  assert.equal(decoder.closed, true);
+  assert.equal(pipeline._videoDecoder, null);
+  assert.equal(pipeline._initialized, false);
+  assert.equal(pipeline.state, 'destroyed');
+});
+
 test('webcodecsPipelineFactory：初始化失败时回收已创建的 renderer', async () => {
   const originalDocument = globalThis.document;
   const originalDestroy = VideoFrameRenderer.prototype.destroy;
