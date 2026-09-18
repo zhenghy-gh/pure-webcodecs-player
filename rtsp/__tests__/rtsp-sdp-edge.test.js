@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseSdp, parseFmtpParams, b64ListToNals, pickVideoTrack } from '../src/sdp.js';
+import { b64ToBytes, bytesToB64 } from '../src/b64.js';
 
 test('空/缺 m= 行：仅会话级，media 为空，pickVideoTrack 返回 null', () => {
   const sdp = parseSdp('v=0\r\ns=Session Only\r\nt=0 0');
@@ -127,4 +128,65 @@ test("parseFmtpParams：仅含 flag（无 '='）的条目映射为空串", () =>
 test('parseFmtpParams：空输入返回空对象', () => {
   assert.deepEqual(parseFmtpParams(undefined), {});
   assert.deepEqual(parseFmtpParams(''), {});
+});
+
+/* ------------------------------ b64 环境形态分支 ------------------------------ */
+
+/**
+ * 临时改写/删除全局 atob/btoa/Buffer 以驱动双端回退分支，finally 还原现场。
+ * map 值为 null 表示 delete（模拟浏览器无 Buffer / 无 atob 的环境）。
+ */
+function withGlobals(map, fn) {
+  const saved = new Map();
+  for (const [k, v] of Object.entries(map)) {
+    saved.set(k, Object.getOwnPropertyDescriptor(globalThis, k) ?? null);
+    if (v === null) {
+      try { delete globalThis[k]; } catch { /* 非可配置属性：保留原值 */ }
+    } else {
+      Object.defineProperty(globalThis, k, { value: v, configurable: true, writable: true });
+    }
+  }
+  try { return fn(); } finally {
+    for (const [k, d] of saved) {
+      if (d) Object.defineProperty(globalThis, k, d);
+      else { try { delete globalThis[k]; } catch { /* 同上 */ } }
+    }
+  }
+}
+
+test('b64ToBytes：无 atob 时回退 Buffer 解码，结果与标准路径一致', () => {
+  const SAMPLE = [0, 1, 2, 250, 251, 255];
+  const b64 = bytesToB64(Uint8Array.from(SAMPLE));
+  withGlobals({ atob: null }, () => {
+    assert.deepEqual(Array.from(b64ToBytes(b64)), SAMPLE);
+  });
+});
+
+test('b64ToBytes：atob 与 Buffer 均缺失时抛错', () => {
+  withGlobals({ atob: null, Buffer: null }, () => {
+    assert.throws(() => b64ToBytes('QUJD'), /无 atob\/Buffer/);
+  });
+});
+
+test('bytesToB64：无 atob 时走 Buffer 编码分支（Buffer 且非 atob 环境）', () => {
+  const SAMPLE = [0, 1, 2, 250, 251, 255];
+  withGlobals({ atob: null }, () => {
+    const b64 = bytesToB64(Uint8Array.from(SAMPLE));
+    // 此时解码侧也只有 Buffer 路径，形成 Buffer 端到端闭环
+    assert.deepEqual(Array.from(b64ToBytes(b64)), SAMPLE);
+  });
+});
+
+test('bytesToB64：有 atob 但无 btoa 时回退 Buffer 编码分支', () => {
+  const SAMPLE = [0, 1, 2, 250, 251, 255];
+  withGlobals({ btoa: null }, () => {
+    const b64 = bytesToB64(Uint8Array.from(SAMPLE));
+    assert.deepEqual(Array.from(b64ToBytes(b64)), SAMPLE);
+  });
+});
+
+test('bytesToB64：btoa 与 Buffer 均缺失时抛错', () => {
+  withGlobals({ btoa: null, Buffer: null }, () => {
+    assert.throws(() => bytesToB64(new Uint8Array([1])), /无 btoa\/Buffer/);
+  });
 });
