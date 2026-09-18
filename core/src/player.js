@@ -223,21 +223,26 @@ export class Player extends Emitter {
     };
     if (input == null || input === '') throw stateError('load(): input is required');
     let demuxer;
-    if (input?.read && typeof input.read === 'function') {
-      demuxer = await this.options.demuxerFactory?.(input, this.options.demuxerOptions) ??
-        await createDemuxerAuto(input, { options: this.options.demuxerOptions });
-    } else if (typeof input === 'string' || input instanceof URL) {
-      if (this.options.demuxerFactory) demuxer = await this.options.demuxerFactory(String(input), this.options.demuxerOptions);
-      else demuxer = await detectFromUrl(String(input), { fetchImpl: this.options.fetchImpl, options: this.options.demuxerOptions });
-    } else if (typeof Blob !== 'undefined' && input instanceof Blob) {
-      const source = new BlobDataSource(input);
-      demuxer = await (this.options.demuxerFactory?.(source, this.options.demuxerOptions) ??
-        createDemuxerAuto(source, { options: this.options.demuxerOptions }));
-    } else if (this.options.demuxerFactory) {
-      // 测试、嵌入式宿主和自定义输入由注入工厂自行解释。
-      demuxer = await this.options.demuxerFactory(input, this.options.demuxerOptions);
-    } else {
-      throw stateError('load(): unsupported input');
+    try {
+      if (input?.read && typeof input.read === 'function') {
+        demuxer = await this.options.demuxerFactory?.(input, this.options.demuxerOptions) ??
+          await createDemuxerAuto(input, { options: this.options.demuxerOptions });
+      } else if (typeof input === 'string' || input instanceof URL) {
+        if (this.options.demuxerFactory) demuxer = await this.options.demuxerFactory(String(input), this.options.demuxerOptions);
+        else demuxer = await detectFromUrl(String(input), { fetchImpl: this.options.fetchImpl, options: this.options.demuxerOptions });
+      } else if (typeof Blob !== 'undefined' && input instanceof Blob) {
+        const source = new BlobDataSource(input);
+        demuxer = await (this.options.demuxerFactory?.(source, this.options.demuxerOptions) ??
+          createDemuxerAuto(source, { options: this.options.demuxerOptions }));
+      } else if (this.options.demuxerFactory) {
+        // 测试、嵌入式宿主和自定义输入由注入工厂自行解释。
+        demuxer = await this.options.demuxerFactory(input, this.options.demuxerOptions);
+      } else {
+        throw stateError('load(): unsupported input');
+      }
+    } catch (error) {
+      if (!isCurrent()) throw abortedError('load() aborted');
+      throw error;
     }
     if (await destroyLate(demuxer)) throw abortedError('load() aborted');
     this.demuxer = demuxer;

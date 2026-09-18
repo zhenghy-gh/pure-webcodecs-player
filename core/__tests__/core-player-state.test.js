@@ -376,6 +376,23 @@ test('load 重入：非 idle 态二次 load 拒绝、destroy 后 load 拒绝', a
   await assert.rejects(() => player.load(new Uint8Array([1])), (e) => e.code === 'STATE_ERROR');
 });
 
+test('load：销毁期间迟到的 demuxer 工厂失败归类为 ABORTED', async () => {
+  let rejectDemuxer;
+  const demuxerReady = new Promise((_, reject) => { rejectDemuxer = reject; });
+  const player = new Player({
+    demuxerFactory: async () => demuxerReady,
+    capabilities: caps,
+    pipelineFactory: instantPipelineFactory(),
+  });
+  const loading = player.load(new Uint8Array([1]));
+  await new Promise((resolve) => setImmediate(resolve));
+  await player.destroy();
+  rejectDemuxer(new Error('demuxer factory failed after destroy'));
+
+  await assert.rejects(() => loading, (error) => error.code === 'ABORTED');
+  assert.equal(player.state, PLAYER_STATES.DESTROYED);
+});
+
 test('load：销毁期间迟到的管线工厂失败归类为 ABORTED', async () => {
   let rejectPipeline;
   const pipelineReady = new Promise((_, reject) => { rejectPipeline = reject; });
