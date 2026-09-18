@@ -148,6 +148,34 @@ test('init：解码器配置失败会清理已创建实例，并允许后续重�
   assert.equal(pipeline._initialized, true);
 });
 
+test('init：destroy 抢在初始化开始前时不创建解码器', async () => {
+  const created = [];
+  const { pipeline } = build({
+    mediaInfo: {
+      container: 'mkv',
+      tracks: [{ id: 1, type: 'video', codec: 'avc1.42E01E' }],
+      durationUs: 1_000_000,
+      seekable: true,
+      live: false,
+    },
+    options: {
+      videoDecoderFactory: (init) => {
+        const decoder = new FakeDecoder(init);
+        created.push(decoder);
+        return decoder;
+      },
+    },
+  });
+
+  const initializing = pipeline.init();
+  await pipeline.destroy();
+  await initializing;
+
+  assert.deepEqual(created, []);
+  assert.equal(pipeline._initialized, false);
+  assert.equal(pipeline.state, 'destroyed');
+});
+
 test('webcodecsPipelineFactory：初始化失败时回收已创建的 renderer', async () => {
   const originalDocument = globalThis.document;
   const originalDestroy = VideoFrameRenderer.prototype.destroy;

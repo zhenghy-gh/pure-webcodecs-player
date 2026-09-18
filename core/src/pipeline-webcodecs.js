@@ -101,6 +101,7 @@ export class WebCodecsPipeline extends Emitter {
     let initPromise;
     initPromise = Promise.resolve().then(async () => {
       try {
+        if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
         const video = [...this._tracks.values()].find((t) => t.type === 'video');
         const audio = [...this._tracks.values()].find((t) => t.type === 'audio');
         if (video) await this._setupVideo(video);
