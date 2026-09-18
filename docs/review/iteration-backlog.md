@@ -117,7 +117,7 @@
   - ①`rendered` 先于 `firstframe`：**同一帧**先后派发是显式设计，且 `core/__tests__/core-pipeline-queue.test.js:180` 早已断言固化（期望 `[500000, 'first:500000', 300000, 400000]`）。语义上 `rendered` 是「每帧已绘制」逐帧事件、`firstframe` 是「首次出画」一次性里程碑，后者由前者内部触发，顺序必然如此。**改序会破坏已固化契约，不建议动**。
   - ②`_waitQueue` guard=64：核实为**有意防死锁阀**——队列持续满时最多让出 64 次即放弃（`core/src/pipeline-webcodecs.js:205`），与 `player.js:413` 的 4096 次轮询阀同构。注释「默认上限 8」指 `maxDecodeQueue`（背压**阈值**），guard 是放弃**上限**，二者是不同参数，并非注释不一致。此前 `_waitQueue` **零测试覆盖**，本波补 `core/__tests__/pipeline-backpressure.test.js`（9 例）固化含 guard 耗尽在内的全部行为。
 - [x] **P3** webtorrent 手动选文件 API（**第九十三波 `18d1ec4` 已落地**）：player.selectFile(selector) 在 degraded 态调用，selector 四形态，错误码全显式
-- [ ] **P3** 重构收敛（audit-79 D，**动前需 owner 点头**）：BitReader×4 / BitWriter×2 / buildEsds×2 收敛到 core；删 `mp4/src/box-builder.js:225` 死导出 buildBtrt
+- [x] **P3** 重构收敛（audit-79 D，**第一百零七波 owner 点头后落地**）：`buildEsds`×2 收敛至 `core/src/esds.js`（hls 以参数透传保持 128000 码率字节级兼容，有等价回归）；`BitWriter`×2 收敛至 `core/src/bit-reader.js`（flac re-export，API 超集：writeBits/writeUE/writeSE/alignToByte/merge/finish/toUint8Array）；BitReader 4→2：ts/flv 的同源精简版删除、消费端迁移至 core BitReader（core 增 readFlag/readUE/readSE/alignByte 语义成员；ts aac.js 的 pos/bit 字段访问改 bitPosition；2 处 >32 位丢弃型读取改 skipBits）；**flac BitReader 刻意保留**（byteOffset+bitLimit 相对窗口构造域、错误文案受测试断言固化、FLAC 专属读法 readUnary/readBytes/readUtfCodedNumber，强并入会破坏既有契约，已在源码头登记理由）；删 mp4 box-builder 死导出 buildBtrt。全仓 2496/2496、lint 0、check 16/16、双契约审计 0
 - [ ] **P3** env 层可测化（浏览器依赖层 61.8%）：引入 Playwright 跑 `player.js`/`renderer.js`/`mse-helper.js`，或维持豁免
 - [ ] **P3** 案 A 完全同构（**待 owner 裁决**）：mkv D1/D2/D3/D11/D4 收敛
 - [ ] **P3** **两项契约差异已探针取证并复核为「已裁决」**（第一百零六波，**勿再当缺陷重复上报**）：

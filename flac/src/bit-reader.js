@@ -1,10 +1,17 @@
 /**
- * flac/src/bit-reader.js — MSB 优先位读取器
+ * flac/src/bit-reader.js — MSB 优先位读取器（FLAC 专属）
  * ------------------------------------------------------------
  * FLAC 位流为 big-endian bit order（MSB first）。
  * 只读不写；越界抛 PARSE_ERROR，由上层决定重同步或终止。
+ *
+ * 收敛说明（audit-79 D）：位写入器统一复用 core 的 BitWriter（见文末 re-export）；
+ * 读取器保留本模块实现——其构造域（byteOffset+bitLimit 相对窗口）、错误文案
+ * （受既有测试断言固化）与 FLAC 专属读法（readUnary/readBytes/readUtfCodedNumber）
+ * 为格式特有行为，强并入 core 反而破坏既有契约。
  */
 import { parseError } from './errors.js';
+
+export { BitWriter } from '../../core/src/bit-reader.js';
 
 export class BitReader {
   /**
@@ -102,39 +109,5 @@ export class BitReader {
       value = value * 64 + (b & 0x3f);
     }
     return value;
-  }
-}
-
-/** MSB 优先位写入器（供测试内 fixture 编码与未来 mux 使用） */
-export class BitWriter {
-  constructor() {
-    this.bytes = [];
-    this.acc = 0;
-    this.accBits = 0;
-  }
-  /** 追加 n 位（value 的低 n 位，MSB 先出） */
-  writeBits(value, n) {
-    for (let i = n - 1; i >= 0; i--) {
-      this.acc = (this.acc << 1) | ((value >>> i) & 1);
-      this.accBits++;
-      if (this.accBits === 8) { this.bytes.push(this.acc & 0xff); this.acc = 0; this.accBits = 0; }
-    }
-    return this;
-  }
-  /** 补齐到字节边界（补 0） */
-  alignToByte() {
-    while (this.accBits !== 0) this.writeBits(0, 1);
-    return this;
-  }
-  /** 合并另一个 writer 的全部位（含未对齐尾部），保持位级连续（子帧拼接用） */
-  merge(other) {
-    for (const b of other.bytes) this.writeBits(b, 8);
-    if (other.accBits > 0) this.writeBits(other.acc, other.accBits);
-    return this;
-  }
-  /** 输出最终字节数组 */
-  toUint8Array() {
-    this.alignToByte();
-    return new Uint8Array(this.bytes);
   }
 }

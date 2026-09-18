@@ -18,7 +18,8 @@ export {
   ByteStream,
   ByteWriter,
 } from './byte-stream.js';
-export { BitReader } from './bit-reader.js';
+export { BitReader, BitWriter } from './bit-reader.js';
+export { buildEsds } from './esds.js';
 export {
   ExpGolombReader,
   parseH264Sps,

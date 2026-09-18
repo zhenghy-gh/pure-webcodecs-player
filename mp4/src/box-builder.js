@@ -8,7 +8,11 @@
  * 全部基于 core 的 ByteWriter，大端、无第三方依赖。
  */
 import { ByteWriter } from '../../core/src/index.js';
+import { buildEsds } from '../../core/src/esds.js';
 import { notSupported, parseError } from '../../core/src/errors.js';
+
+// esds 构造已统一收敛到 core（audit-79 D）；此处 re-export 维持 box-builder 既有公共面
+export { buildEsds };
 
 /** 包一层 box 头（size 自动回填，支持 >4GB 用 largesize）；导出供 remuxer 组合容器 box */
 export function box(type, buildBody) {
@@ -175,57 +179,6 @@ export function buildAvcC(bytes) {
 
 export function buildHvcC(bytes) {
   return box('hvcC', (w) => w.writeRaw(bytes));
-}
-
-/**
- * esds：包装 AudioSpecificConfig（AAC 必需）。
- * 构造 DecoderConfigDescriptor(0x04) + SLError? 正确 tag 链：
- *   ES_Descriptor(0x03) > DecoderConfigDescriptor(0x04) > decSpecificInfo(0x05)
- */
-export function buildEsds(audioSpecificConfig, { objectTypeIndication = 0x40, streamType = 5 /* audio */, bufferSizeDb = 0, maxBitrate = 0, avgBitrate = 0 } = {}) {
-  const asc = audioSpecificConfig instanceof Uint8Array ? audioSpecificConfig : new Uint8Array(audioSpecificConfig);
-  // decSpecificInfo (tag 0x05)
-  const dsi = writeDescriptor(0x05, asc);
-  // DecoderConfigDescriptor (tag 0x04): oti(1) streamType/upStream/reserved(1) bufferSizeDB(3) maxBitrate(4) avgBitrate(4) + dsi
-  const dcdBody = new ByteWriter(64);
-  dcdBody.writeU8(objectTypeIndication);
-  dcdBody.writeU8((streamType << 2) | 1);
-  dcdBody.writeU24(bufferSizeDb);
-  dcdBody.writeU32(maxBitrate);
-  dcdBody.writeU32(avgBitrate);
-  dcdBody.writeRaw(dsi);
-  const dcd = writeDescriptor(0x04, dcdBody.toUint8Array());
-  // ES_Descriptor (tag 0x03): ES_ID(2) flags(1) + dcd（flags=0 无 FMO 等）
-  const esBody = new ByteWriter(16);
-  esBody.writeU16(1); // ES_ID
-  esBody.writeU8(0); // flags
-  esBody.writeRaw(dcd);
-  const es = writeDescriptor(0x03, esBody.toUint8Array());
-  return fullBox('esds', 0, 0, (w) => w.writeRaw(es));
-}
-
-/** MPEG-4 descriptor：tag + 变长长度（128 系） */
-function writeDescriptor(tag, payload) {
-  const w = new ByteWriter(payload.byteLength + 6);
-  w.writeU8(tag);
-  let len = payload.byteLength;
-  const bytes = [];
-  do {
-    bytes.unshift(len & 0x7f);
-    len >>>= 7;
-  } while (len > 0);
-  for (let i = 0; i < bytes.length; i++) {
-    w.writeU8((i < bytes.length - 1 ? 0x80 : 0x00) | bytes[i]);
-  }
-  w.writeRaw(payload);
-  return w.toUint8Array();
-}
-
-/** btrt（码率信息，可选增强） */
-export function buildBtrt({ bufferSizeDb = 0, maxBitrate = 0, avgBitrate = 0 } = {}) {
-  return box('btrt', (w) => {
-    w.writeU32(bufferSizeDb).writeU32(maxBitrate).writeU32(avgBitrate);
-  });
 }
 
 /** 视觉 sample entry 公共体（avc1/hev1/hvc1...） */

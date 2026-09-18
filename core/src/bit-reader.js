@@ -1,6 +1,7 @@
 /**
- * BitReader：按位读取器（H.264/H.265 NAL、exp-Golomb 等位流解析的基础）。
- * 一次最多读 32 位；超过请分段读取。
+ * BitReader / BitWriter：按位读写器（H.264/H.265 NAL、exp-Golomb、AAC ASC 等
+ * 位流语法的基础原语），全仓唯一实现（ts/flv/flac 经由此处复用）。
+ * 一次最多读 32 位；更长的丢弃型消费请用 skipBits。
  */
 import { parseError } from './errors.js';
 
@@ -39,6 +40,11 @@ export class BitReader {
     return bit;
   }
 
+  /** readBit 的语义别名（H.264/H.265 语法里的 f(n) 标志位） */
+  readFlag() {
+    return this.readBit();
+  }
+
   /**
    * 读 n 位，MSB 在前。
    * @param {number} n 1..32
@@ -72,6 +78,25 @@ export class BitReader {
     return (v & sign) !== 0 ? v - (1 << n) : v;
   }
 
+  /** 无符号 Exp-Golomb ue(v)（H.264/H.265 语法；>32 前导零判为非法码流） */
+  readUE() {
+    let zeros = 0;
+    while (this.readBit() === 0) {
+      zeros += 1;
+      if (zeros > 32) throw parseError('invalid exp-Golomb code (>32 leading zeros)');
+    }
+    if (zeros === 0) return 0;
+    // 用 2**n 而非 (1 << n)：leadingZeros >= 31 时 << 会溢出 32 位有符号整数
+    return (2 ** zeros) - 1 + this.readBits(zeros);
+  }
+
+  /** 有符号 Exp-Golomb se(v)：ue 值奇偶映射（0→0, 1→+1, 2→-1, 3→+2 …） */
+  readSE() {
+    const ue = this.readUE();
+    if (ue === 0) return 0;
+    return ue & 1 ? (ue + 1) >>> 1 : -(ue >>> 1);
+  }
+
   peekBits(n) {
     const saved = this._bitPos;
     try {
@@ -94,6 +119,11 @@ export class BitReader {
     return this;
   }
 
+  /** alignToByte 的语义别名（ts/flv 模块的历史命名） */
+  alignByte() {
+    return this.alignToByte();
+  }
+
   /** 绝对位定位（供 ExpGolombReader.moreRbspData 回溯使用） */
   seekToBit(bitPos) {
     this._bitPos = bitPos;
@@ -103,5 +133,87 @@ export class BitReader {
   /** 是否还有未读数据位（用于 more_rbsp_data 判断） */
   hasMoreData() {
     return this.bitsRemaining > 0;
+  }
+}
+
+/**
+ * BitWriter：MSB 优先位写入器（ASC/SPS 等 fixture 编码与 mux 场景共用）。
+ * Uint8Array 动态扩容；writeBits 追加低 n 位，finish/toUint8Array 补齐字节边界后导出。
+ */
+export class BitWriter {
+  constructor(initialCapacity = 64) {
+    this._buf = new Uint8Array(initialCapacity);
+    this._len = 0; // 已写满的字节数
+    this._bit = 0; // 当前字节的已写位数（0 = 从最高位开始）
+  }
+
+  _ensure() {
+    if (this._len + 1 <= this._buf.length) return;
+    const next = new Uint8Array(Math.max(this._buf.length * 2, this._len + 1));
+    next.set(this._buf.subarray(0, this._len));
+    this._buf = next;
+  }
+
+  /** 追加 n 位（value 的低 n 位，MSB 先出） */
+  writeBits(value, n) {
+    for (let i = n - 1; i >= 0; i--) {
+      if (this._bit === 0) this._ensure();
+      this._buf[this._len] |= ((Number(value) >> i) & 1) << (7 - this._bit);
+      this._bit += 1;
+      if (this._bit === 8) {
+        this._bit = 0;
+        this._len += 1;
+      }
+    }
+    return this;
+  }
+
+  /** 写无符号 Exp-Golomb ue(v) */
+  writeUE(value) {
+    const v = value + 1;
+    const bitsNeeded = 32 - Math.clz32(v); // 有效位数
+    this.writeBits(0, bitsNeeded - 1); // 前导 0
+    this.writeBits(v, bitsNeeded); // 终止 1 + 权重
+    return this;
+  }
+
+  /** 写有符号 Exp-Golomb se(v) */
+  writeSE(value) {
+    return this.writeUE(value <= 0 ? -2 * value : 2 * value - 1);
+  }
+
+  /** 补齐到字节边界（补 0）；已对齐则原地不动 */
+  alignToByte() {
+    if (this._bit !== 0) {
+      this._bit = 0;
+      this._len += 1;
+    }
+    return this;
+  }
+
+  /** alignToByte 的语义别名（ts 模块的历史命名） */
+  alignByte() {
+    return this.alignToByte();
+  }
+
+  /** 合并另一个 writer 的全部位（含未对齐尾部），保持位级连续（子帧拼接用） */
+  merge(other) {
+    if (!(other instanceof BitWriter)) throw new TypeError('BitWriter.merge expects BitWriter');
+    for (let i = 0; i < other._len; i++) this.writeBits(other._buf[i], 8);
+    if (other._bit > 0) {
+      this.writeBits(other._buf[other._len] >> (8 - other._bit), other._bit);
+    }
+    return this;
+  }
+
+  /** 补齐字节边界并导出结果 Uint8Array（副本） */
+  finish() {
+    this.alignToByte();
+    return this._buf.slice(0, this._len);
+  }
+
+  /** finish 的别名（flac 模块的历史命名） */
+  toUint8Array() {
+    return this.finish();
   }
 }

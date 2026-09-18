@@ -12,6 +12,7 @@ import { makeTS } from '../../samples/fixtures/ts.js';
 import { assembleTs } from '../../ts/__tests__/fixtures/build-ts.mjs';
 import { TsToFmp4Transmuxer, sniffContainer } from '../src/transmuxer.js';
 import { _internalForTest } from '../src/fmp4-muxer.js';
+import { buildEsds as buildEsdsCore } from '../../core/src/esds.js';
 import { Fmp4Remuxer } from '../../mp4/src/remuxer.js';
 
 /* ---------- 测试用最小 box 遍历器 ---------- */
@@ -166,6 +167,9 @@ test('结构层：音频分片无 cts 字段且 esds init 可构造', () => {
   const asc = new Uint8Array([0x12, 0x10]); // AOT=2 LC, 44.1kHz 双声道典型值
   const esds = buildEsds(asc);
   assert.equal(String.fromCharCode(esds[4], esds[5], esds[6], esds[7]), 'esds');
+  // 收敛回归（audit-79 D）：hls 包装与 core 直出（透传 128000 码率）字节级一致
+  const fromCore = buildEsdsCore(asc, { maxBitrate: 128000, avgBitrate: 128000 });
+  assert.deepEqual(Array.from(esds), Array.from(fromCore));
 
   const init = buildInit([
     {

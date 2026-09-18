@@ -166,7 +166,7 @@ export function parseLatmSyncStream(chunk) {
         const numLayers = r.readBits(3);
         for (let l = 0; l <= numLayers; l++) {
           if (p === 0 && l === 0) {
-            asc = tryReadAscBounded(chunk, r.pos, r.bit);
+            asc = tryReadAscBounded(chunk, r.bitPosition >> 3, r.bitPosition & 7);
             if (asc) advance(r, 16);            // 消耗掉 2 字节 ASC
             else throw new Error('LATM: 未定位到合法 ASC');
           }
@@ -186,10 +186,11 @@ export function parseLatmSyncStream(chunk) {
     } while (tmp === 255);
 
     r.alignByte();
-    if (slotBytes <= 0 || r.pos + slotBytes > chunk.length) {
+    const payloadPos = r.bitPosition >> 3;
+    if (slotBytes <= 0 || payloadPos + slotBytes > chunk.length) {
       return { asc, payload: null };
     }
-    return { asc, payload: chunk.slice(r.pos, r.pos + slotBytes) };
+    return { asc, payload: chunk.slice(payloadPos, payloadPos + slotBytes) };
   } catch {
     return { asc: null, payload: null };
   }

@@ -372,7 +372,7 @@ export function parseHevcSpsConfig(sps) {
 function skipProfileTierLevel(r, maxSubLayersMinus1) {
   r.readBits(2 + 1 + 5);   // profile_space/tier/profile_idc
   r.readBits(32);          // compatibility flags
-  r.readBits(48);          // constraint indicator
+  r.skipBits(48);          // constraint indicator（>32 位丢弃型消费走 skipBits）
   r.readBits(8);           // level_idc
   // 子层配置（主流流 max_sub_layers=1，直接跳过）
   if (maxSubLayersMinus1 > 0) throw new Error('多层 SPS 暂不支持宽高解析');

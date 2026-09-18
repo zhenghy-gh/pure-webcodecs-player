@@ -15,6 +15,7 @@
  */
 
 import { buildAvcCodecString, buildHevcCodecString, aacCodecString } from '../../core/src/codec-string.js';
+import { buildEsds as buildEsdsCore } from '../../core/src/esds.js';
 import { PlayerError, ErrorCode } from '../../core/src/errors.js';
 const parseFail = (m) => new PlayerError(ErrorCode.PARSE_ERROR, m);
 
@@ -227,39 +228,10 @@ function audioSampleEntry(ascBytes, sampleRate, channels) {
   return box('mp4a', base, esds);
 }
 
-/** ESDS：ES_Descriptor 包 DecoderConfigDescriptor 包 DecoderSpecificInfo(ASC) */
-export function buildEsds(ascBytes) {
-  const dsi = concat([u8(0x05), varlen(ascBytes.length), ascBytes]);       // DecoderSpecificInfo
-  const dcd = concat([
-    u8(0x04),
-    varlen(dsi.length + 13),
-    u8(0x40),                  // objectTypeIndication: MPEG-4 AAC
-    u8(0x15),                  // streamType(audio)<<2 | upStream<<1 | reserved  => 0b01010101
-    new Uint8Array(3),         // bufferSizeDB
-    u32(128000),               // maxBitrate
-    u32(128000),               // avgBitrate
-    dsi,
-  ]);
-  const es = concat([
-    u8(0x03),
-    varlen(dcd.length + 3),
-    u16(1),                    // ES_ID
-    u8(0),                     // flags
-    dcd,
-  ]);
-  return fullBox('esds', 0, 0, es);
-}
-
-function u8(n) {
-  const b = new Uint8Array(1);
-  b[0] = n & 0xff;
-  return b;
-}
-/** 描述符变长长度编码 */
-function varlen(len) {
-  if (len < 0x80) return u8(len);
-  if (len < 0x4000) return new Uint8Array([0x80 | (len >> 7), len & 0x7f]);
-  return new Uint8Array([0x80 | (len >> 14), 0x80 | ((len >> 7) & 0x7f), len & 0x7f]);
+/** ESDS：ES_Descriptor 包 DecoderConfigDescriptor 包 DecoderSpecificInfo(ASC)。
+ *  实现已收敛至 core/src/esds.js（audit-79 D）；历史默认码率 128000 以参数透传保持字节级兼容。 */
+export function buildEsds(ascBytes, options = {}) {
+  return buildEsdsCore(ascBytes, { maxBitrate: 128000, avgBitrate: 128000, ...options });
 }
 
 /** 分片模式样本表：仅 stsd（entry 自带 avcC/esds），与 core/mp4 remuxer 产物对齐。

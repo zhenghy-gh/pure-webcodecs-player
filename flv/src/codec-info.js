@@ -5,11 +5,11 @@
  *   SPS/PPS(/VPS)、分辨率（尽力解析）等参数。
  * 注意：codec string 的生成已按 CONTRACTS v0.2 §3 收敛到 core/src/codec-string.js，
  * 本文件不再自行拼串（原 codecString 字段移除）。
- * SPS 宽高解析逻辑与 ts/src/nalu.js 同源（两模块刻意零依赖，保持独立可拷贝；
- * 若后续 architect 抽取 core/ 公共层，可合并）。
+ * SPS 宽高解析逻辑与 ts/src/nalu.js 同源；位流读取器已统一收敛到 core
+ * （audit-79 D，原 ./bits-lite.js 删除）。
  */
 
-import { BitReader } from './bits-lite.js';
+import { BitReader } from '../../core/src/bit-reader.js';
 
 /**
  * 解析 AVCDecoderConfigurationRecord。
@@ -185,7 +185,7 @@ export function parseHevcSpsDimensions(sps) {
     r.readBits(1);
     r.readBits(2 + 1 + 5);
     r.readBits(32);
-    r.readBits(48);
+    r.skipBits(48);   // constraint indicator（>32 位丢弃型消费走 skipBits）
     r.readBits(8);
     if (maxSubLayersMinus1 > 0) return null;   // 多层流暂不支持
     void r.readUE();

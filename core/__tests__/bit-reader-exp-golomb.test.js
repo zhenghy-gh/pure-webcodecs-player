@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BitReader } from '../src/bit-reader.js';
+import { BitReader, BitWriter } from '../src/bit-reader.js';
 import {
   ExpGolombReader,
   parseH264Sps,
@@ -284,4 +284,56 @@ test('readUEG：31 个前导零不溢出 32 位有符号整数（回归 core 建
   assert.ok(Number.isSafeInteger(v), '结果应为安全整数');
   assert.ok(v > 0, '必须为正数');
   assert.equal(v, 4294967294, '修复前 (1<<31) 溢出返回 -2');
+});
+
+/* ---------- 收敛回归（audit-79 D）：core BitReader 新成员与 BitWriter ---------- */
+
+test('BitReader.readUE/readSE 与 ExpGolombReader 同语义', () => {
+  const data = bitsToBytes('1 010 011 00100 00101');
+  const r = new BitReader(data);
+  assert.deepEqual([r.readUE(), r.readUE(), r.readUE(), r.readUE(), r.readUE()], [0, 1, 2, 3, 4]);
+  const r2 = new BitReader(bitsToBytes('1 010 011 00100 00101'));
+  assert.deepEqual([r2.readSE(), r2.readSE(), r2.readSE(), r2.readSE(), r2.readSE()], [0, 1, -1, 2, -2]);
+  // >32 前导零 → PARSE_ERROR
+  const r3 = new BitReader(bitsToBytes('0'.repeat(33) + '1'));
+  assert.throws(() => r3.readUE(), (e) => e.code === 'PARSE_ERROR');
+});
+
+test('BitReader.readFlag/alignByte 语义别名', () => {
+  const r = new BitReader(bitsToBytes('1 0 0101 001'));
+  assert.equal(r.readFlag(), 1);
+  assert.equal(r.readFlag(), 0);
+  r.readBits(4);
+  r.alignByte();
+  assert.equal(r.byteAligned, true);
+});
+
+test('BitWriter：writeBits/finish 补齐与读写往返', () => {
+  const w = new BitWriter();
+  w.writeBits(0b101, 3).writeBits(0b00111, 5).writeBits(0b111, 3);
+  assert.deepEqual(Array.from(w.finish()), [0b10100111, 0b11100000]);
+  // 大值 ue/se 往返
+  const w2 = new BitWriter();
+  w2.writeUE(4294967294).writeSE(-12345).writeUE(0).writeSE(0);
+  const r2 = new BitReader(w2.finish());
+  assert.equal(r2.readUE(), 4294967294);
+  assert.equal(r2.readSE(), -12345);
+  assert.equal(r2.readUE(), 0);
+  assert.equal(r2.readSE(), 0);
+  // 动态扩容：初始容量 1 写 20 字节
+  const w3 = new BitWriter(1);
+  for (let i = 0; i < 20; i++) w3.writeBits(0xab, 8);
+  assert.equal(w3.finish().length, 20);
+});
+
+test('BitWriter.merge：位级连续拼接（含未对齐尾部，flac 子帧场景回归）', () => {
+  const a = new BitWriter(); a.writeBits(0b1010, 4);
+  const b = new BitWriter(); b.writeBits(0b1111, 4);
+  a.merge(b);
+  assert.deepEqual(Array.from(a.toUint8Array()), [0b10101111]);
+  // 整字节 merge
+  const c = new BitWriter(); c.writeBits(0x12, 8);
+  const d = new BitWriter(); d.writeBits(0x34, 8).writeBits(0b101, 3);
+  c.merge(d);
+  assert.deepEqual(Array.from(c.finish()), [0x12, 0x34, 0b10100000]);
 });
