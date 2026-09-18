@@ -180,6 +180,10 @@ export class WebCodecsPipeline extends Emitter {
       try { decoder.close?.(); } catch { /* 新解码器配置失败，回收临时实例 */ }
       throw error;
     }
+    if (generation !== this._lifecycleGeneration || this.state === 'destroyed') {
+      try { decoder.close?.(); } catch { /* 迟到的新解码器回收失败不影响销毁 */ }
+      return false;
+    }
     const sampleRate = track.sampleRate ?? 48000;
     const channels = track.numberOfChannels ?? track.channelCount ?? 2;
     const existing = this.audioOutput;

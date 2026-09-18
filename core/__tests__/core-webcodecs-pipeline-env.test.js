@@ -208,6 +208,45 @@ test('init：视频 decoder 配置期间 destroy 时不提交已销毁 decoder',
   assert.equal(pipeline.state, 'destroyed');
 });
 
+test('init：音频 decoder 配置期间 destroy 时不创建 AudioOutput', async () => {
+  let pipeline;
+  let decoder;
+  let outputCalls = 0;
+  pipeline = build({
+    mediaInfo: {
+      container: 'mkv',
+      tracks: [{ id: 2, type: 'audio', codec: 'mp4a.40.2', sampleRate: 44100, numberOfChannels: 2 }],
+      durationUs: 1_000_000,
+      seekable: true,
+      live: false,
+    },
+    options: {
+      audioDecoderFactory: (init) => {
+        decoder = new FakeDecoder(init);
+        const configure = decoder.configure.bind(decoder);
+        decoder.configure = (config) => {
+          void pipeline.destroy();
+          configure(config);
+        };
+        return decoder;
+      },
+      audioOutputFactory: async () => {
+        outputCalls += 1;
+        return new FakeAudioOutput();
+      },
+    },
+  }).pipeline;
+
+  await pipeline.init();
+
+  assert.equal(decoder.closed, true);
+  assert.equal(outputCalls, 0);
+  assert.equal(pipeline._audioDecoder, null);
+  assert.equal(pipeline.audioOutput, null);
+  assert.equal(pipeline._initialized, false);
+  assert.equal(pipeline.state, 'destroyed');
+});
+
 test('webcodecsPipelineFactory：初始化失败时回收已创建的 renderer', async () => {
   const originalDocument = globalThis.document;
   const originalDestroy = VideoFrameRenderer.prototype.destroy;
