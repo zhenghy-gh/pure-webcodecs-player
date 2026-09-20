@@ -27,10 +27,6 @@ const TAG_AUDIO = 8;
 const TAG_VIDEO = 9;
 const TAG_SCRIPT = 18;
 
-function u24(n) {
-  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
-}
-
 /** AMF0 编码工具（仅网关元数据所需的子集） */
 function amfString(s) {
   const body = Buffer.from(s, 'utf8');
