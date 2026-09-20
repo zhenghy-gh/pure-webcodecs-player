@@ -276,6 +276,16 @@ test('createFlvDemuxer：DataSource 源（sniff 走 read）', async () => {
 
 /* ------------------------------ §10 index.js 委托出口 ------------------------------ */
 
+test('waitForTracksOrEos：video 信号完成等待并清理全部监听', async () => {
+  const d = new FlvDemuxer({ write() {}, end() {} });
+  const waiting = d._waitForTracksOrEos();
+  d.parser.emit('video');
+  await waiting;
+  assert.equal(d.parser.listenerCount?.('video') ?? 0, 0);
+  assert.equal(d.parser.listenerCount?.('audio') ?? 0, 0);
+  assert.equal(d.parser.listenerCount?.('complete') ?? 0, 0);
+});
+
 test('index.probe：委托主类同步嗅探（命中 / 垃圾 null 且不抛）', () => {
   const pr = Mod.probe(stdFile().subarray(0, 64));
   assert.equal(pr.container, 'flv');
