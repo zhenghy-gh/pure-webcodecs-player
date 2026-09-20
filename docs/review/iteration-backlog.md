@@ -206,6 +206,8 @@
 
 | 118 | Gateway 聚合入口 close 生命周期回归 | 扩展 `samples/gateway/__tests__/servers.test.js`：独立启动三类 gateway 并等待 ready 后，验证 `startGateways().close()` 无异常且随后 `dispose()` 可幂等收尾，覆盖 `samples/gateway/src/index.js` 聚合 close 分支。全仓 2910/2910、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
+| 119 | TS PES stream_id 分类边界回归 | 扩展 `ts/__tests__/pes.test.js`：覆盖视频 `e0–ef`、音频 `c0–df` 两端边界，以及音视频互斥判断，补齐 `isAudioStreamId()` 未执行路径；`ts/src/pes.js` 定向行/分支/函数覆盖率达到 100%。全仓 2911/2911、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
+
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |

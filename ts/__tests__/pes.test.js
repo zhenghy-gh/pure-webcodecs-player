@@ -7,8 +7,19 @@ import assert from 'node:assert/strict';
 import { buildPes } from './fixtures/build-ts.mjs';
 import {
   parsePESHeader, decodeTimestamp5, encodeTimestamp5,
+  isVideoStreamId, isAudioStreamId,
 } from '../src/pes.js';
 import { unwrapTimestamp } from '../src/bits.js';
+
+test('stream_id 分类边界：视频 e0-ef、音频 c0-df 且互不重叠', () => {
+  assert.equal(isVideoStreamId(0xe0), true);
+  assert.equal(isVideoStreamId(0xef), true);
+  assert.equal(isVideoStreamId(0xdf), false);
+  assert.equal(isAudioStreamId(0xc0), true);
+  assert.equal(isAudioStreamId(0xdf), true);
+  assert.equal(isAudioStreamId(0xbf), false);
+  assert.equal(isAudioStreamId(0xe0), false);
+});
 
 test('时间戳 5 字节编解码往返', () => {
   for (const ts of [0, 1, 180000, 90000 * 3600, 2 ** 33 - 1]) {
