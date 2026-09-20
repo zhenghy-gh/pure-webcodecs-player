@@ -22,27 +22,6 @@ export function mpegCrc32(bytes, start = 0, end = bytes.length) {
   return crc >>> 0;
 }
 
-/**
- * 从 payload unit 中提取完整 section 字节。
- * 返回 { complete: Uint8Array|null } —— 长度不足时返回 null。
- * 调用方负责把同一 PID 的 payload unit 按序喂进来。
- * @param {Uint8Array} payloadUnit 一个 PUSI 开始的整段 TS 有效载荷
- */
-export function readSectionFromPayload(payloadUnit) {
-  let offset = 0;
-  if (payloadUnit.length === 0) return null;
-  const pointerField = payloadUnit[0];
-  offset = 1 + pointerField;
-  if (offset >= payloadUnit.length) return null;
-  if (offset + 3 > payloadUnit.length) return null;
-  // section 头：table_id(8) | section_syntax(1) '0' reserved(2) length(12)
-  const sectionLength = ((payloadUnit[offset + 1] & 0x0f) << 8) | payloadUnit[offset + 2];
-  const total = 3 + sectionLength; // 含头与 CRC
-  if (total > 4096 + 3) return null; // PSI 上限 1024(PAT)/4096?保守拒绝
-  if (offset + total > payloadUnit.length) return null; // 跨包由 assembler 处理
-  return payloadUnit.subarray(offset, offset + total);
-}
-
 /** 解析 section 公共头 */
 function parseSectionHeader(section) {
   return {
