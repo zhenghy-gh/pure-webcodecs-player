@@ -12,6 +12,7 @@
 
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { constants as bufferConstants } from 'node:buffer';
 
 /** RFC 6455 固定 GUID，仅用于握手 Accept 计算 */
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
@@ -137,7 +138,7 @@ export class FrameDecoder {
     } else if (len === 127) {
       if (buf.length < 10) return null;
       const big = buf.readBigUInt64BE(2);
-      if (big > BigInt(Buffer.constants.MAX_LENGTH)) throw new Error('frame too large');
+      if (big > BigInt(bufferConstants.MAX_LENGTH)) throw new Error('frame too large');
       len = Number(big);
       offset = 10;
     }
