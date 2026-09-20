@@ -139,6 +139,21 @@ test('_rangeGet：服务器无视 Range 返 200（start>0）→ SOURCE_ERROR 且
   assert.equal(cancelled, true, '应取消整文件响应体避免浪费带宽');
 });
 
+test('_rangeGet：取消整文件响应体自身抛错也不覆盖原 SOURCE_ERROR', async () => {
+  const whole = makeWhole(512);
+  const ds = new HttpRangeDataSource('http://fixture.invalid/ignore-cancel-fails.mp4', {
+    chunkSize: 128,
+    fetchImpl: async (_u, init = {}) => {
+      if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': String(whole.length), 'accept-ranges': 'bytes' } });
+      return fakeRes(200, { body: { cancel: () => { throw new Error('cancel failed'); } } });
+    },
+  });
+  await ds.open();
+  await assert.rejects(() => ds.read(128, 10), (e) =>
+    e.code === 'SOURCE_ERROR' && /server ignored Range header \(got 200\)/.test(e.message),
+  );
+});
+
 test('_rangeGet：206 短响应且未到文件尾 → SOURCE_ERROR（short range response）', async () => {
   const whole = makeWhole(1024);
   const ds = new HttpRangeDataSource('http://fixture.invalid/short.mp4', {
