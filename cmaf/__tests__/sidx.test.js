@@ -62,6 +62,44 @@ test('sidx：version=0 引用表与 SAP 位解析', () => {
   assert.equal(r1.startsWithSAP, false);
 });
 
+test('sidx：version=1 解析 64 位 earliestPresentationTime/firstOffset', () => {
+  const refs = [{ size: 0x123456, duration: 0x234567, startsWithSAP: true, sapType: 2 }];
+  // vf+refId+timescale+ept(8)+firstOffset(8)+reserved+count + references
+  const body = new Uint8Array(32 + refs.length * 12);
+  const dv = new DataView(body.buffer);
+  let p = 0;
+  body[p++] = 1; // version=1
+  p += 3; // flags
+  dv.setUint32(p, 7); p += 4;
+  dv.setUint32(p, 1000); p += 4;
+  dv.setBigUint64(p, 0x1_0000_0001n); p += 8;
+  dv.setBigUint64(p, 0x2_0000_0002n); p += 8;
+  p += 2; // reserved
+  dv.setUint16(p, refs.length); p += 2;
+  for (const r of refs) {
+    dv.setUint32(p, (r.referenceType << 31) | r.size); p += 4;
+    dv.setUint32(p, r.duration); p += 4;
+    dv.setUint32(p, (1 << 31) | (r.sapType << 28)); p += 4;
+  }
+  const bytes = new Uint8Array(8 + body.length);
+  new DataView(bytes.buffer).setUint32(0, bytes.length);
+  bytes.set([0x73, 0x69, 0x64, 0x78], 4);
+  bytes.set(body, 8);
+  const head = readBoxHeader(bytes, 0);
+  const idx = parseSidx(bytes, head.headerSize, head.size);
+  assert.equal(idx.referenceId, 7);
+  assert.equal(idx.timescale, 1000);
+  assert.equal(idx.earliestPresentationTimeTicks, 0x1_0000_0001);
+  assert.equal(idx.firstOffset, 0x2_0000_0002);
+  assert.deepEqual(idx.references, [{
+    referenceType: 0,
+    size: 0x123456,
+    durationTicks: 0x234567,
+    startsWithSAP: true,
+    sapType: 2,
+  }]);
+});
+
 test('splitChunks：流内 sidx 被捕获为 segmentIndex', () => {
   // init + sidx + 一个 chunk
   const FAKE = new Uint8Array([1, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0, 8, 0x67, 0x64]);
