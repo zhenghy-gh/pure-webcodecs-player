@@ -285,6 +285,24 @@ test('非 onMetaData 的 script tag → metadata 只带 name', () => {
   assert.equal(got.metadata[0].width, undefined);
 });
 
+test('script tag 的非法 AMF marker → 统一为 PARSE_ERROR，后续 Tag 仍可消费', () => {
+  const { d, got } = collectWith();
+  const malformed = Uint8Array.from([0xff]);
+  d.push(
+    join(
+      flvFileHeader(),
+      serializeTag(18, 0, malformed),
+      serializeTag(5, 0, Uint8Array.from([1, 2, 3, 4])),
+    ),
+  );
+  d.flush();
+  assert.ok(
+    got.errors.some((e) => e.code === 'PARSE_ERROR' && /Tag 解析失败\(type=18\)/.test(e.message)),
+    '畸形 script tag 应归一为 PARSE_ERROR',
+  );
+  assert.equal(got.done.samples, 0, '异常 Tag 不应污染样本计数');
+});
+
 test('metadata 宽高回填已建立的视频轨描述', () => {
   const { d, got } = collectWith();
   d.push(
