@@ -105,6 +105,17 @@ test('TagState：\alpha 影响主色不透明度', () => {
   assert.ok(Math.abs(st.primary.alpha - (1 - 128 / 255)) < 1e-9);
 });
 
+test('TagState：2c 仅确认支持，3c 更新描边色；fscy 更新纵向缩放', () => {
+  const st = new TagState(createDefaultStyle());
+  const outlineBefore = st.outlineColor;
+  assert.equal(st.apply({ name: '2c', arg: '&H0000FF&' }), true);
+  assert.deepEqual(st.outlineColor, outlineBefore, '2c 本期不应改变描边色');
+  assert.equal(st.apply({ name: '3c', arg: '&H00FF00&' }), true);
+  assert.deepEqual(st.outlineColor, { r: 0, g: 255, b: 0, alpha: 1 });
+  assert.equal(st.apply({ name: 'fscy', arg: '85.5' }), true);
+  assert.equal(st.scaleY, 85.5);
+});
+
 test('TagState：白名单外标签进入 unsupported 且 apply 返回 false', () => {
   const st = new TagState(createDefaultStyle());
   assert.equal(st.apply({ name: 'bord', arg: '10' }), false);
