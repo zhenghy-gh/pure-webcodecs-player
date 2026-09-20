@@ -159,3 +159,10 @@ test('chaos=dropEvery:N 会产生序列号跳变（供客户端容错测试）',
     ws.close();
   }
 });
+
+test('startGateways：close() 关闭独立启动的全部服务', async () => {
+  const local = startGateways({ host: '127.0.0.1', wsFlvPort: 0, rtspPort: 0, relayPort: 0 });
+  await Promise.all(local.servers.map((server) => server.ready));
+  assert.doesNotThrow(() => local.close());
+  await local.dispose();
+});
