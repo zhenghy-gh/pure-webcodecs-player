@@ -220,6 +220,8 @@
 
 | 125 | CMAF sidx 64 位索引回归 | 扩展 `cmaf/__tests__/sidx.test.js`：构造 version=1 sidx，验证 `earliestPresentationTime` 与 `firstOffset` 的 64 位字段、SAP 引用表均按规范解析。全仓 2916/2916、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
+| 126 | A/V 同步控制器播放速率回归 | 扩展 `core/__tests__/core-utils-boundary.test.js`：验证 `AvSyncController.setRate()` 委托内部时钟、外部 master clock 接入后 `start()` 不重置内部锚点，且主钟读取优先外部源。全仓 2917/2917、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
+
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |

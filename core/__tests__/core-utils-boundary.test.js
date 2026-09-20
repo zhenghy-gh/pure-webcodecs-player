@@ -96,6 +96,17 @@ test('PlaybackClock：事件载荷完整（play 无参 / pause 携带冻结时�
 
 /* ------------------------------ AvSyncController 内部钟路径 ------------------------------ */
 
+test('AvSyncController：setRate 委托内部钟并保持主钟覆盖语义', () => {
+  const sync = new AvSyncController();
+  sync.start(2);
+  sync.setRate(1.5);
+  assert.equal(sync.clock.rate, 1.5);
+  sync.attachMaster(() => 7);
+  sync.start(9);
+  assert.ok(Math.abs(sync.clock.getTimeSec() - 2) < 0.01, 'attachMaster 后 start 不应重置内部钟');
+  assert.equal(sync.masterTimeSec(), 7, '主钟存在时应优先使用外部时钟');
+});
+
 test('AvSyncController：无 attachMaster 时 start 即播内部钟，决策基于内部钟', () => {
   const sync = new AvSyncController();
   assert.equal(sync.masterClockFn, null);
