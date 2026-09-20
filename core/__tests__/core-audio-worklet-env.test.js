@@ -329,3 +329,22 @@ test('createAudioOutput：channels 定稿参数与 channelCount 兼容别名等�
     assert.ok(a instanceof AudioWorkletPlayer);
   });
 });
+
+test('destroy：底层 disconnect 抛错时仍完成清理并广播 destroy', async (t) => {
+  await withPlayer(t, {}, async (player, fakes) => {
+    await player.init();
+    const node = fakes.nodeInstances[0];
+    const gain = fakes.ctxInstances[0].gains[0];
+    const destroyed = [];
+    player.on('destroy', () => destroyed.push(true));
+    node.disconnect = () => { throw new Error('node disconnect failed'); };
+    gain.disconnect = () => { throw new Error('gain disconnect failed'); };
+    assert.doesNotThrow(() => player.destroy());
+    assert.equal(player.destroyed, true);
+    assert.equal(player.node, null);
+    assert.equal(player.context, null);
+    assert.deepEqual(destroyed, [true]);
+    assert.doesNotThrow(() => player.resume(), '无 context 的 resume 应安全返回');
+    assert.doesNotThrow(() => player.clearBuffer(), '销毁后的 clearBuffer 应安全复位');
+  });
+});
