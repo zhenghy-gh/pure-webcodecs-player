@@ -89,3 +89,14 @@ test('大 NAL 自动 FU-A：仅首片 S、仅末片 E+marker，重组还原原�
 
   assert.deepEqual(Array.from(meta.reassembled), Array.from(nal), 'FU-A 重组应精确还原 NAL');
 });
+
+test('makeRTPH264Packets：不传 nal 时使用默认 101B IDR（触发 FU-A 默认路径）', () => {
+  const { packets, meta } = makeRTPH264Packets();
+  assert.equal(meta.mode, 'fu-a', '101B 默认 NAL 超 mtu=64 应走 FU-A');
+  assert.equal(meta.nalType, 5);
+  assert.ok(packets.length >= 2);
+  const re = meta.reassembled;
+  assert.equal(re.length, 101);
+  assert.equal(re[0], 0x65, '默认 NAL 头 type=5 IDR');
+  for (let i = 1; i < re.length; i++) assert.equal(re[i], i & 0xff);
+});
