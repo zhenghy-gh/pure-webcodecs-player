@@ -6,6 +6,8 @@
  *   - 离线路径：.torrent 字节 → bencode 解析 → piece 布局 → assembler 装配 DataSource
  */
 
+import { PlayerError } from '../../core/src/errors.js';
+
 export { PlayerError, ErrorCode } from '../../core/src/errors.js';
 
 // ── §10 传输层注册形状 ──────────────────────────────────
