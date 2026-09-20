@@ -403,3 +403,33 @@ test('destroy：释放 GL 资源、清空 ctx、移除全部监听（幂等）',
     assert.equal(emitted, 0, 'destroy 后监听已清空');
   });
 });
+
+test('异常分支：2D context 获取失败、WebGL 降级后的 2D 绘制失败与 GL 清理异常均安全返回', async () => {
+  await withDocument(() => {
+    const brokenCanvas = makeCanvas({ ctx: null });
+    brokenCanvas.getContext = (kind) => {
+      if (kind === '2d') throw new Error('context 失败');
+      return null;
+    };
+    assert.throws(() => new VideoFrameRenderer(brokenCanvas, { mode: '2d' }));
+
+    const gl = new FakeGL({ throwOn: 'texImage2D' });
+    const r = new VideoFrameRenderer(makeCanvas({ gl, ctx: new Fake2D({ throwOnDraw: true }) }));
+    assert.equal(r.draw({ width: 16, height: 9 }), false);
+
+    const cleanupGl = new FakeGL();
+    const cleanup = new VideoFrameRenderer(makeCanvas({ gl: cleanupGl, ctx: new Fake2D() }));
+    cleanupGl.deleteTexture = () => { throw new Error('cleanup 失败'); };
+    assert.doesNotThrow(() => cleanup.destroy());
+  });
+});
+
+test('WebGL cover：视频更窄时走 scaleY 分支', async () => {
+  await withDocument(() => {
+    const gl = new FakeGL();
+    const r = new VideoFrameRenderer(makeCanvas({ gl, ctx: new Fake2D(), width: 100, height: 100 }), { fit: 'cover' });
+    assert.equal(r.draw({ width: 50, height: 100 }), true);
+    const uv = gl.uniforms.at(-1);
+    assert.ok(uv[2] > 1 && uv[3] === 0 && uv[4] < 0, `cover 窄视频应扩大垂直采样范围: ${JSON.stringify(uv)}`);
+  });
+});

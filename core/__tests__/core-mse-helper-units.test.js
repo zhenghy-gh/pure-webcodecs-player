@@ -632,3 +632,18 @@ test('mseMonotonicTime：返回以秒为单位的数值', () => {
 test('Node 无 MediaSource 时 mseIsTypeSupported 恒 false（helper 兜底语义一致）', () => {
   assert.equal(mseIsTypeSupported('video/mp4; codecs="avc1.42E01E"'), false);
 });
+
+test('mseIsTypeSupported：无实例方法时回退构造器静态探测', () => {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'MediaSource');
+  class StaticMediaSource {
+    static isTypeSupported(mime) { return mime === 'video/mp4'; }
+  }
+  try {
+    Object.defineProperty(globalThis, 'MediaSource', { value: StaticMediaSource, configurable: true });
+    assert.equal(mseIsTypeSupported('video/mp4'), true);
+    assert.equal(mseIsTypeSupported('audio/webm'), false);
+  } finally {
+    if (saved) Object.defineProperty(globalThis, 'MediaSource', saved);
+    else delete globalThis.MediaSource;
+  }
+});

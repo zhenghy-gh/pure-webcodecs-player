@@ -279,9 +279,14 @@ async function loadSource(source, fileName = '') {
     const remuxer = new Fmp4Remuxer();
     const mediaTracks = info.tracks.filter((track) => track.type === 'video' || track.type === 'audio');
     const pending = new Map(mediaTracks.map((track) => [track.id, { track, samples: [], durationUs: 0 }]));
+    // Chrome MSE 要求同一 MediaSource 的多条轨先全部注册，再追加 init segment。
+    // 若先 append 视频 init 再创建音频 SourceBuffer，会在部分版本触发 QuotaExceededError(22)。
     for (const track of mediaTracks) {
       const mime = `${track.type === 'audio' ? 'audio' : 'video'}/mp4; codecs="${track.codec}"`;
-      await mse.addTrack(`track${track.id}`, mime); await mse.append(`track${track.id}`, remuxer.createInitSegment(track));
+      await mse.addTrack(`track${track.id}`, mime);
+    }
+    for (const track of mediaTracks) {
+      await mse.append(`track${track.id}`, remuxer.createInitSegment(track));
     }
     $('mode').textContent = `${info.fragmented ? 'fragmented' : 'progressive'} · streaming`;
     setStatus('正在缓冲', 'loading');

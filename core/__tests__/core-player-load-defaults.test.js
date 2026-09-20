@@ -25,6 +25,7 @@ import { Player } from '../src/player.js';
 import { WebCodecsPipeline } from '../src/pipeline-webcodecs.js';
 import { MsePipeline } from '../src/pipeline-mse.js';
 import { BlobDataSource } from '../src/data-source.js';
+import { registerDemuxer, unregisterDemuxer } from '../src/registry.js';
 
 /** 临时改写 globalThis 若干属性，执行 fn（支持 async）后原样还原 */
 async function withGlobals(patch, fn) {
@@ -401,4 +402,64 @@ test('buffered：demuxer/pipeline 均无区间时按 bufferedAheadUs 合成；�
   const ranges = p.buffered;
   assert.deepEqual(ranges, [{ startUs: 0, endUs: 5000000 }]);
   await p.destroy();
+});
+
+test('player：管线主时钟优先、无缓冲时返回空区间、默认调度器可取消', async () => {
+  let scheduled = false;
+  const p = new Player({
+    route: 'webcodecs',
+    capabilities: caps,
+    demuxerFactory: async () => ({
+      open: async () => ({ container: 'mkv', tracks: [], seekable: true, live: false }),
+      readSample: async () => null,
+      destroy: async () => {},
+    }),
+    pipelineFactory: async () => ({ currentTimeUs: 123456, destroy: async () => {} }),
+  });
+  await p.load({ read: async () => new Uint8Array([1]) });
+  assert.equal(p.currentTimeUs, 123456, '有管线主时钟时应优先使用管线时间');
+  assert.deepEqual(p.buffered, [], '无 demuxer/pipeline 缓冲且无水位时返回空数组');
+  const cancel = p._schedule(() => { scheduled = true; }, 60_000);
+  assert.equal(typeof cancel, 'function');
+  cancel();
+  assert.equal(scheduled, false, '取消默认调度后回调不应执行');
+  await p.destroy();
+});
+
+test('load：URL 输入走 detectFromUrl，透传 Range 请求并创建探测到的 demuxer', async () => {
+  const name = 'player-url-test';
+  const bytes = new Uint8Array([0xaa, 0xbb]);
+  let request = null;
+  let sourceSeen = null;
+  registerDemuxer({
+    containerName: name,
+    extensions: ['.purl'],
+    probe: (head) => (head[0] === 0xaa ? { container: name, confidence: 0.99 } : null),
+    createDemuxer: (source) => {
+      sourceSeen = source;
+      return {
+        open: async () => ({ container: name, tracks: [], seekable: false, live: true }),
+        readSample: async () => null,
+        destroy: async () => {},
+      };
+    },
+  });
+  try {
+    const p = new Player({
+      route: 'webcodecs',
+      capabilities: caps,
+      fetchImpl: async (url, options) => {
+        request = { url, options };
+        return { ok: true, status: 206, body: null, arrayBuffer: async () => bytes.buffer };
+      },
+      pipelineFactory: async () => ({ destroy: async () => {} }),
+    });
+    await p.load('https://example.com/video.purl');
+    assert.equal(request.url, 'https://example.com/video.purl');
+    assert.equal(request.options.headers.Range, 'bytes=0-4095');
+    assert.ok(sourceSeen, '应使用探测结果创建 DataSource/demuxer');
+    await p.destroy();
+  } finally {
+    unregisterDemuxer(name);
+  }
 });

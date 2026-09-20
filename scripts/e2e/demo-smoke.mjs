@@ -76,7 +76,7 @@ const DEMOS = [
 const DRIVERS = {
   async mp4(page, root) {
     await page.fill('#url', root + '/samples/e2e/sintel-trailer.mp4', { timeout: 5000 });
-    await page.click('#playUrl', { timeout: 5000 });
+    await page.click('#loadUrl', { timeout: 5000 });
     await page.waitForFunction(
       () => { const v = document.getElementById('video'); return v && !v.paused && v.currentTime > 1; },
       { timeout: 20000 },

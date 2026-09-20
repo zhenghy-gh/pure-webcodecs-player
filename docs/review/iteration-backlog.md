@@ -186,6 +186,8 @@
   3. 已 done 的轨二次 `for await` 返回 0 样本且不重发（相对安全）。
   与 mkv/wav（`#endEmitted` 单次 + 全可读轨扫完才发）、flac 的语义均不同。**属裁决表 D4**（`mkv-base-class-alignment.md:165`：「以契约字面『全部轨 EOS』为目标…**基类收敛另立跨模块议题**」）→ **需 owner/captain 裁决，禁止单模块擅改**。本波仅取证登记，未改代码。
 
+| 109 | MP4 双轨 MSE 初始化顺序修复 + 浏览器真机回归 | Chrome 真机探针复现：MP4 demo 先创建视频 SourceBuffer 并追加 init、再创建音频 SourceBuffer 会触发 `QuotaExceededError(22)`；修复 `mp4/demo/index.html` 为先注册全部 video/audio SourceBuffer，再统一追加 init segment。同步修正 `scripts/e2e/demo-smoke.mjs` 的 MP4 按钮选择器（`#playUrl`→`#loadUrl`）。验证：core、MP4、HLS 真实 Chrome smoke 全 PASS；MP4 `readyState=4`、`currentTime≈11.7s` 持续推进，HLS 驱动 PASS；全仓 2901/2901、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
+
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |

@@ -9,6 +9,9 @@ import {
   parseByteRange,
   parseAttributes,
   splitCodecs,
+  computeResumeIndexByTimeUs,
+  enableLog,
+  logger,
   EwmaBandwidthEstimator,
 } from '../src/index.js';
 
@@ -106,4 +109,30 @@ test('EWMA 带宽估计：样本充足后向真实带宽收敛', () => {
     est.sample(625000, 1000); // 625000 B / 1000 ms ≈ 5 Mbps
   }
   assert.ok(est.bandwidth > 4.2e6 && est.bandwidth < 5.8e6, `收敛失败: ${est.bandwidth}`);
+});
+
+test('utils：日志开关仅在启用时输出，空时间列表返回 0', () => {
+  const calls = [];
+  const original = { log: console.log, warn: console.warn, error: console.error };
+  console.log = (...args) => calls.push(['log', ...args]);
+  console.warn = (...args) => calls.push(['warn', ...args]);
+  console.error = (...args) => calls.push(['error', ...args]);
+  try {
+    const log = logger('test');
+    enableLog(false);
+    log.info('silent');
+    assert.deepEqual(calls, []);
+    enableLog(true);
+    log.info('hello');
+    log.warn('careful');
+    log.error('broken');
+    assert.deepEqual(calls.map(([level]) => level), ['log', 'warn', 'error']);
+    assert.equal(calls[0][1], '[hls:test]');
+    assert.equal(computeResumeIndexByTimeUs([], 0), 0);
+  } finally {
+    enableLog(false);
+    console.log = original.log;
+    console.warn = original.warn;
+    console.error = original.error;
+  }
 });

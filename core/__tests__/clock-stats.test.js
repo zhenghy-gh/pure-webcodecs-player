@@ -100,3 +100,39 @@ test('Stats 计数与 fps EMA（注入时钟）', () => {
   stats.reset();
   assert.equal(stats.snapshot().bytesAppended, 0);
 });
+
+test('Stats：demux 计数、decodeError 事件与 Date.now 时钟回退', async () => {
+  const detail = { code: 'DECODE_ERROR', track: 'video' };
+  const seen = [];
+  const realDateNow = Date.now;
+  await withGlobal('performance', undefined, () => {
+    Date.now = () => 1234;
+    try {
+      const stats = new Stats();
+      assert.equal(stats._now(), 1.234, '无 performance 时应回退 Date.now');
+      stats.on('decodeError', (value) => seen.push(value));
+      stats.markDemuxed(4096);
+      stats.markDecodeError(detail);
+      assert.equal(stats.snapshot().bytesDemuxed, 4096);
+      assert.deepEqual(seen, [detail]);
+      assert.equal(stats.snapshot().decodeErrors, 1);
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
+  await withGlobal('performance', { now: () => 2000 }, () => {
+    const stats = new Stats();
+    assert.equal(stats._now(), 2, 'performance.now 应按秒换算');
+  });
+});
+
+async function withGlobal(key, value, fn) {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
+  Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
+  try {
+    return await fn();
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+    else delete globalThis[key];
+  }
+}
