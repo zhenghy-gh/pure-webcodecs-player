@@ -147,6 +147,17 @@ test('mode=2d：直接走 Canvas2D 路径；非法 fit 归一化为 contain', as
   assert.equal(globalThis.document, undefined, 'document 已还原');
 });
 
+test('2D context 获取抛错时回落 NOT_SUPPORTED，而非泄漏异常', async () => {
+  await withDocument(() => {
+    const canvas = makeCanvas({ ctx: null });
+    canvas.getContext = () => { throw new Error('context unavailable'); };
+    assert.throws(
+      () => new VideoFrameRenderer(canvas, { mode: '2d' }),
+      (e) => e.code === 'NOT_SUPPORTED',
+    );
+  });
+});
+
 test('createVideoRenderer：preference 为定稿参数名，并作为 mode 传入', async () => {
   await withDocument(() => {
     const r = createVideoRenderer(makeCanvas({ ctx: new Fake2D() }), { preference: '2d' });
