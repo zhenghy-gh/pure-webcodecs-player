@@ -470,7 +470,7 @@ export class TsDemuxer extends Demuxer {
   /* ------------------------------ 轨道与元数据 ------------------------------ */
 
   async _doSeek(_timestampUs) {
-    throw seekUnsupportedTs('TS 为无索引容器，不支持 seek');
+    throw seekUnsupported('TS 为无索引容器，不支持 seek');
   }
 
   getBufferedRanges(_trackId) {
