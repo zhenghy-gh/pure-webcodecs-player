@@ -25,7 +25,7 @@ export class TorrentSourceError extends PlayerError {
 }
 
 /** 契约 §2.1 DataSource 字段名（size；byteLength 为兼容别名） */
-function withSizeAlias(source) {
+export function withSizeAlias(source) {
   Object.defineProperty(source, 'byteLength', {
     get() { return this.size; },
     configurable: true,
