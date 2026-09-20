@@ -45,3 +45,10 @@ test('concat 与 ascii/fromHex 组合可用', () => {
   assert.deepEqual(Array.from(joined), [0x41, 0x42, 0x00, 0xff]);
   assert.deepEqual(Array.from(u8(1, 2)), [1, 2]);
 });
+
+test('BitWriter：非整字节字段 finish 补零且可重复调用', () => {
+  const w = new BitWriter();
+  w.put(0b101, 3);
+  assert.deepEqual(Array.from(w.finish()), [0xa0]);
+  assert.deepEqual(Array.from(w.finish()), [0xa0], 'finish 应保持已完成字节稳定');
+});
