@@ -40,3 +40,10 @@ test('probe：主品牌非 qt 但兼容品牌含 qt  时交由 MOV', () => {
   assert.equal(hit.container, 'mov');
   assert.equal(hit.confidence, 0.98);
 });
+
+test('probe：输入 byteLength getter 抛错时安全返回 null', () => {
+  const hostile = {
+    get byteLength() { throw new Error('malformed probe input'); },
+  };
+  assert.equal(Mp4Demuxer.probe(hostile), null);
+});
