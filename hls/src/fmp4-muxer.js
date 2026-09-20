@@ -653,4 +653,7 @@ function buildAudioFragment(trackId, timescale, samples, seq = 1) {
  * 供单测直接验证 box 结构的内部构造器（非公共 API，语义可能演进）。
  * ts/ 模块未产出真实样本时，测试可用合成样本走纯结构路径。
  */
-export const _internalForTest = { buildInit, buildFragment, buildAudioFragment, buildEsds, concat };
+export const _internalForTest = {
+  buildInit, buildFragment, buildAudioFragment, buildEsds, concat,
+  safeCodec, parseAot, toAvcc,
+};
