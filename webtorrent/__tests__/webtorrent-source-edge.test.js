@@ -202,6 +202,21 @@ test('parseTorrent：info 缺 pieces 字段抛 PARSE_ERROR', () => {
   assert.throws(() => parseTorrent(noPieces), PlayerError);
 });
 
+test('computeInfoHash：WebCrypto digest 抛错时安全回退 null', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true,
+    value: { subtle: { digest: async () => { throw new Error('digest unavailable'); } } },
+  });
+  try {
+    const { computeInfoHash } = await import('../src/torrent-file.js');
+    assert.equal(await computeInfoHash(new Uint8Array([1, 2, 3])), null);
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'crypto', descriptor);
+    else delete globalThis.crypto;
+  }
+});
+
 test('parseTorrent：announce-list 中非数组 tier 被跳过', () => {
   const t = parseTorrent(makeRoot([])); // 基线可解析
   assert.equal(t.size, 1);
