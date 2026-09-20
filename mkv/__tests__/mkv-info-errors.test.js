@@ -78,6 +78,13 @@ test('open：有 EBML 头但无 Segment → PARSE_ERROR「未找到 Segment 元�
   );
 });
 
+test('createDemuxer：非法输入在构造源阶段归一为 SOURCE_ERROR', async () => {
+  await assert.rejects(
+    () => createDemuxer({ not: 'a byte source' }),
+    (e) => e.code === 'SOURCE_ERROR' && /无法构造数据源/.test(e.message),
+  );
+});
+
 test('DocType 非 matroska/webm：probe 拒绝、createDemuxer 拒绝，但直接 open() 仍成功（行为刻画）', async () => {
   const header = ebmlHeader({ docType: 'divx' });
   assert.equal(mkvProbe(header), null, '§10：外来 DocType 明确未命中');
