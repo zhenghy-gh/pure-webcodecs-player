@@ -8,7 +8,10 @@ import {
   resolveUrl,
   parseByteRange,
   parseAttributes,
+  hexToUint8,
   splitCodecs,
+  buildMime,
+  computeResumeIndexBySn,
   computeResumeIndexByTimeUs,
   enableLog,
   logger,
@@ -135,4 +138,35 @@ test('utils：日志开关仅在启用时输出，空时间列表返回 0', () =
     console.warn = original.warn;
     console.error = original.error;
   }
+});
+
+test('工具边界：无效 URL/属性、十六进制、MIME 与续播定位', () => {
+  assert.equal(resolveUrl('', 'https://a.test/x'), '');
+  assert.equal(resolveUrl('seg.ts', '%%%bad'), 'seg.ts');
+  assert.deepEqual(parseAttributes(''), {});
+  assert.deepEqual(parseAttributes('BROKEN, X=, N=-3.5'), { X: '', N: -3.5 });
+  assert.deepEqual(hexToUint8('0xabc'), new Uint8Array([0x0a, 0xbc]));
+  assert.deepEqual(hexToUint8(''), new Uint8Array());
+  assert.deepEqual(hexToUint8(null), new Uint8Array());
+  assert.equal(buildMime('avc1.640028', 'mp4a.40.2'), 'video/mp4; codecs="avc1.640028, mp4a.40.2"');
+  assert.equal(buildMime('', ''), 'video/mp4');
+  assert.equal(computeResumeIndexBySn([{ sn: 10 }, { sn: 12 }], null), 0);
+  assert.equal(computeResumeIndexBySn([{ sn: 10 }, { sn: 12 }], 10), 1);
+  assert.equal(computeResumeIndexBySn([{ sn: 10 }, { sn: 12 }], 12), 2);
+  assert.equal(computeResumeIndexByTimeUs([{ duration: 1 }, { duration: 2 }], 1e6), 1);
+  assert.equal(computeResumeIndexByTimeUs([{ duration: 1 }, { duration: 2 }], 9e6), 1);
+});
+
+test('EWMA 边界：无效样本不改变状态，暖机阶段返回默认估计', () => {
+  const est = new EwmaBandwidthEstimator(256, 123456);
+  est.sample(0, 1000);
+  est.sample(100, 0);
+  est.sample(-1, 10);
+  assert.equal(est.totalBytes, 0);
+  assert.equal(est.totalWeight, 0);
+  assert.equal(est.bandwidth, 123456);
+  assert.equal(est.bandwidth, 123456);
+  est.sample(100, 1000);
+  assert.equal(est.totalBytes, 100);
+  assert.equal(est.bandwidth, 800);
 });
