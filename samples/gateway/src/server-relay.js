@@ -16,10 +16,6 @@
 import { createWsHttpServer } from './ws-server.js';
 import { SlowConsumerQueue } from './slow-consumer.js';
 
-function signalFrame(obj) {
-  return Buffer.from(JSON.stringify(obj), 'utf8');
-}
-
 /** 从 URL 查询提取 ?meta=<urlencoded json>（非法则返回 null） */
 export function metaFromQuery(url) {
   const raw = url.searchParams.get('meta');
