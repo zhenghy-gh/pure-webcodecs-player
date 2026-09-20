@@ -194,6 +194,8 @@
 
 | 112 | MP4 probe 防御分支补测 | 扩展 `mp4/__tests__/mp4-probe-brand.test.js`：构造 `byteLength` getter 抛错的 hostile 输入，固化 `Mp4Demuxer.probe()` 同步不抛异常并返回 `null` 的契约；与既有 ftyp/wide/styp/mdat 品牌矩阵一起验证。全仓 2905/2905、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
+| 113 | Stats reset 全状态回归 | 扩展 `core/__tests__/clock-stats.test.js`：断言 `Stats.reset()` 同时清零全部计数器、decode 平均/最大耗时、FPS EMA 与渲染时间锚点，避免未来只清零单字段造成脏状态。`core/src/stats.js` 定向行/分支/函数覆盖率 100%。 | 本波 |
+
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |

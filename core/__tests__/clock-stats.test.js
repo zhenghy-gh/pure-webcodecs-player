@@ -98,7 +98,20 @@ test('Stats 计数与 fps EMA（注入时钟）', () => {
   assert.equal(snap.audioUnderruns, 1);
   assert.equal(snap.fps, 20, `fps=${snap.fps}`);
   stats.reset();
-  assert.equal(stats.snapshot().bytesAppended, 0);
+  assert.deepEqual(stats.snapshot(), {
+    bytesDemuxed: 0,
+    bytesAppended: 0,
+    samplesDecoded: 0,
+    videoFramesRendered: 0,
+    videoFramesDropped: 0,
+    audioUnderruns: 0,
+    seekCount: 0,
+    decodeErrors: 0,
+    fps: 0,
+    averageDecodeMs: 0,
+    maxDecodeMs: 0,
+  }, 'reset 应清除全部计数、解码统计和 FPS 状态');
+  assert.equal(stats._lastRenderAt, null, 'reset 应清除渲染时间锚点');
 });
 
 test('Stats：demux 计数、decodeError 事件与 Date.now 时钟回退', async () => {
