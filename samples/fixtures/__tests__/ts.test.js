@@ -152,6 +152,16 @@ test('auPadBytes 强制跨包：分段后仍满足 CC 连续与 PES 完整性', 
   });
 });
 
+test('auPadBytes=302：非 PCR 包恰剩 1 字节时使用零长度自适应字段', () => {
+  const { bytes, meta } = makeTS({ auCount: 1, auPadBytes: 302 });
+  const packets = parsePackets(bytes).filter((p) => p.pid === meta.pids.video);
+  assert.equal(packets.length, 2, '首 PCR 包 + 183B 尾包');
+  const tail = packets[1];
+  assert.equal(tail.af?.len, 0, '尾包应使用零长度自适应字段');
+  assert.equal(tail.payload.length, 183, '尾包载荷应占用 183 字节');
+  assert.equal(tail.packet[3] >> 4, 3, '尾包应同时存在自适应字段与载荷');
+});
+
 test('withAudio：PMT 增加 AAC 流且音频 PES 为 ADTS', () => {
   const { bytes, meta } = makeTS({ withAudio: true, auCount: 4 });
   assert.equal(meta.streamTypes[meta.pids.audio], 0x0f);
