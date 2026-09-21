@@ -244,6 +244,13 @@ describe('parseWavHeader', () => {
  * ============================================================ */
 
 describe('convertToFloat32Planar', () => {
+  test('非法 PCM 组合 → NOT_SUPPORTED 且包含格式参数', () => {
+    assert.throws(
+      () => convertToFloat32Planar(new Uint8Array(4), { formatTag: 6, channels: 1, bitsPerSample: 8 }),
+      (e) => e.code === ErrorCode.NOT_SUPPORTED && /format=6 bits=8/.test(e.message),
+    );
+  });
+
   test('s16 数值精确归一化', () => {
     const wav = buildWav({ channels: 1, frames: 4 });
     const h = parseWavHeader(wav);
