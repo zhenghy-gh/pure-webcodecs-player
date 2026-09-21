@@ -224,6 +224,8 @@
 
 | 127 | MPEG-TS fixture 零长度自适应字段回归 | 扩展 `samples/fixtures/__tests__/ts.test.js`：使用 `auPadBytes=302` 精确构造非 PCR 包仅剩 1 字节空隙，验证 `af_control=11`、`adaptation_field_length=0` 与 183 字节载荷均符合 TS 结构。全仓 2918/2918、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
+| 128 | 字幕 Canvas rAF 时钟驱动回归 | 扩展 `subtitle/__tests__/renderer.test.js`：注入 rAF/cancelAnimationFrame，验证函数时钟、`currentTimeUs()` 对象时钟、视频 `currentTime` 三条读取路径，以及停止时取消调度并实际渲染。全仓 2919/2919、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
+
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |

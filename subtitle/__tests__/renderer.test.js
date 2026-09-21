@@ -180,6 +180,54 @@ test('renderer：Node 无 rAF 时 attach 安全降级为 no-op 停止函数', ()
   assert.doesNotThrow(() => r.attach({ currentTime: 1 }));
 });
 
+test('renderer：rAF 驱动读取函数/对象/视频时钟并可停止循环', () => {
+  const previousRaf = globalThis.requestAnimationFrame;
+  const previousCancel = globalThis.cancelAnimationFrame;
+  const queued = [];
+  const cancelled = [];
+  globalThis.requestAnimationFrame = (cb) => {
+    queued.push(cb);
+    return queued.length;
+  };
+  globalThis.cancelAnimationFrame = (id) => cancelled.push(id);
+  try {
+    const { canvas, ctx } = makeStubCanvas();
+    const renderer = new SubtitleCanvasRenderer(canvas);
+    renderer.setCues({ cues: [{ startUs: 0, endUs: 5_000_000, text: 'raf' }] });
+    const renderTimes = [];
+    const originalRenderAt = renderer.renderAt.bind(renderer);
+    renderer.renderAt = (timeUs) => {
+      renderTimes.push(timeUs);
+      originalRenderAt(timeUs);
+    };
+
+    const stopFnClock = renderer.attach(() => 1_250_000);
+    assert.equal(queued.length, 1);
+    queued.shift()();
+    assert.deepEqual(renderTimes, [1_250_000]);
+    stopFnClock();
+    queued.length = 0; // 模拟 cancelAnimationFrame 移除尚未执行的旧回调
+
+    const stopObjectClock = renderer.attach({ currentTimeUs: () => 2_500_000 });
+    queued.shift()();
+    assert.equal(renderTimes.at(-1), 2_500_000);
+    stopObjectClock();
+    queued.length = 0;
+
+    const stopVideoClock = renderer.attach({ currentTime: 3.75 });
+    queued.shift()();
+    assert.equal(renderTimes.at(-1), 3_750_000);
+    stopVideoClock();
+    assert.ok(cancelled.length >= 3, '每次 stop 都应取消当前 rAF');
+    assert.ok(ctx.calls.fillText.length > 0, 'rAF 回调应实际渲染活跃字幕');
+  } finally {
+    if (previousRaf === undefined) delete globalThis.requestAnimationFrame;
+    else globalThis.requestAnimationFrame = previousRaf;
+    if (previousCancel === undefined) delete globalThis.cancelAnimationFrame;
+    else globalThis.cancelAnimationFrame = previousCancel;
+  }
+});
+
 test('renderer：attach 在无 rAF 环境下不自动循环调用 renderAt', () => {
   const { canvas } = makeStubCanvas();
   const r = new SubtitleCanvasRenderer(canvas);
