@@ -68,6 +68,26 @@ test('Mp4Demuxer：空源打开时报告 PARSE_ERROR', async () => {
   );
 });
 
+test('顶层 mdat size=0：按文件末尾计算并可继续解封装', async () => {
+  const { bytes } = buildProgressiveVideoFixture();
+  const patched = new Uint8Array(bytes);
+  let mdat = -1;
+  for (let i = 4; i + 4 <= patched.length; i++) {
+    if (patched[i] === 0x6d && patched[i + 1] === 0x64 && patched[i + 2] === 0x61 && patched[i + 3] === 0x74) {
+      mdat = i - 4;
+      break;
+    }
+  }
+  assert.ok(mdat >= 0, 'fixture 必须包含 mdat');
+  new DataView(patched.buffer).setUint32(mdat, 0);
+  const d = new Mp4Demuxer(new (await import('../../core/src/index.js')).MemoryDataSource(patched));
+  const info = await d.open();
+  assert.equal(info.container, 'mp4');
+  const samples = [];
+  for await (const sample of d.samples(1)) samples.push(sample);
+  assert.equal(samples.length, 8);
+});
+
 test('截断文件 open 抛 PARSE_ERROR', async () => {
   const { bytes } = buildProgressiveVideoFixture();
   const truncated = bytes.subarray(0, Math.floor(bytes.length * 0.6));

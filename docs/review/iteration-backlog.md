@@ -250,6 +250,8 @@
 
 | 140 | MKV 无限长度源尾部半截元素头回归 | 扩展 `mkv/__tests__/demuxer.test.js`：使用 size=Infinity 的流式数据源，在合法 WebM 后追加截断的 Void 元素头，验证 `open()` 将尾部残缺按流尾处理并保持媒体信息可用。全仓 2931/2931、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
+| 141 | MP4 顶层 mdat size-zero 回归 | 扩展 `mp4/__tests__/artifacts-edge.test.js`：将渐进式 fixture 的 `mdat` 大小字段改为 0，验证按文件末尾计算盒边界，并继续完整解封装 8 个样本。全仓 2932/2932、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
+
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |
