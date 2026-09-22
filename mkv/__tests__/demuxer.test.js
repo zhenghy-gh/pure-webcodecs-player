@@ -52,6 +52,22 @@ async function readyWebm() {
   return d;
 }
 
+test('open：无限长度数据源尾部半截元素头按流尾处理', async () => {
+  const base = makeMinimalWebm().bytes;
+  const bytes = new Uint8Array(base.length + 1);
+  bytes.set(base);
+  bytes[base.length] = 0xec; // Void ID，故意缺少 size 字段
+  const source = {
+    size: Infinity,
+    async read(offset, length) {
+      return bytes.subarray(offset, Math.min(offset + length, bytes.length));
+    },
+  };
+  const d = new MkvDemuxer(source);
+  await d.open();
+  assert.equal(d.mediaInfo.container, 'webm');
+});
+
 test('open：MediaInfo 容器/时长/seekable/metadata', async () => {
   const d = await readyWebm();
   const mi = d.mediaInfo;
