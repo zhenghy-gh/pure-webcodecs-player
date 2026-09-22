@@ -343,7 +343,7 @@ export function findAudioSpecificConfig(initSegment) {
         len = (len << 7) | (initSegment[j] & 0x7f);
         if (!(initSegment[j] & 0x80)) break;
       }
-      if (len > 0 && len < 32) {
+      if (len > 0 && len < 32 && j + 1 + len <= end) {
         return initSegment.slice(j + 1, j + 1 + len);
       }
     }

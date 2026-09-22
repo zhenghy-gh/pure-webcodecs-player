@@ -38,6 +38,14 @@ test('findAudioSpecificConfig：esds 中没有合法 DSI 时返回 null', () => 
   assert.equal(findAudioSpecificConfig(esds), null);
 });
 
+test('findAudioSpecificConfig：DSI 声明长度超过剩余数据时返回 null', () => {
+  const esds = new Uint8Array([
+    0, 0, 0, 12, 0x65, 0x73, 0x64, 0x73,
+    0x05, 0x04, 0x12, 0x10,
+  ]);
+  assert.equal(findAudioSpecificConfig(esds), null);
+});
+
 test('readBoxHeader：普通盒类型/尺寸/头长', () => {
   const b = makeBox('ftyp', 8);
   const h = readBoxHeader(b, 0);
