@@ -192,6 +192,14 @@ test('layoutEvents：按 layer 升序输出（大层号后绘制）', () => {
   assert.deepEqual(out.map((d) => d.layer), [0, 1]);
 });
 
+test('layoutEvents：空文本仍生成稳定空行几何', () => {
+  const out = layoutEvents([{ startUs: 0, endUs: 1_000_000, text: '' }], 500_000, CTX_BASE());
+  assert.equal(out.length, 1);
+  assert.equal(out[0].lines.length, 1);
+  assert.equal(out[0].lines[0].width, 0);
+  assert.equal(out[0].fontSize, createDefaultStyle().fontsize);
+});
+
 test('layoutEvents：时刻无命中返回空数组', () => {
   const cues = [{ startUs: 10_000_000, endUs: 20_000_000, text: '未开始' }];
   assert.deepEqual(layoutEvents(cues, 0, CTX_BASE()), []);
