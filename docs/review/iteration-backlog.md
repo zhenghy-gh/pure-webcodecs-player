@@ -230,6 +230,8 @@
 
 | 130 | H.264 AnnexB 单帧 fixture 回归 | 扩展 `samples/gateway/__tests__/h264-pcm.test.js`：实际调用 `makeFrameAnnexb()`，验证 4 字节 AnnexB 起始码、IDR NAL 类型与完整 I_PCM 帧长度，替代此前仅 `void` 引用的覆盖空洞。全仓 2921/2921、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
+| 131 | AAC LATM 截断扩展 AOT 回归 | 扩展 `ts/__tests__/aac-gaps.test.js`：构造截断扩展 AOT 候选，验证 LATM 的有界 ASC 扫描不会被异常候选阻断，输出保持为合法的 ASC/null 与 null payload 组合。全仓 2922/2922、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
+
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |

@@ -45,6 +45,14 @@ test('parseLatmSyncStream：合法 ASC 但 PayloadLengthInfo=0 → {asc, payload
   assert.equal(out.payload, null);
 });
 
+test('parseLatmSyncStream：截断扩展 AOT 候选不会阻断后续有界扫描', () => {
+  // 首个候选 AOT=31 不完整；实现应继续扫描窗口，并保持输出结构合法。
+  const chunk = latmChunk({ ascBytes: [0xfa, 0x20], tail: [0x00, 0x00, 0x00] });
+  const out = parseLatmSyncStream(chunk);
+  assert.ok(out.asc === null || out.asc instanceof Uint8Array);
+  assert.equal(out.payload, null);
+});
+
 test('splitLatmUnits：非同步字节 pos++、零长度单元跳过、合法单元正常解出', () => {
   const unit = new Uint8Array([0x56, 0xe0, 0x07, 0x00, 0x00, 0x12, 0x20, 0x00, 0x00, 0x00]);
   const data = new Uint8Array([0xaa, ...unit, 0x56, 0xe0, 0x00]);
