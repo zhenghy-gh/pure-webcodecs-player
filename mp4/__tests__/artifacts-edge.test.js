@@ -59,6 +59,15 @@ test('产物 progressive.mp4 端到端：文件字节与内存构造结果一致
   assert.equal(samples.length, 8);
 });
 
+test('Mp4Demuxer：空源打开时报告 PARSE_ERROR', async () => {
+  const { MemoryDataSource } = await import('../../core/src/index.js');
+  const demuxer = new Mp4Demuxer(new MemoryDataSource(new Uint8Array(0)));
+  await assert.rejects(
+    () => demuxer.open(),
+    (err) => err.code === 'PARSE_ERROR',
+  );
+});
+
 test('截断文件 open 抛 PARSE_ERROR', async () => {
   const { bytes } = buildProgressiveVideoFixture();
   const truncated = bytes.subarray(0, Math.floor(bytes.length * 0.6));
