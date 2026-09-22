@@ -40,6 +40,13 @@ test('decodeAmf0All：脚本二元组（方法名+参数）', () => {
   assert.deepEqual(values[1].duration, 42);
 });
 
+test('encodeAmf0：不支持的 Symbol 类型明确抛出 TypeError', () => {
+  assert.throws(
+    () => encodeAmf0(Symbol('unsupported')),
+    (err) => err instanceof TypeError && /不支持的类型 symbol/.test(err.message),
+  );
+});
+
 test('非法数据返回 null / 空数组', () => {
   assert.equal(decodeAmf0(new Uint8Array([0xff])), null);
   assert.deepEqual(decodeAmf0All(new Uint8Array([0x02, 0x00, 0x05])), []);   // 截断的字符串

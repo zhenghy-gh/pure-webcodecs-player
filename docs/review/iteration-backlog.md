@@ -234,6 +234,8 @@
 
 | 132 | TS 引擎单包异常隔离回归 | 扩展 `ts/__tests__/ts-packet-header.test.js`：注入单包解析异常，验证每个异常转为 error 事件、后续包继续消费，且 flush 仍能完成。全仓 2923/2923、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
+| 133 | AMF0 不支持类型回归 | 扩展 `flv/__tests__/amf0.test.js`：验证公开 `encodeAmf0(Symbol())` 明确抛出带类型信息的 TypeError，覆盖编码器不支持类型保护。全仓 2924/2924、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
+
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |
