@@ -20,6 +20,7 @@ import {
   parseTfdt,
   parseMfhd,
   isKeyframeFlag,
+  findAudioSpecificConfig,
 } from '../src/isobmff.js';
 import { probe } from '../src/chunk-parser.js';
 
@@ -31,6 +32,11 @@ function makeBox(type, payloadLen) {
   out.set([type.charCodeAt(0), type.charCodeAt(1), type.charCodeAt(2), type.charCodeAt(3)], 4);
   return out;
 }
+
+test('findAudioSpecificConfig：esds 中没有合法 DSI 时返回 null', () => {
+  const esds = new Uint8Array([0, 0, 0, 10, 0x65, 0x73, 0x64, 0x73, 0x06, 0x01]);
+  assert.equal(findAudioSpecificConfig(esds), null);
+});
 
 test('readBoxHeader：普通盒类型/尺寸/头长', () => {
   const b = makeBox('ftyp', 8);
