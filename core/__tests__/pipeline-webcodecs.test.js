@@ -108,6 +108,30 @@ test('init：按轨建解码器，缺解码器能力时报 NOT_SUPPORTED', async
   await assert.rejects(() => bare.init(), (e) => e.code === 'NOT_SUPPORTED');
 });
 
+test('音频输出创建期间 destroy：迟到的输出实例仍被回收', async () => {
+  let release;
+  let markStarted;
+  const started = new Promise((resolve) => { markStarted = resolve; });
+  const outputReady = new Promise((resolve) => { release = resolve; });
+  const audio = new FakeAudioOutput();
+  const { pipeline } = build({
+    mediaInfo: avInfo,
+    options: {
+      audioOutputFactory: async () => {
+        markStarted();
+        return outputReady;
+      },
+    },
+  });
+  const init = pipeline.init();
+  await started;
+  await pipeline.destroy();
+  release(audio);
+  await init;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(audio.destroyed, true, 'destroy 后迟到的音频输出必须回收');
+});
+
 test('视频样本 → 解码 → 渲染，帧所有权由渲染器关闭', async () => {
   const { pipeline, videoDecoder, renderer } = build();
   await pipeline.init();
