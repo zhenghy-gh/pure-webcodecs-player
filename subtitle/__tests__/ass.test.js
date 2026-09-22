@@ -121,6 +121,13 @@ test('ASS：畸形时间码 strict 抛 PARSE_ERROR', async () => {
   );
 });
 
+test('ASS：样式节未知行被忽略且不生成伪样式', () => {
+  const r = parseAss('[V4+ Styles]\nUnknown: ignored\n');
+  assert.equal(r.styles.length, 0);
+  assert.equal(r.cues.length, 0);
+  assert.equal(r.stats.skippedBlocks, 0);
+});
+
 test('ASS：非 ASS 结构抛 NOT_SUPPORTED', () => {
   assert.throws(() => parseAss('hello world'), (e) => e.code === 'NOT_SUPPORTED');
 });

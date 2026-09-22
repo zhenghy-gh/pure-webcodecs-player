@@ -238,6 +238,8 @@
 
 | 134 | CMAF 缺失 ASC 回归 | 扩展 `cmaf/__tests__/cmaf-box.test.js`：构造包含 `esds` 但没有合法 DSI 的初始化字节，验证 `findAudioSpecificConfig()` 返回 null 而不误报配置。全仓 2925/2925、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
+| 135 | ASS 样式未知行回归 | 扩展 `subtitle/__tests__/ass.test.js`：验证 [V4+ Styles] 中未知行被忽略，不生成伪样式，也不增加畸形块计数。全仓 2926/2926、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
+
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |
