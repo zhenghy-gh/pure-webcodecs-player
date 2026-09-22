@@ -17,7 +17,9 @@ import { FlvLoopSource } from '../../samples/gateway/src/index.js';
 
 class FakeWebSocket {
   static instances = [];
+  static throwOnCreate = false;
   constructor(url) {
+    if (FakeWebSocket.throwOnCreate) throw new Error('reconnect constructor failure');
     this.url = url;
     this.binaryType = '';
     this.readyState = 0;
@@ -52,6 +54,7 @@ after(() => {
 });
 beforeEach(() => {
   FakeWebSocket.instances = [];
+  FakeWebSocket.throwOnCreate = false;
 });
 
 /** Buffer/Uint8Array → 独立 ArrayBuffer（模拟真实 WebSocket 的 arraybuffer 交付） */
@@ -91,6 +94,18 @@ async function until(fn, ms = 3000) {
 const latest = () => FakeWebSocket.instances.at(-1);
 
 /* ------------------------------------------------------------------- tests */
+
+test('重连连接构造失败：进入 error 且定时器 Promise 被消费', async () => {
+  const p = new WsFlvPlayer({ backoff: BACKOFF, maxReconnectAttempts: 1 });
+  const start = p.start('ws-flv://gw/live/reconnect-failure');
+  latest()._open();
+  await start;
+  FakeWebSocket.throwOnCreate = true;
+  latest().serverClose(1006, 'fixture');
+  await sleep(60);
+  assert.equal(p.state, PLAYER_STATES.ERROR);
+  p.stop();
+});
 
 test('生命周期：idle→connecting→playing→stopped，open/metadata/track/sample 全链路 + stats', async () => {
   const p = new WsFlvPlayer({ backoff: BACKOFF, flushIntervalMs: 40 });
