@@ -75,6 +75,13 @@ test('AnnexB 拼接：起始码分隔且可按 00000001 切分还原 NAL', () =>
   void makeFrameAnnexb;
 });
 
+test('makeFrameAnnexb：单帧输出带 AnnexB 起始码且包含 IDR NAL', () => {
+  const frame = makeFrameAnnexb(2);
+  assert.deepEqual(Array.from(frame.subarray(0, 4)), [0, 0, 0, 1]);
+  assert.equal(frame[4] & 0x1f, 5);
+  assert.ok(frame.length > 380, '单帧 AnnexB 应包含完整 I_PCM IDR');
+});
+
 test('图案随帧号变化（动画性）且确定可复现', () => {
   const a = makeIdrFrame(3);
   const b = makeIdrFrame(4);
