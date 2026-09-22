@@ -21,6 +21,24 @@ import {
 
 /* ------------------------------ sync / TEI ------------------------------ */
 
+test('包解析异常：单包异常转为 error 事件且不阻断后续包', () => {
+  const e = mkEngine();
+  const ev = attachCollector(e);
+  e._parsePacket = () => { throw new Error('fixture parse failure'); };
+  const bytes = new Uint8Array(188 * 3);
+  for (let i = 0; i < 3; i++) {
+    bytes[i * 188] = 0x47;
+    bytes[i * 188 + 1] = 0x1f;
+    bytes[i * 188 + 2] = i;
+    bytes[i * 188 + 3] = 0x10;
+  }
+  e.push(bytes);
+  assert.equal(ev.errors.length, 3, '每个包的解析异常都应转发为 error 事件');
+  assert.ok(ev.errors.every((err) => /fixture parse failure/.test(err.message)));
+  e.flush();
+  assert.equal(e.complete, true, '解析异常后仍可完成 flush');
+});
+
 test('sync 字节错误：整包非 0x47 起始被跳过（不解析、不崩溃、complete 命中）', () => {
   const e = mkEngine();
   const ev = attachCollector(e);
