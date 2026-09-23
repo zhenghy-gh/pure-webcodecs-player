@@ -363,6 +363,20 @@ test('BitWriter：writeBits/finish 补齐与读写往返', () => {
   assert.equal(w3.finish().length, 20);
 });
 
+test('BitWriter.merge self-appends a finite snapshot', () => {
+  const aligned = new BitWriter();
+  aligned.writeBits(0xa5, 8);
+  aligned.merge(aligned);
+  assert.deepEqual([...aligned.finish()], [0xa5, 0xa5]);
+
+  const partial = new BitWriter();
+  partial.writeBits(0b101, 3);
+  partial.merge(partial);
+  const reader = new BitReader(partial.finish());
+  assert.equal(reader.readBits(3), 0b101);
+  assert.equal(reader.readBits(3), 0b101);
+});
+
 test('BitWriter.merge：位级连续拼接（含未对齐尾部，flac 子帧场景回归）', () => {
   const a = new BitWriter(); a.writeBits(0b1010, 4);
   const b = new BitWriter(); b.writeBits(0b1111, 4);

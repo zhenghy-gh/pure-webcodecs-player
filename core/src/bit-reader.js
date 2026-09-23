@@ -211,6 +211,14 @@ export class BitWriter {
   /** 合并另一个 writer 的全部位（含未对齐尾部），保持位级连续（子帧拼接用） */
   merge(other) {
     if (!(other instanceof BitWriter)) throw new TypeError('BitWriter.merge expects BitWriter');
+    if (other === this) {
+      const original = this._buf.slice(0, this._len + (this._bit > 0 ? 1 : 0));
+      const fullBytes = this._len;
+      const tailBits = this._bit;
+      for (let i = 0; i < fullBytes; i++) this.writeBits(original[i], 8);
+      if (tailBits > 0) this.writeBits(original[fullBytes] >> (8 - tailBits), tailBits);
+      return this;
+    }
     for (let i = 0; i < other._len; i++) this.writeBits(other._buf[i], 8);
     if (other._bit > 0) {
       this.writeBits(other._buf[other._len] >> (8 - other._bit), other._bit);
