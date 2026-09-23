@@ -284,3 +284,13 @@ test('Size：种子化 fuzz——encode/read 往返 400 例，unknown 仅出现�
     assert.equal(dec.value, v, `iter=${i} width=${enc.length} v=${v}`);
   }
 });
+
+test('vintLength：位宽越界首字节（0x100）→ 无标记位抛错', () => {
+  // 防御分支：正常字节域 1..255 必命中 1 位；≥256 的越界输入按 8 位掩码全 0 处理
+  assert.throws(() => vintLength(0x100), /非法的 VINT 首字节/);
+});
+
+/* 登记不硬造：readDate 181-182「毫秒值超出安全整数」守卫结构性不可达——
+ * u64 纳秒最大值 1.8e19/1e6 ≈ 1.8e13 ms，恒 < MAX_SAFE(9e15)；且 178 行按
+ * 无符号读取，负向比较恒 false。收紧或删除会改变现有行为，维持现状登记
+ * （先例：tag-stream 128MB 守卫、frame-header 阻断策略位）。 */

@@ -99,3 +99,21 @@ test('destroy：清空密钥缓存，同 URI 再次 getKey 触发 keyLoader', as
   await d.getKey('https://example.com/again.bin');
   assert.equal(calls, 2, '缓存已清空 → keyLoader 第二次触发');
 });
+
+test('defaultKeyLoader：密钥响应超过小资源上限 → SOURCE_ERROR 拒收（第二百零三波）', async () => {
+  const { DEFAULT_MAX_SMALL_RESOURCE_BYTES } = await import('../../core/src/limits.js');
+  const d = new Aes128Decrypter({ crypto: webcrypto });
+  const oversize = new ArrayBuffer(DEFAULT_MAX_SMALL_RESOURCE_BYTES + 1);
+  await withFetch(
+    async () => ({ ok: true, status: 200, arrayBuffer: async () => oversize }),
+    () =>
+      assert.rejects(
+        () => d.getKey('https://example.com/huge-key.bin'),
+        (e) =>
+          e instanceof PlayerError &&
+          e.code === 'SOURCE_ERROR' &&
+          /密钥响应过大/.test(e.message) &&
+          String(DEFAULT_MAX_SMALL_RESOURCE_BYTES).includes(String(1 << 20).slice(0, 3)),
+      ),
+  );
+});
