@@ -28,6 +28,17 @@ export const DEFAULT_MAX_SMALL_RESOURCE_BYTES = 1 << 20;
 export const DEFAULT_MAX_SCAN_BYTES = 256 << 20;
 
 /**
+ * 单个 trun/样本表声明的样本数上界。
+ *
+ * 背景：trun 的 sample_count 是纯计数、无字节背书——当 flags 未设任何 per-sample 位
+ * （stride=0，仅 data-offset/first-sample-flags）时，合法样本行本就靠 sample_count 驱动、
+ * 逐行回落 tfhd 默认，无法用框体剩余字节钳制。畸形文件把 sample_count 填成 0xFFFFFFFF
+ * 会驱动数十亿次零消费迭代 → 无界循环挂起 / 数组无限增长 OOM。此常量给出「正常内容不可能
+ * 触及（单 trun 通常数十至数千样本）、畸形立刻暴露」的绝对上界。
+ */
+export const DEFAULT_MAX_TRUN_SAMPLES = 1_000_000;
+
+/**
  * 断言一个字节长度在给定上界内；越界抛 PARSE_ERROR（畸形长度字段属解析错误面）。
  *
  * @param {number} value 待校验长度（负数/NaN 视为越界）

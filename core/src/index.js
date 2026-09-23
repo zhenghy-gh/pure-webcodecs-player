@@ -86,6 +86,7 @@ export {
   DEFAULT_MAX_SAMPLE_BYTES,
   DEFAULT_MAX_SMALL_RESOURCE_BYTES,
   DEFAULT_MAX_SCAN_BYTES,
+  DEFAULT_MAX_TRUN_SAMPLES,
   assertByteLength,
   clampReadLength,
   BoundedMapCache,

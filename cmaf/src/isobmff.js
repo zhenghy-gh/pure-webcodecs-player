@@ -14,6 +14,7 @@
  */
 
 import { notSupported } from '../../core/src/errors.js';
+import { DEFAULT_MAX_TRUN_SAMPLES } from '../../core/src/limits.js';
 
 /** 四字符 tag 转 ASCII */
 export function boxType(buf, off) {
@@ -190,7 +191,17 @@ export function parseTrun(buf, contentStart, contentEnd) {
   }
 
   const rows = [];
-  for (let i = 0; i < sampleCount; i++) {
+  // 敌意 sample_count 防御（第二百零八波）：per-sample 标志全 0 时每行零消费，
+  // sampleCount（可达 2^32-1）会驱动无界循环；stride>0 时 DataView 越界读又会漏
+  // 裸 RangeError。统一钳制：stride===0 以 DEFAULT_MAX_TRUN_SAMPLES 封顶（规范
+  // 语义保留——全零行交由 tfhd 默认回退）；stride>0 钳到框体内可容纳的完整行数。
+  const perSampleBytes =
+    (hasDuration ? 4 : 0) + (hasSize ? 4 : 0) + (hasFlags ? 4 : 0) + (hasCts ? 4 : 0);
+  const maxByBytes = perSampleBytes > 0
+    ? Math.floor((contentEnd - p) / perSampleBytes)
+    : DEFAULT_MAX_TRUN_SAMPLES;
+  const rowCount = Math.min(sampleCount, maxByBytes);
+  for (let i = 0; i < rowCount; i++) {
     const row = { duration: 0, size: 0, flags: 0, cts: 0 };
     if (hasDuration) { row.duration = dv.getUint32(p); p += 4; }
     if (hasSize) { row.size = dv.getUint32(p); p += 4; }

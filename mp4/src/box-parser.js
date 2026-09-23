@@ -9,6 +9,7 @@
  */
 import { ByteStream } from '../../core/src/index.js';
 import { parseError } from '../../core/src/errors.js';
+import { DEFAULT_MAX_TRUN_SAMPLES } from '../../core/src/limits.js';
 
 /** @typedef {{type:string, size:number, start:number, contentStart:number, end:number}} BoxHeader */
 
@@ -467,7 +468,19 @@ export function parseTrun(s) {
   const out = { sampleCount, dataOffset: null, firstSampleFlags: null, samples: [] };
   if (flags & 0x000001) out.dataOffset = s.readI32();
   if (flags & 0x000004) out.firstSampleFlags = s.readU32();
-  for (let i = 0; i < sampleCount; i++) {
+  // 每样本字节数：stride>0 时越界读由 ByteStream 抛受控 read-overflow（有界）；
+  // stride===0 时样本行零字节消费却仍要产 sampleCount 行（规范语义：字段全
+  // undefined，交由下游 tfhd/trex 默认回退），敌意 sample_count（可达 2^32-1）
+  // 会驱动无界循环 → 以 DEFAULT_MAX_TRUN_SAMPLES 钳制（第二百零八波）。
+  const perSampleBytes =
+    (flags & 0x000100 ? 4 : 0) +
+    (flags & 0x000200 ? 4 : 0) +
+    (flags & 0x000400 ? 4 : 0) +
+    (flags & 0x000800 ? 4 : 0);
+  const count = perSampleBytes > 0
+    ? sampleCount
+    : Math.min(sampleCount, DEFAULT_MAX_TRUN_SAMPLES);
+  for (let i = 0; i < count; i++) {
     const rec = {};
     rec.duration = flags & 0x000100 ? s.readU32() : undefined;
     rec.size = flags & 0x000200 ? s.readU32() : undefined;
