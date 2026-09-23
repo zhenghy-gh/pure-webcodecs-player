@@ -256,6 +256,8 @@
 
 | 143 | CMAF 截断视频配置防御 | 修复 `cmaf/src/isobmff.js`：avcC/hvcC 等视频配置盒声明长度超过所属 moov 时返回 `null`，不再返回截短 description；新增 avcC 回归测试。全仓 2934/2934、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
+| 144 | FLV demuxer 残余防御分支直测 | 新增 `flv/__tests__/flv-demuxer-guard.test.js`（+7 例）：_feedParser/_pumpOnce/旧式 push 三处 parser.push 抛错转 error 事件、_doSeek 双守卫（ChunkSource/索引缺失含 null 与空数组）、start() 消费任务异常在非 destroyed 态发 error、destroyed 态静默。`flv/src/flv-demuxer.js` 行/函数覆盖率→**100%**（分支 89→93.33%）。全仓 2941/2941、lint 542 文件、check 16/16、双契约审计 PASS。 | 本波 |
+
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |
