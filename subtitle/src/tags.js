@@ -108,7 +108,13 @@ export class TagState {
         return true;
       case 'pos': {
         const m = arg.match(/^\s*([-\d.]+)\s*,\s*([-\d.]+)\s*$/);
-        if (m) this.pos = { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+        // 正则只锁字符集不锁值域：'.'/'9'×1000 能过匹配但 parseFloat 出 NaN/Infinity
+        // ——泄漏即污染绘制几何（第二百一十五波探测，与 move/clip 的 isFinite 守卫对齐）
+        if (m) {
+          const x = parseFloat(m[1]);
+          const y = parseFloat(m[2]);
+          if (Number.isFinite(x) && Number.isFinite(y)) this.pos = { x, y };
+        }
         return true;
       }
       case 'move': {
@@ -120,7 +126,11 @@ export class TagState {
       }
       case 'org': {
         const m = arg.match(/^\s*([-\d.]+)\s*,\s*([-\d.]+)\s*$/);
-        if (m) this.org = { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+        if (m) {
+          const x = parseFloat(m[1]);
+          const y = parseFloat(m[2]);
+          if (Number.isFinite(x) && Number.isFinite(y)) this.org = { x, y };
+        }
         return true;
       }
       case 'an':

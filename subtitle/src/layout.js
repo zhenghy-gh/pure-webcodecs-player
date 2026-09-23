@@ -194,6 +194,13 @@ export function resolveCollisions(items, gap = 4) {
  */
 
 /**
+ * 碰撞堆叠的事件数上限：贪心堆叠为 O(n²)，敌意字幕文件以数万条同刻重叠
+ * 可让每帧 layoutEvents 达秒级（第二百一十五波实测 5 万条 4s+）。超限部分
+ * 不参与堆叠（照常绘制、位置重叠），显示退化但不冻结渲染循环。
+ */
+export const MAX_STACK_EVENTS = 512;
+
+/**
  * 求解某时刻全部活跃事件的绘制几何。
  * @param {Cue[]} cues 全量 cue（内部过滤活跃并按 start 升序稳定排序）
  * @param {number} timeUs 当前时刻
@@ -208,8 +215,8 @@ export function layoutEvents(cues, timeUs, ctx) {
 
   const built = active.map((cue) => buildOne(cue, ctx));
 
-  // —— 碰撞：仅对无显式定位者做自下而上堆叠（先出现者占下层）——
-  resolveCollisions(built.filter((b) => b.needsStack));
+  // —— 碰撞：仅对无显式定位者做自下而上堆叠（先出现者占下层），数量钳制见上 ——
+  resolveCollisions(built.filter((b) => b.needsStack).slice(0, MAX_STACK_EVENTS));
 
   return built.map((b) => finalize(b, timeUs)).sort((a, b) => a.layer - b.layer);
 }
@@ -221,9 +228,13 @@ function buildOne(cue, ctx) {
   const style = styles.find((s) => s.name === d.style) ??
     styles[0] ?? ctx.defaultStyle ?? createDefaultStyle();
   const settings = d.settings ?? {};
-  const mL = Number(settings.mL) > 0 ? Number(settings.mL) : style.marginL;
-  const mR = Number(settings.mR) > 0 ? Number(settings.mR) : style.marginR;
-  const mV = Number(settings.mV) > 0 ? Number(settings.mV) : style.marginV;
+  // ASS 的 Margin 字段是原样字符串：Number('Infinity')/'9e999' 过 >0 判定后
+  // 会把锚点推到 ∓Infinity（rect.y=-Infinity 泄漏，第二百一十五波探测命中）
+  const fin = (v) => { const n = Number(v); return Number.isFinite(n) ? n : NaN; };
+  const mL0 = fin(settings.mL), mR0 = fin(settings.mR), mV0 = fin(settings.mV);
+  const mL = mL0 > 0 ? mL0 : style.marginL;
+  const mR = mR0 > 0 ? mR0 : style.marginR;
+  const mV = mV0 > 0 ? mV0 : style.marginV;
 
   const geom = d.geom ?? {};
   const anchor = anToAnchor(geom.an ?? style.alignment);
