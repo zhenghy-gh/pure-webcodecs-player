@@ -9,6 +9,9 @@ export class BitReader {
   /** @param {Uint8Array} bytes */
   constructor(bytes, bitOffset = 0) {
     if (!(bytes instanceof Uint8Array)) throw new TypeError('BitReader expects Uint8Array');
+    if (!Number.isSafeInteger(bitOffset) || bitOffset < 0 || bitOffset > bytes.byteLength * 8) {
+      throw parseError(`bit offset out of range: ${bitOffset}`);
+    }
     this._bytes = bytes;
     this._bitPos = bitOffset;
   }
@@ -26,7 +29,7 @@ export class BitReader {
   }
 
   _need(n) {
-    if (n < 0) throw parseError(`readBits: negative length ${n}`);
+    if (!Number.isSafeInteger(n) || n < 0) throw parseError(`readBits: invalid length ${n}`);
     if (this.bitsRemaining < n) {
       throw parseError(`bit overflow: need ${n} bits at ${this._bitPos}, remaining=${this.bitsRemaining}`);
     }
@@ -51,7 +54,8 @@ export class BitReader {
    * @returns {number} 无符号整数
    */
   readBits(n) {
-    if (n <= 0) return 0;
+    if (!Number.isSafeInteger(n) || n < 0) throw parseError(`readBits: invalid length ${n}`);
+    if (n === 0) return 0;
     if (n > 32) throw parseError(`readBits supports up to 32 bits, got ${n}`);
     this._need(n);
     let value = 0;
@@ -71,7 +75,8 @@ export class BitReader {
 
   /** 有符号 n 位补码读取 */
   readSignedBits(n) {
-    if (n <= 0) return 0;
+    if (!Number.isSafeInteger(n) || n < 0 || n > 32) throw parseError(`readSignedBits: invalid length ${n}`);
+    if (n === 0) return 0;
     const v = this.readBits(n);
     if (n === 32) return v | 0;
     const sign = 1 << (n - 1);
@@ -126,6 +131,9 @@ export class BitReader {
 
   /** 绝对位定位（供 ExpGolombReader.moreRbspData 回溯使用） */
   seekToBit(bitPos) {
+    if (!Number.isSafeInteger(bitPos) || bitPos < 0 || bitPos > this._bytes.byteLength * 8) {
+      throw parseError(`bit position out of range: ${bitPos}`);
+    }
     this._bitPos = bitPos;
     return this;
   }

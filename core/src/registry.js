@@ -12,6 +12,7 @@
  *   detectFromUrl(url,options)         取头部 4KiB 后走 probeBuffer（fetchImpl 可注入离线测试）
  */
 import { probeFailed } from './errors.js';
+import { assertSafeUrl } from './url-guard.js';
 
 /** @type {Array<{containerName:string, extensions?:string[], mimeTypes?:string[], probe:Function, createDemuxer:Function}>} */
 const MODULES = [];
@@ -116,11 +117,12 @@ export async function createDemuxerAuto(source, opts = {}) {
  * @param {{options?: object, fetchImpl?: typeof fetch}} [opts]
  */
 export async function detectFromUrl(url, opts = {}) {
+  const safeUrl = assertSafeUrl(url, { what: '媒体 URL' });
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch?.bind(globalThis);
   if (typeof fetchImpl !== 'function') {
     throw probeFailed('detectFromUrl: fetch unavailable in this environment');
   }
-  const res = await fetchImpl(url, { headers: { Range: 'bytes=0-4095' } });
+  const res = await fetchImpl(safeUrl, { headers: { Range: 'bytes=0-4095' } });
   if (!res.ok && res.status !== 206) {
     throw probeFailed(`detectFromUrl: head request failed (${res.status})`, { status: res.status });
   }
@@ -139,7 +141,7 @@ export async function detectFromUrl(url, opts = {}) {
   }
   // HttpRangeDataSource 延迟引入避免循环依赖（其自身只依赖 errors/codec-string）
   const { HttpRangeDataSource } = await import('./http-range-source.js');
-  const source = new HttpRangeDataSource(url, { fetchImpl });
+  const source = new HttpRangeDataSource(safeUrl, { fetchImpl });
   const winner = MODULES.find((m) => m.containerName === hit.container);
   return winner.createDemuxer(source, opts.options ?? {});
 }

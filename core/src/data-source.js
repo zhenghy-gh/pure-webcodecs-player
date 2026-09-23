@@ -6,6 +6,19 @@
  *   - read(offset, length): Promise<Uint8Array>   返回恰好 length 字节
  */
 import { sourceError } from './errors.js';
+import { DEFAULT_MAX_READ_BYTES } from './limits.js';
+
+function validateReadRange(offset, length, size, label) {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > size ||
+      (length !== undefined && (!Number.isSafeInteger(length) || length < 0 || length > DEFAULT_MAX_READ_BYTES))) {
+    throw sourceError(`${label} out of range: offset=${offset}, length=${length}`);
+  }
+  const count = length === undefined ? size - offset : length;
+  const requestedEnd = offset + count;
+  if (!Number.isSafeInteger(requestedEnd)) throw sourceError(`${label} range is not a safe integer`);
+  if (label === 'read' && requestedEnd > size) throw sourceError(`${label} out of range: [${offset}, ${requestedEnd}) of ${size}`);
+  return { start: offset, end: Math.min(size, requestedEnd), count };
+}
 
 /** 内存数据源：测试与"整文件拖入"场景 */
 export class MemoryDataSource {
@@ -20,11 +33,7 @@ export class MemoryDataSource {
   async open() {}
 
   async read(offset, length = undefined) {
-    const start = offset;
-    const end = length === undefined ? this.bytes.byteLength : offset + length;
-    if (start < 0 || end > this.bytes.byteLength || start > end) {
-      throw sourceError(`read out of range: [${start}, ${end}) of ${this.bytes.byteLength}`);
-    }
+    const { start, end } = validateReadRange(offset, length, this.bytes.byteLength, 'read');
     return this.bytes.subarray(start, end);
   }
 
@@ -47,11 +56,8 @@ export class BlobDataSource {
   async open() {}
 
   async read(offset, length = undefined) {
-    const end = length === undefined ? this.blob.size : Math.min(this.blob.size, offset + length);
-    if (offset < 0 || offset > this.blob.size) {
-      throw sourceError(`read out of range: offset=${offset}`);
-    }
-    const slice = this.blob.slice(offset, end);
+    const { start, end } = validateReadRange(offset, length, this.blob.size, 'blob read');
+    const slice = this.blob.slice(start, end);
     const buf = await slice.arrayBuffer();
     return new Uint8Array(buf);
   }

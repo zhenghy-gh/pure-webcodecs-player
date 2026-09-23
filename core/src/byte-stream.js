@@ -21,7 +21,7 @@ export class ByteStream {
     if (buffer instanceof Uint8Array) {
       const start = byteOffset ?? 0;
       const len = byteLength === undefined ? buffer.byteLength - start : byteLength;
-      if (start < 0 || len < 0 || start + len > buffer.byteLength) {
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(len) || start < 0 || len < 0 || start + len > buffer.byteLength) {
         throw sourceError(`ByteStream window out of range: offset=${start} length=${len}`);
       }
       view = new Uint8Array(buffer.buffer, buffer.byteOffset + start, len);
@@ -29,7 +29,7 @@ export class ByteStream {
       // 尊重调用方传入的 byteOffset/byteLength 子窗口（此前会丢弃这两个参数）。
       const start = byteOffset ?? 0;
       const len = byteLength === undefined ? buffer.byteLength - start : byteLength;
-      if (start < 0 || len < 0 || start + len > buffer.byteLength) {
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(len) || start < 0 || len < 0 || start + len > buffer.byteLength) {
         throw sourceError(`ByteStream window out of range: offset=${start} length=${len}`);
       }
       const u8 = new Uint8Array(buffer.buffer, buffer.byteOffset + start, len);
@@ -37,6 +37,9 @@ export class ByteStream {
     } else if (buffer instanceof ArrayBuffer) {
       const start = byteOffset ?? 0;
       const len = byteLength === undefined ? buffer.byteLength - start : byteLength;
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(len) || start < 0 || len < 0 || start + len > buffer.byteLength) {
+        throw sourceError(`ByteStream window out of range: offset=${start} length=${len}`);
+      }
       view = new Uint8Array(buffer, start, len);
     } else {
       throw sourceError('ByteStream expects ArrayBuffer or typed array');
@@ -72,7 +75,7 @@ export class ByteStream {
   }
 
   seek(pos) {
-    if (!Number.isInteger(pos) || pos < 0 || pos > this.length) {
+    if (!Number.isSafeInteger(pos) || pos < 0 || pos > this.length) {
       throw sourceError(`seek out of range: ${pos} (length=${this.length})`);
     }
     this._pos = pos;
@@ -88,6 +91,7 @@ export class ByteStream {
   }
 
   _need(n) {
+    if (!Number.isSafeInteger(n) || n < 0) throw sourceError(`read length must be a non-negative safe integer: ${n}`);
     if (this.remaining < n) {
       throw sourceError(`read overflow: need ${n} bytes at ${this._pos}, remaining=${this.remaining}`);
     }
@@ -253,6 +257,9 @@ function latin1(bytes) {
 /** 动态扩容的大端写入器（mp4 box 构造、remux 输出共用） */
 export class ByteWriter {
   constructor(initialCapacity = 1024) {
+    if (!Number.isSafeInteger(initialCapacity) || initialCapacity < 0) {
+      throw sourceError(`ByteWriter initial capacity must be a non-negative safe integer: ${initialCapacity}`);
+    }
     this._buf = new Uint8Array(initialCapacity);
     this._len = 0;
   }
@@ -262,10 +269,16 @@ export class ByteWriter {
   }
 
   _reserve(extra) {
+    if (!Number.isSafeInteger(extra) || extra < 0 || !Number.isSafeInteger(this._len + extra)) {
+      throw sourceError(`ByteWriter capacity overflow: ${extra}`);
+    }
     const need = this._len + extra;
     if (need <= this._buf.byteLength) return;
-    let cap = this._buf.byteLength * 2 || initialCap;
-    while (cap < need) cap *= 2;
+    let cap = this._buf.byteLength * 2 || 16;
+    while (cap < need) {
+      cap *= 2;
+      if (!Number.isSafeInteger(cap)) { cap = need; break; }
+    }
     const next = new Uint8Array(cap);
     next.set(this._buf.subarray(0, this._len));
     this._buf = next;
@@ -378,7 +391,7 @@ export class ByteWriter {
 
   /** 回写已写入内容中的某个位置（用于 patch size 字段） */
   patchU32(offset, value) {
-    if (offset < 0 || offset + 4 > this._len) {
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset + 4 > this._len) {
       throw sourceError(`patchU32 out of range: ${offset}`);
     }
     this._buf[offset] = (value >>> 24) & 0xff;

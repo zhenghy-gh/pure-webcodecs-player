@@ -26,6 +26,57 @@ const fakeRes = (status, { headers = {}, body = null } = {}) => ({
   arrayBuffer: async () => body ?? new ArrayBuffer(0),
 });
 
+test('concurrent open calls share one HEAD probe', async () => {
+  let release;
+  let calls = 0;
+  const ds = new HttpRangeDataSource('http://fixture.invalid/open-race.mp4', {
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      await new Promise((resolve) => { release = resolve; });
+      return fakeRes(200, { headers: { 'content-length': '32' } });
+    },
+  });
+  const first = ds.open();
+  const second = ds.open();
+  await Promise.resolve();
+  release();
+  await Promise.all([first, second]);
+  assert.equal(calls, 1);
+  assert.equal(ds.size, 32);
+});
+
+test('constructor rejects invalid range configuration', () => {
+  const fetchImpl = async () => fakeRes(200);
+  for (const options of [
+    { chunkSize: 0 }, { chunkSize: 1.5 }, { maxCachedBlocks: -1 },
+    { maxCachedBlocks: Infinity }, { maxReadLength: 64 * 1024 * 1024 + 1 },
+  ]) {
+    assert.throws(() => new HttpRangeDataSource('http://fixture.invalid/a.mp4', { ...options, fetchImpl }), (e) => e.code === 'SOURCE_ERROR');
+  }
+});
+
+test('requestInit headers cannot override Range header', async () => {
+  const whole = makeWhole(256);
+  const seen = [];
+  const ds = new HttpRangeDataSource('http://fixture.invalid/headers.mp4', {
+    chunkSize: 128,
+    headers: { Authorization: 'token' },
+    requestInit: { headers: { Range: 'bytes=999-999', 'X-Request': 'yes' } },
+    fetchImpl: async (_url, init = {}) => {
+      seen.push(init);
+      if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '256' } });
+      const match = /bytes=(\d+)-(\d+)/.exec(init.headers.Range);
+      const [start, end] = [Number(match[1]), Number(match[2])];
+      return fakeRes(206, { body: whole.slice(start, end + 1) });
+    },
+  });
+  await ds.open();
+  assert.deepEqual([...(await ds.read(0, 4))], [...whole.subarray(0, 4)]);
+  assert.equal(seen[0].headers.Authorization, 'token');
+  assert.equal(seen[1].headers['X-Request'], 'yes');
+  assert.equal(seen[1].headers.Range, 'bytes=0-127');
+});
+
 test('构造：环境无 fetch → SOURCE_ERROR（非 TypeError）', () => {
   const saved = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
   Object.defineProperty(globalThis, 'fetch', { value: undefined, configurable: true });
@@ -52,6 +103,15 @@ test('open 退路：GET 0-0 无 Content-Range → SOURCE_ERROR（不支持 Range
     () => ds.open(),
     (e) => e.code === 'SOURCE_ERROR' && /does not support HTTP Range/.test(e.message),
   );
+});
+
+test('open fallback rejects Content-Range attached to full response', async () => {
+  const ds = new HttpRangeDataSource('http://fixture.invalid/full-probe.mp4', {
+    fetchImpl: async (_url, init = {}) => init.method === 'HEAD'
+      ? fakeRes(405)
+      : fakeRes(200, { headers: { 'content-range': 'bytes 0-0/256' }, body: makeWhole(256) }),
+  });
+  await assert.rejects(() => ds.open(), (error) => error.code === 'SOURCE_ERROR');
 });
 
 test('open 退路：Content-Range 总长不可解析 → SOURCE_ERROR；body.cancel 抛错被吞并', async () => {
@@ -94,6 +154,22 @@ test('open 退路：探测响应 body.cancel 抛错 → 吞并且 open 成功', 
   assert.deepEqual([...part], [...whole.subarray(100, 110)]);
 });
 
+test('read rejects NaN, fractional and unsafe offsets before requesting bytes', async () => {
+  let rangeCalls = 0;
+  const ds = new HttpRangeDataSource('http://fixture.invalid/invalid-offset.mp4', {
+    fetchImpl: async (_url, init = {}) => {
+      if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '256' } });
+      rangeCalls += 1;
+      return fakeRes(206, { body: makeWhole(256) });
+    },
+  });
+  await ds.open();
+  for (const offset of [NaN, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(() => ds.read(offset, 1), (error) => error.code === 'SOURCE_ERROR');
+  }
+  assert.equal(rangeCalls, 0);
+});
+
 test('read：offset ≥ size 或 < 0 → SOURCE_ERROR', async () => {
   const whole = makeWhole(256);
   const ds = new HttpRangeDataSource('http://fixture.invalid/oob.mp4', {
@@ -109,7 +185,7 @@ test('read：offset ≥ size 或 < 0 → SOURCE_ERROR', async () => {
   });
   await ds.open();
   await assert.rejects(() => ds.read(300, 10), /read out of range: offset=300/);
-  await assert.rejects(() => ds.read(-1, 10), /read out of range: offset=-1/);
+  await assert.rejects(() => ds.read(-1, 10), (error) => error.code === 'SOURCE_ERROR');
 });
 
 test('_rangeGet：非 206/200 状态 → SOURCE_ERROR（range request failed）', async () => {

@@ -24,6 +24,13 @@ test('构造器：ArrayBufferView 子窗口尊重 byteOffset/byteLength', () => 
   assert.equal(s.readU32(), 0x08070605); // 大端重解释
 });
 
+test('constructor rejects fractional and non-finite windows', () => {
+  const buffer = new ArrayBuffer(8);
+  for (const [offset, length] of [[NaN, 1], [0, 1.5], [Infinity, 1], [1, NaN]]) {
+    assert.throws(() => new ByteStream(buffer, offset, length), (error) => error.code === 'SOURCE_ERROR');
+  }
+});
+
 test('构造器：非法类型 → sourceError', () => {
   assert.throws(
     () => new ByteStream('not a buffer'),
@@ -38,6 +45,18 @@ test('position setter 委托 seek；rewind 回退游标', () => {
   s.rewind(4);
   assert.equal(s.position, 2);
   assert.equal(s.readU16(), 0x0304);
+});
+
+test('ByteStream rejects invalid read and patch lengths', () => {
+  const reader = new ByteStream(new Uint8Array(4));
+  for (const length of [-1, 1.5, NaN, Infinity]) {
+    assert.throws(() => reader.readSlice(length), (error) => error.code === 'SOURCE_ERROR');
+  }
+  const writer = new ByteWriter();
+  writer.writeU32(1);
+  for (const offset of [-1, 0.5, NaN, Infinity]) {
+    assert.throws(() => writer.patchU32(offset, 0), (error) => error.code === 'SOURCE_ERROR');
+  }
 });
 
 test('readSlice 越界 → read overflow sourceError', () => {
@@ -62,6 +81,15 @@ test('writeF32 大端往返', () => {
   w.writeF32(3.5);
   const s = new ByteStream(w.toUint8Array());
   assert.equal(s.readF32(), 3.5);
+});
+
+test('ByteWriter accepts zero capacity and rejects invalid initial capacity', () => {
+  const writer = new ByteWriter(0);
+  writer.writeU8(0x5a);
+  assert.deepEqual([...writer.toUint8Array()], [0x5a]);
+  for (const capacity of [-1, 1.5, NaN, Infinity]) {
+    assert.throws(() => new ByteWriter(capacity), (error) => error.code === 'SOURCE_ERROR');
+  }
 });
 
 test('patchU32 越界 → sourceError', () => {

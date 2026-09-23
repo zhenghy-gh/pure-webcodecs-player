@@ -66,8 +66,11 @@ test('MemoryDataSource：Uint8Array 与 ArrayBuffer 两种入参', async () => {
 test('MemoryDataSource：越界三类一律 SOURCE_ERROR', async () => {
   const ds = new MemoryDataSource(Uint8Array.from([1, 2, 3, 4]));
   await assert.rejects(() => ds.read(-1, 2), (e) => e.code === 'SOURCE_ERROR');
+  await assert.rejects(() => ds.read(0, 64 * 1024 * 1024 + 1), (e) => e.code === 'SOURCE_ERROR');
   await assert.rejects(() => ds.read(2, 10), (e) => e.code === 'SOURCE_ERROR');
   await assert.rejects(() => ds.read(3, -1), (e) => e.code === 'SOURCE_ERROR');
+  await assert.rejects(() => ds.read(0, 1.5), (e) => e.code === 'SOURCE_ERROR');
+  await assert.rejects(() => ds.read(0, Infinity), (e) => e.code === 'SOURCE_ERROR');
   await assert.equal(await ds.open(), undefined, 'open/close 为 noop');
   await assert.equal(await ds.close(), undefined);
   assert.equal((await ds.read(4, 0)).byteLength, 0, '末尾零长读取合法');
@@ -100,6 +103,7 @@ test('BlobDataSource：尾部越界截断到 size，负偏移/超界报 SOURCE_E
   assert.equal((await ds.read(1, 100)).byteLength, 2);
   await assert.rejects(() => ds.read(-1, 1), (e) => e.code === 'SOURCE_ERROR' && /offset=-1/.test(e.message));
   await assert.rejects(() => ds.read(99, 1), (e) => e.code === 'SOURCE_ERROR');
+  await assert.rejects(() => ds.read(0, 1.5), (e) => e.code === 'SOURCE_ERROR');
   assert.equal((await ds.read(3, 1)).byteLength, 0, 'offset == size 允许，返回空');
 });
 

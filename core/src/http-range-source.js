@@ -29,6 +29,16 @@ export class HttpRangeDataSource {
     this.chunkSize = options.chunkSize ?? DEFAULT_CHUNK;
     this.maxCachedBlocks = options.maxCachedBlocks ?? 64;
     this.maxReadLength = options.maxReadLength ?? DEFAULT_MAX_READ_BYTES;
+    if (!Number.isSafeInteger(this.chunkSize) || this.chunkSize <= 0) {
+      throw sourceError('chunkSize must be a positive safe integer');
+    }
+    if (!Number.isSafeInteger(this.maxCachedBlocks) || this.maxCachedBlocks < 0) {
+      throw sourceError('maxCachedBlocks must be a non-negative safe integer');
+    }
+    if (!Number.isSafeInteger(this.maxReadLength) || this.maxReadLength <= 0 || this.maxReadLength > DEFAULT_MAX_READ_BYTES) {
+      throw sourceError(`maxReadLength must be between 1 and ${DEFAULT_MAX_READ_BYTES}`);
+    }
+
     this.headers = options.headers ?? {};
     this.requestInit = options.requestInit ?? {};
     this._fetch = options.fetchImpl ?? globalThis.fetch?.bind(globalThis);
@@ -41,16 +51,23 @@ export class HttpRangeDataSource {
     this.uri = url;
     this.acceptRanges = false;
     this._opened = false;
+    this._openPromise = null;
   }
 
-  async open() {
-    if (this._opened) return;
+  open() {
+    if (this._opened) return Promise.resolve();
+    if (this._openPromise) return this._openPromise;
+    this._openPromise = this._open().finally(() => { this._openPromise = null; });
+    return this._openPromise;
+  }
+
+  async _open() {
     // 先试 HEAD
     try {
       const res = await this._fetch(this.url, {
-        method: 'HEAD',
-        headers: { ...this.headers },
         ...this.requestInit,
+        method: 'HEAD',
+        headers: { ...this.requestInit.headers, ...this.headers },
       });
       if (res.ok) {
         const len = Number(res.headers.get('content-length') ?? NaN);
@@ -66,11 +83,11 @@ export class HttpRangeDataSource {
     if (!Number.isFinite(this.size)) {
       // 退路：GET 首字节，从 Content-Range 里拿总长
       const res = await this._fetch(this.url, {
-        headers: { ...this.headers, Range: 'bytes=0-0' },
         ...this.requestInit,
+        headers: { ...this.requestInit.headers, ...this.headers, Range: 'bytes=0-0' },
       });
       const contentRange = res.headers.get('content-range');
-      if (!contentRange) {
+      if (res.status !== 206 || !contentRange) {
         throw sourceError(
           `server does not support HTTP Range for ${this.url}; progressive MP4 requires it`,
           { status: res.status },
@@ -93,8 +110,11 @@ export class HttpRangeDataSource {
 
   /** @returns {Promise<Uint8Array>} 恰好 length 字节 */
   async read(offset, length) {
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw sourceError(`read offset must be a non-negative safe integer: ${offset}`);
+    }
     if (!this._opened) await this.open();
-    if (offset < 0 || offset >= this.size) {
+    if (offset >= this.size) {
       throw sourceError(`read out of range: offset=${offset} size=${this.size}`);
     }
     // I5：单次读取上界——畸形容器长度字段不得触发超大 Range 请求与内存分配
@@ -141,8 +161,8 @@ export class HttpRangeDataSource {
 
   async _rangeGet(start, endInclusive) {
     const res = await this._fetch(this.url, {
-      headers: { ...this.headers, Range: `bytes=${start}-${endInclusive}` },
       ...this.requestInit,
+      headers: { ...this.requestInit.headers, ...this.headers, Range: `bytes=${start}-${endInclusive}` },
     });
     if (res.status !== 206 && res.status !== 200) {
       throw sourceError(`range request failed (${res.status}) for ${this.url}`);

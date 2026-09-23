@@ -72,7 +72,13 @@ test('detectFromUrl：环境无 fetch → PROBE_FAILED', () => {
     });
 });
 
-test('detectFromUrl：头请求非 2xx/206 → PROBE_FAILED（HTTP 状态）', async () => {
+test('detectFromUrl rejects unsafe URL before fetching', async () => {
+  let calls = 0;
+  await assert.rejects(() => detectFromUrl('file:///etc/passwd', { fetchImpl: async () => { calls += 1; } }), (e) => e.code === 'NETWORK_ERROR');
+  assert.equal(calls, 0);
+});
+
+test('detectFromUrl: HTTP failure', async () => {
   const fetchImpl = async () => ({ ok: false, status: 500, headers: { get: () => null } });
   await assert.rejects(
     () => detectFromUrl('http://fixture.internal/a.mp4', { fetchImpl }),

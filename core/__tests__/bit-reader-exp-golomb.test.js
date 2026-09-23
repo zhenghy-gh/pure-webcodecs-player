@@ -33,6 +33,22 @@ test('BitReader 基本读取与回溯', () => {
   assert.equal(r.byteAligned, true);
 });
 
+test('BitReader rejects invalid offsets, lengths, and seeks', () => {
+  const bytes = new Uint8Array([0xff]);
+  for (const offset of [-1, 1.5, NaN, Infinity, 9]) {
+    assert.throws(() => new BitReader(bytes, offset), (error) => error.code === 'PARSE_ERROR');
+  }
+  const reader = new BitReader(bytes);
+  for (const count of [-1, 1.5, NaN, Infinity]) {
+    assert.throws(() => reader.readBits(count), (error) => error.code === 'PARSE_ERROR');
+    assert.throws(() => reader.skipBits(count), (error) => error.code === 'PARSE_ERROR');
+    assert.throws(() => reader.readSignedBits(count), (error) => error.code === 'PARSE_ERROR');
+  }
+  for (const bitPos of [-1, 1.5, NaN, 9]) {
+    assert.throws(() => reader.seekToBit(bitPos), (error) => error.code === 'PARSE_ERROR');
+  }
+});
+
 test('exp-Golomb ue/se 已知序列', () => {
   // '1'→ue=0；'010'→ue=1；'011'→ue=2；'00100'→ue=3；'00101'→ue=4
   const data = bitsToBytes('1 010 011 00100 00101');
