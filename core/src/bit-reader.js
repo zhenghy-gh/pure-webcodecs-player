@@ -181,8 +181,9 @@ export class BitWriter {
 
   /** 写无符号 Exp-Golomb ue(v) */
   writeUE(value) {
+    if (!Number.isSafeInteger(value) || value < 0 || value > 2 ** 33 - 2) throw parseError("writeUE value out of range");
     const v = value + 1;
-    const bitsNeeded = 32 - Math.clz32(v); // 有效位数
+    const bitsNeeded = v.toString(2).length; // 精确位宽，避免 clz32 截断
     this.writeBits(0, bitsNeeded - 1); // 前导 0
     this.writeBits(v, bitsNeeded); // 终止 1 + 权重
     return this;

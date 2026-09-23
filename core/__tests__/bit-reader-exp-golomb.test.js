@@ -337,15 +337,23 @@ test('BitReader.readFlag/alignByte 语义别名', () => {
   assert.equal(r.byteAligned, true);
 });
 
+test('BitWriter.writeUE rejects invalid and undecodable values', () => {
+  for (const value of [-1, 1.5, NaN, Infinity, 8589934591]) {
+    assert.throws(() => new BitWriter().writeUE(value), (error) => error.code === 'PARSE_ERROR');
+  }
+});
+
 test('BitWriter：writeBits/finish 补齐与读写往返', () => {
   const w = new BitWriter();
   w.writeBits(0b101, 3).writeBits(0b00111, 5).writeBits(0b111, 3);
   assert.deepEqual(Array.from(w.finish()), [0b10100111, 0b11100000]);
   // 大值 ue/se 往返
   const w2 = new BitWriter();
-  w2.writeUE(4294967294).writeSE(-12345).writeUE(0).writeSE(0);
+  w2.writeUE(4294967294).writeUE(4294967295).writeUE(8589934590).writeSE(-12345).writeUE(0).writeSE(0);
   const r2 = new BitReader(w2.finish());
   assert.equal(r2.readUE(), 4294967294);
+  assert.equal(r2.readUE(), 4294967295);
+  assert.equal(r2.readUE(), 8589934590);
   assert.equal(r2.readSE(), -12345);
   assert.equal(r2.readUE(), 0);
   assert.equal(r2.readSE(), 0);
