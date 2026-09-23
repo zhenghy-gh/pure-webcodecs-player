@@ -302,13 +302,19 @@ export function findVideoDecoderConfig(initSegment) {
   for (const t of entryTypes) {
     const pos = findTagInBuf(initSegment, stsdPos, moov.contentEnd, t);
     if (pos >= 0) {
-      // 在 entry 内找配置 box
+      // 在当前 sample entry 内找配置 box，不能跨到后续轨道
+      const entryStart = pos - 4;
+      if (entryStart < 0) return null;
+      const entrySize = new DataView(initSegment.buffer, initSegment.byteOffset, initSegment.byteLength)
+        .getUint32(entryStart);
+      const entryEnd = entrySize >= 8 ? entryStart + entrySize : entryStart;
+      if (entryEnd > moov.contentEnd || entryEnd <= pos) return null;
       for (const cfgTag of ['avcC', 'hvcC', 'dvcC', 'vpcC']) {
-        const cfgPos = findTagInBuf(initSegment, pos, moov.contentEnd, cfgTag);
+        const cfgPos = findTagInBuf(initSegment, pos, entryEnd, cfgTag);
         if (cfgPos >= 0) {
           const dv = new DataView(initSegment.buffer, initSegment.byteOffset, initSegment.byteLength);
           const boxSize = dv.getUint32(cfgPos - 4); // box 头中的尺寸字段
-          if (boxSize < 8 || cfgPos - 4 + boxSize > moov.contentEnd) return null;
+          if (boxSize < 8 || cfgPos - 4 + boxSize > entryEnd) return null;
           return {
             entryType: t,
             fourcc: cfgTag,
@@ -340,25 +346,67 @@ export function findTagInBuf(buf, start, end, tag) {
 
 /**
  * 提取 esds 内嵌的 AudioSpecificConfig（ASC）。
- * 策略：定位 esds 后扫描 0x05（DSI tag）+ 变长长度。
+ * 只从 ES_Descriptor / DecoderConfigDescriptor 的嵌套结构读取 DSI。
  */
 export function findAudioSpecificConfig(initSegment) {
   const pos = findTagInBuf(initSegment, 0, initSegment.length, 'esds');
-  if (pos < 0) return null;
-  const end = Math.min(initSegment.length, pos + 512);
-  for (let i = pos; i < end - 1; i++) {
-    if (initSegment[i] === 0x05) {
-      // 变长长度
-      let len = 0;
-      let j = i + 1;
-      for (; j < end; j++) {
-        len = (len << 7) | (initSegment[j] & 0x7f);
-        if (!(initSegment[j] & 0x80)) break;
-      }
-      if (len > 0 && len < 32 && j + 1 + len <= end) {
-        return initSegment.slice(j + 1, j + 1 + len);
+  if (pos < 4) return null;
+  const boxStart = pos - 4;
+  const view = new DataView(initSegment.buffer, initSegment.byteOffset, initSegment.byteLength);
+  const boxSize = view.getUint32(boxStart);
+  if (boxSize < 8 || boxStart + boxSize > initSegment.length) return null;
+  const end = Math.min(boxStart + boxSize, pos + 512);
+  const es = readDescriptor(initSegment, pos + 8, end);
+  if (!es || es.tag !== 0x03) return null;
+  let childStart = es.payloadStart;
+  if (childStart + 3 > es.end) return null;
+  const flags = initSegment[childStart + 2];
+  childStart += 3; // ES_ID and flags
+  if (flags & 0x80) childStart += 2;
+  if (flags & 0x40) {
+    if (childStart >= es.end) return null;
+    childStart += 1 + initSegment[childStart];
+  }
+  if (flags & 0x20) childStart += 2;
+  if (childStart > es.end) return null;
+
+  while (childStart < es.end) {
+    const child = readDescriptor(initSegment, childStart, es.end);
+    if (!child || child.end <= childStart) return null;
+    if (child.tag === 0x04) {
+      const decoderDataStart = child.payloadStart + 13;
+      if (decoderDataStart > child.end) return null;
+      let descriptorStart = decoderDataStart;
+      while (descriptorStart < child.end) {
+        const descriptor = readDescriptor(initSegment, descriptorStart, child.end);
+        if (!descriptor || descriptor.end <= descriptorStart) return null;
+        if (descriptor.tag === 0x05 && descriptor.end > descriptor.payloadStart) {
+          return initSegment.slice(descriptor.payloadStart, descriptor.end);
+        }
+        descriptorStart = descriptor.end;
       }
     }
+    childStart = child.end;
   }
   return null;
+}
+
+function readDescriptor(bytes, start, limit) {
+  if (start + 2 > limit) return null;
+  const tag = bytes[start];
+  let length = 0;
+  let cursor = start + 1;
+  let complete = false;
+  for (let count = 0; count < 4 && cursor < limit; count++) {
+    const byte = bytes[cursor++];
+    length = (length << 7) | (byte & 0x7f);
+    if (!(byte & 0x80)) {
+      complete = true;
+      break;
+    }
+  }
+  const payloadStart = cursor;
+  const end = payloadStart + length;
+  if (!complete || end > limit) return null;
+  return { tag, payloadStart, end };
 }

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import { TsDemuxer, createTsDemuxer } from '../src/ts-demuxer.js';
 import * as Mod from '../src/index.js';
-import { assembleTs } from './fixtures/build-ts.mjs';
+import { assembleTs, buildPAT, buildPMT, resetCc, sectionToPackets, tsPacket } from './fixtures/build-ts.mjs';
 import { MemoryDataSource } from '../../core/src/index.js';
 
 /** 组装标准双轨流：H264(320x240,gop4)×8帧 + AAC×6 帧 */
@@ -499,6 +499,29 @@ test("start()+'sample' 推送：事件计数与 pull 通道一致；pause/resume
   d.resume();
   await d.destroy();
   assert.equal(d.state, 'destroyed');
+});
+
+test('ChunkSource：PSI 仅含未知流类型时 open 在 EOS 返回空轨道', async () => {
+  resetCc();
+  const sink = { write() {}, end() {} };
+  const d = new TsDemuxer(sink);
+  const opening = d.open();
+  const packets = [
+    ...sectionToPackets(0, buildPAT([{ number: 1, pid: 100 }])),
+    ...sectionToPackets(100, buildPMT({
+      pcrPid: 200,
+      streams: [{ streamType: 0x06, pid: 200 }],
+    })),
+    tsPacket(0x1fff, new Uint8Array(0)), // 探测包长需要至少三个同步包
+  ];
+  sink.write(concatPackets(packets));
+  assert.equal(d.engine.pmtVersions.size, 1);
+  assert.ok(d.engine.psiSnapshot().ignoredStreams.some((s) => s.pid === 200));
+  sink.end();
+  const info = await opening;
+  assert.deepEqual(info.tracks, []);
+  assert.equal(info.container, 'ts');
+  await d.destroy();
 });
 
 test('ChunkSource 流式 start()：边推边吐（直播语义）', async () => {
