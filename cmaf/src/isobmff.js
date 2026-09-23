@@ -297,6 +297,7 @@ export function findVideoDecoderConfig(initSegment) {
         if (cfgPos >= 0) {
           const dv = new DataView(initSegment.buffer, initSegment.byteOffset, initSegment.byteLength);
           const boxSize = dv.getUint32(cfgPos - 4); // box 头中的尺寸字段
+          if (boxSize < 8 || cfgPos - 4 + boxSize > moov.contentEnd) return null;
           return {
             entryType: t,
             fourcc: cfgTag,

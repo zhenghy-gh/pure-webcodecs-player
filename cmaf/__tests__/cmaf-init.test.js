@@ -52,6 +52,19 @@ test('init：avcC 提取 entryType=fourcc=bytes 与 timescale', () => {
   assert.equal(info.audio, null, '纯视频 init 不应含音频');
 });
 
+test('init：配置盒声明长度超过 moov 剩余数据时返回 null', () => {
+  const init = fmp4.buildInit([VIDEO_TRACK()]);
+  const pos = (() => {
+    for (let i = 0; i + 4 <= init.length; i++) {
+      if (init[i] === 0x61 && init[i + 1] === 0x76 && init[i + 2] === 0x63 && init[i + 3] === 0x43) return i;
+    }
+    return -1;
+  })();
+  assert.ok(pos > 4, 'fixture 必须包含 avcC');
+  new DataView(init.buffer).setUint32(pos - 4, 0xffff);
+  assert.equal(findVideoDecoderConfig(init), null);
+});
+
 test('init：hvcC 提取（hvc1 入口 + hvcC 配置盒）', () => {
   const init = fmp4.buildInit([
     VIDEO_TRACK({ codec: 'hvc1.1.6.L93.B0', description: { tag: 'hvcC', bytes: HVC_C } }),
