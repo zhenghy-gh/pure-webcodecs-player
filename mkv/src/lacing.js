@@ -14,7 +14,7 @@
  *   若与真实世界文件存在偏差，请对照 mkvinfo 输出反馈给模块维护者调整。
  */
 
-import { readSize, encodeSize } from './ebml.js';
+import { readSize, encodeSize, EbmlError } from './ebml.js';
 
 export const LACING_NONE = 0;
 export const LACING_XIPH = 1;
@@ -118,6 +118,9 @@ export function signedVintValue(rawValue, byteLen) {
 export function encodeSignedVint(value) {
   let len = 1;
   while (value < -(2 ** (7 * len - 1)) || value > 2 ** (7 * len - 1) - 1) len++;
+  // 8 档（56 数据位）封顶：越界若无守卫会产出错乱的 9 字节编码（第二百一十四波
+  // 定向 round-trip 命中；encodeSize 同型防御在其内部，此处对齐）
+  if (len > 8) throw new EbmlError(`有符号 VINT 超出 8 字节容量: ${value}`);
   const raw = value >= 0 ? value : value + 2 ** (7 * len);
   const bytes = new Uint8Array(len);
   let v = raw;

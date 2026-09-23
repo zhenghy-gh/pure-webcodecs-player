@@ -27,8 +27,11 @@ export class EbmlError extends Error {
  * 0x18 开头=4 字节（Segment），全 1 首字节 0xFF=1 字节。
  */
 export function vintLength(firstByte) {
-  if (firstByte === undefined || Number.isNaN(firstByte)) {
-    throw new EbmlError('VINT 首字节缺失');
+  // 定义域为字节值 0..255：域外输入统一 EbmlError（第二百一十四波定向探测：
+  // 旧式仅拦 undefined/NaN，null→裸 TypeError、-1→按 int32 补码误判长度 1、
+  // 1.5→位运算截断误判 8，行为漂移）
+  if (!Number.isInteger(firstByte) || firstByte < 0 || firstByte > 255) {
+    throw new EbmlError(`非法的 VINT 首字节: ${String(firstByte)}`);
   }
   if (firstByte === 0) throw new EbmlError('非法的 VINT 首字节: 0x00（无标记位）');
   for (let n = 1; n <= 8; n++) {
@@ -176,6 +179,9 @@ export function readDate(bytes, pos = 0, end = bytes.length) {
   if (width !== 8) throw new EbmlError(`Date 宽度必须为 8 字节，实际 ${width}`);
   let big = 0n;
   for (let i = pos; i < end; i++) big = (big << 8n) | BigInt(bytes[i]);
+  // 有符号 64 位二补码（第二百一十四波定向探测：旧式按无符号读，-1ns 的
+  // 全 1 位型被读成 2^64-1ns ≈ 公元 2596 年，注释与实现不符）
+  if (big >= 2n ** 63n) big -= 2n ** 64n;
   const msBig = big / 1000000n;
   if (msBig > BigInt(MAX_SAFE) || msBig < -BigInt(MAX_SAFE)) {
     throw new EbmlError('Date 毫秒值超出安全整数');
