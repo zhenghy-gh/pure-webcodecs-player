@@ -114,3 +114,12 @@ test('seek 中建索引读取抛错 → error 态并透传原错误', async () =
   await assert.rejects(() => dem.seek(1000), /scan io exploded/);
   assert.equal(dem.state, 'error', 'seek 失败须进入 error 态');
 });
+
+test('_parseInit：非法字节 → 外层 catch 原样重抛（第二百零五波）', async () => {
+  const dem = new FlacDemuxer(memorySource(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])));
+  dem.stateValue = 'opening'; // 直调内部路径：绕开基类 open() 的状态包装
+  await assert.rejects(
+    () => dem._parseInit(),
+    (e) => e.code === 'PARSE_ERROR' && /fLaC/.test(e.message),
+  );
+});

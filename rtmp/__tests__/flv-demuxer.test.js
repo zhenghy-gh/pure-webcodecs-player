@@ -415,3 +415,8 @@ test('flush 幂等且报告样本数', () => {
   d.flush();
   assert.equal(done, 2);
 });
+
+/* 登记不硬造（第二百零五波）：flv-demuxer.js 89-92「header 前 FLV 魔数复核」为
+ * 结构性死分支——findFlvMagic 命中（idx≥0）并 subarray(idx) 后 buffer[0..2] 必为
+ * 'FLV'，88 行条件恒 false；仅当 findFlvMagic 语义改变才可能到达。保留为防御，
+ * 单测不可达（先例：tag-stream 128MB 守卫、frame-header 阻断策略位）。 */

@@ -97,3 +97,8 @@ test('samples 迭代中 abort → ABORTED 上抛，但不置 error 态、不进 
   assert.equal(dem.state, 'ready', 'abort 是调用方控制流，不得污染 error 态');
   assert.equal(errors.length, 0, 'abort 不进 error 事件面');
 });
+
+/* 登记不硬造（第二百零五波）：demuxer.js 202-204 _doSeek 的 catch 为防御性兜底——
+ * try 体内（192-200）全部为普通数值运算与私有字段读取，#header 由 parseInit 产出
+ * 纯数据对象，无公开注入点可令其抛错；stateValue 为普通属性赋值不触发基类迁移校验。
+ * 该 catch 仅保障未来内部改动时状态一致性，单测不可达（先例同上）。 */
