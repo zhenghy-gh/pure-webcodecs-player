@@ -80,7 +80,7 @@ export class BitReader {
     const v = this.readBits(n);
     if (n === 32) return v | 0;
     const sign = 1 << (n - 1);
-    return (v & sign) !== 0 ? v - (1 << n) : v;
+    return (v & sign) !== 0 ? v - 2 ** n : v;
   }
 
   /** 无符号 Exp-Golomb ue(v)（H.264/H.265 语法；>32 前导零判为非法码流） */

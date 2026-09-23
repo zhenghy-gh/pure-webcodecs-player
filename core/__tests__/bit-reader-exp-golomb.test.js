@@ -33,6 +33,18 @@ test('BitReader 基本读取与回溯', () => {
   assert.equal(r.byteAligned, true);
 });
 
+test('BitReader sign-extends 31-bit values without bit-shift overflow', () => {
+  const readSigned = (value, width) => {
+    const writer = new BitWriter();
+    writer.writeBits(value, width);
+    return new BitReader(writer.finish()).readSignedBits(width);
+  };
+  assert.equal(readSigned(0x3fffffff, 31), 0x3fffffff);
+  assert.equal(readSigned(0x40000000, 31), -0x40000000);
+  assert.equal(readSigned(0x7fffffff, 31), -1);
+  assert.equal(readSigned(0x80000000, 32), -0x80000000);
+});
+
 test('BitWriter writes wide values and rejects invalid inputs', () => {
   const writer = new BitWriter();
   writer.writeBits(0x1_0000_0001, 33).writeBits(0x123456789abcdef0n, 64);
