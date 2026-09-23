@@ -164,9 +164,12 @@ export class BitWriter {
 
   /** 追加 n 位（value 的低 n 位，MSB 先出） */
   writeBits(value, n) {
+    if (!Number.isSafeInteger(n) || n < 0 || n > 64) throw parseError(`writeBits invalid width: ${n}`);
+    if (typeof value !== 'bigint' && !Number.isSafeInteger(value)) throw parseError(`writeBits invalid value: ${value}`);
+
     for (let i = n - 1; i >= 0; i--) {
       if (this._bit === 0) this._ensure();
-      this._buf[this._len] |= ((Number(value) >> i) & 1) << (7 - this._bit);
+      this._buf[this._len] |= Number((BigInt(value) >> BigInt(i)) & 1n) << (7 - this._bit);
       this._bit += 1;
       if (this._bit === 8) {
         this._bit = 0;

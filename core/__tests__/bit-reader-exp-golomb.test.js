@@ -33,6 +33,19 @@ test('BitReader 基本读取与回溯', () => {
   assert.equal(r.byteAligned, true);
 });
 
+test('BitWriter writes wide values and rejects invalid inputs', () => {
+  const writer = new BitWriter();
+  writer.writeBits(0x1_0000_0001, 33).writeBits(0x123456789abcdef0n, 64);
+  const reader = new BitReader(writer.finish());
+  assert.equal(reader.readBits(32), 0x80000000);
+  assert.equal(reader.readBits(1), 1);
+  assert.equal(reader.readBits(32), 0x12345678);
+  assert.equal(reader.readBits(32), 0x9abcdef0);
+  for (const [value, width] of [[1, -1], [1, 1.5], [1, 65], [NaN, 1], [1.5, 2]]) {
+    assert.throws(() => new BitWriter().writeBits(value, width), (error) => error.code === 'PARSE_ERROR');
+  }
+});
+
 test('BitReader rejects invalid offsets, lengths, and seeks', () => {
   const bytes = new Uint8Array([0xff]);
   for (const offset of [-1, 1.5, NaN, Infinity, 9]) {
