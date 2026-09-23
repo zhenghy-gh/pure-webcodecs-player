@@ -160,3 +160,15 @@ test('bdecodeRaw：与 bdecode 同路径 —— 成功解码与错误行为一�
   assert.throws(() => bdecodeRaw(enc('bad')), PlayerError);
   assert.throws(() => bdecodeRaw('i1e'), PlayerError);
 });
+
+// ── 敌意深度：decodeAt 递归必须有上限（第二百零九波）──────
+
+test('bdecode：敌意 50k 层嵌套列表须以 PlayerError 收敛而非裸 RangeError 爆栈', () => {
+  const s = 'l'.repeat(50000) + 'e'.repeat(50000);
+  assert.throws(() => bdecode(enc(s)), PlayerError);
+});
+
+test('bdecode：敌意 50k 层嵌套字典同样以 PlayerError 收敛', () => {
+  const s = 'd'.repeat(50000) + 'e'.repeat(50000);
+  assert.throws(() => bdecode(enc(s)), PlayerError);
+});

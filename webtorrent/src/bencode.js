@@ -12,6 +12,9 @@
 
 import { PlayerError } from '../../core/src/errors.js';
 
+// decodeAt 递归硬上限：远大于合法用量与既有 256 层压力测试，又早于 V8 栈崩 (~10k) 抛受控 PARSE_ERROR。
+const MAX_DEPTH = 1024;
+
 const ASCII = (s) => {
   const out = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0x7f;
@@ -39,7 +42,10 @@ export function bdecode(bytes) {
 }
 
 /** 解码单个元素，返回 [值, 下一个偏移] */
-export function decodeAt(bytes, pos) {
+export function decodeAt(bytes, pos, depth = 0) {
+  if (depth > MAX_DEPTH) {
+    throw new PlayerError('PARSE_ERROR', `bencode 嵌套深度超上限 ${MAX_DEPTH}（偏移 ${pos}）；疑似畸形递归`);
+  }
   if (pos >= bytes.length) throw new PlayerError('PARSE_ERROR', 'bdecode 数据提前结束');
   const c = bytes[pos];
 
@@ -72,7 +78,7 @@ export function decodeAt(bytes, pos) {
     for (;;) {
       if (p >= bytes.length) throw new PlayerError('PARSE_ERROR', '列表缺少终止符 e');
       if (bytes[p] === 0x65) return [list, p + 1];
-      const [v, next] = decodeAt(bytes, p);
+      const [v, next] = decodeAt(bytes, p, depth + 1);
       list.push(v);
       p = next;
     }
@@ -89,8 +95,8 @@ export function decodeAt(bytes, pos) {
       if (!(bytes[p] >= 0x30 && bytes[p] <= 0x39)) {
         throw new PlayerError('PARSE_ERROR', '字典键必须是字节串');
       }
-      const [k, kNext] = decodeAt(bytes, p);
-      const [v, vNext] = decodeAt(bytes, kNext);
+      const [k, kNext] = decodeAt(bytes, p, depth + 1);
+      const [v, vNext] = decodeAt(bytes, kNext, depth + 1);
       const key = k instanceof Uint8Array ? textDecode(k) : k;
       map.set(key, v);
       p = vNext;
