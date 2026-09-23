@@ -44,7 +44,7 @@ export class ExpGolombReader {
   readSEG() {
     const ue = this.readUEG();
     if (ue === 0) return 0;
-    return ue & 1 ? (ue + 1) >>> 1 : -(ue >>> 1);
+    return ue % 2 === 1 ? (ue + 1) / 2 : -ue / 2;
   }
 
   /** 是否仍有 rbsp 数据（排除 stop bit 与对齐零） */

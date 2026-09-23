@@ -328,6 +328,18 @@ test('BitReader.readUE/readSE 与 ExpGolombReader 同语义', () => {
   assert.throws(() => r3.readUE(), (e) => e.code === 'PARSE_ERROR');
 });
 
+test('BitReader.readSE preserves signed values above 32 bits', () => {
+  const encoded = new BitWriter();
+  encoded.writeUE(4294967295).writeUE(4294967294);
+  const data = encoded.finish();
+  const reader = new BitReader(data);
+  assert.equal(reader.readSE(), 2147483648);
+  assert.equal(reader.readSE(), -2147483647);
+  const expGolomb = new ExpGolombReader(data);
+  assert.equal(expGolomb.readSEG(), 2147483648);
+  assert.equal(expGolomb.readSEG(), -2147483647);
+});
+
 test('BitReader.readFlag/alignByte 语义别名', () => {
   const r = new BitReader(bitsToBytes('1 0 0101 001'));
   assert.equal(r.readFlag(), 1);

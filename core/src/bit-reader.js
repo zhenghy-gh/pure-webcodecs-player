@@ -99,7 +99,7 @@ export class BitReader {
   readSE() {
     const ue = this.readUE();
     if (ue === 0) return 0;
-    return ue & 1 ? (ue + 1) >>> 1 : -(ue >>> 1);
+    return ue & 1 ? (ue + 1) / 2 : -ue / 2;
   }
 
   peekBits(n) {
