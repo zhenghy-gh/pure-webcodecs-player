@@ -262,6 +262,8 @@
 
 | 146 | HLS VOD 时间续播 ReferenceError 修复 | **真实缺陷**：`hls/src/player.js` `_loadMediaPlaylist` 的 `resumeFromUs` 分支调用 `computeResumeIndexByTimeUs` 但未从 utils.js 导入 → 一走入即 ReferenceError（该行从未被覆盖故长期潜伏）。补 import 并在 player-gaps.test.js 追加续播锚点三分支回归（+3 例：时间映射 seg1 / sn 锚点优先 / 0 值回列表头）。`hls/src/player.js` 行覆盖率→**100%**。全仓 2947/2947、lint 543 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
+| 147 | FLAC 损坏帧重同步回归 | 新增 `flac/__tests__/player-resync.test.js`（+3 例）：尾部伪同步垃圾帧贡献 0 样本且与干净解码逐字节一致、帧体 CRC-16 损坏丢当前帧从下一好帧续解（样本位不虚增）、尾部半帧裁切不抛错。踩坑登记：`readFix` 返回 Buffer，`Buffer#slice()` 是视图非拷贝，破坏性用例须用 `new Uint8Array(flac)` 复制。`flac/src/player.js` 行/函数覆盖率→**100%**；frame-header.js:56-57 阻断策略守卫登记为结构性不可达（1 bit 读出恒合法）。全仓 2950/2950、lint 544 文件、check 16/16、双契约审计 PASS。 | 本波 |
+
 > 注：候选池未达标项以 `node scripts/audit/iteration-scan.mjs` 实时输出为准（本表为快照，可能滞后）。
 | 67 | npm 首发pure-webcodecs-player@0.1.0（owner 指令「先发布一版npm」） | package.json：exports 16 子路径（"."=core、./mp4 等 15 模块）、files 仅各模块 src+README+LICENSE、sideEffects=false；新增 MIT LICENSE（此前无许可证）；README §使用方式 2 加 npm 安装段。验证：npmjs 发布成功（tar 412.8kB/171 文件），临时目录真实 `npm i` 后 bare import 与 ./mp4、./wav 子路径导入全通；全仓 1144/1144 绿 | `52df096` |
 | 68 | README 精简（owner 指令） | 删「模块状态表」「交付标准」「质量门禁与工程化」三块内部治理内容（非使用者视角）；保留目标/效果演示/快速开始/使用方式/统一管线。结合第六十七波：npm@0.1.0 标注 + CDN 直引断链修复 + §3 包名 import | `8dd57c9` |
