@@ -11,6 +11,8 @@
  *  - 自动播放被浏览器策略拦截（play() reject 不中断流水线）
  *  - 直播轮询失败 → non-fatal error 且轮询自愈继续
  *  - play/pause 在无 video 引用时的空操作安全
+ * （第一百九十九波追加）
+ *  - _loadMediaPlaylist 续播锚点三分支：sn 锚点优先 / resumeFromUs 时间映射 / 0 回列表头
  */
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
@@ -393,5 +395,43 @@ test('play/pause：无 video 引用时为安全空操作', async () => {
   mse.video = null; // 模拟未挂载/已卸载
   assert.doesNotThrow(() => p.play());
   assert.doesNotThrow(() => p.pause());
+  p.destroy();
+});
+
+/* ------------------------------ _loadMediaPlaylist 续播锚点三分支（第一百九十九波） ------------------------------ */
+
+const VOD_BYTES = {
+  'http://x/live/seg0.m4s': new Uint8Array([0xa0]),
+  'http://x/live/seg1.m4s': new Uint8Array([0xa1]),
+};
+
+test('_loadMediaPlaylist：无 sn 锚点 + resumeFromUs → 按累计时长映射续播下标', async () => {
+  const { p } = setup({ texts: { [BASE]: VOD_PL }, bytes: VOD_BYTES });
+  const evs = [];
+  p.on('playlist', (e) => evs.push(e));
+  assert.equal(p._lastAppendedSn, null, '未装载过分片 → sn 锚点缺席');
+  await p._loadMediaPlaylist(BASE, { resumeFromUs: 7_000_000 }); // 7s 落在 seg1（6s/片）
+  assert.equal(evs.length, 1);
+  assert.equal(evs[0].resumeIdx, 1, '首段累计 6s ≤ 7s < 12s → 映射到下标 1');
+  assert.equal(p.nextSegmentIdx, 1, 'pipeline 起点跟随映射结果');
+  p.destroy();
+});
+
+test('_loadMediaPlaylist：sn 锚点在位时优先于 resumeFromUs（时间映射被绕过）', async () => {
+  const { p } = setup({ texts: { [BASE]: VOD_PL }, bytes: VOD_BYTES });
+  const evs = [];
+  p.on('playlist', (e) => evs.push(e));
+  p._lastAppendedSn = 1; // 窗口内无 sn>1 的分片 → 返回列表长度等待刷新
+  await p._loadMediaPlaylist(BASE, { resumeFromUs: 7_000_000 });
+  assert.equal(evs[0].resumeIdx, 2, '按锚点应为 segments.length（不回退重放），时间映射的 1 不生效');
+  p.destroy();
+});
+
+test('_loadMediaPlaylist：resumeFromUs=0 视为无效 → 回列表头', async () => {
+  const { p } = setup({ texts: { [BASE]: VOD_PL }, bytes: VOD_BYTES });
+  const evs = [];
+  p.on('playlist', (e) => evs.push(e));
+  await p._loadMediaPlaylist(BASE, { resumeFromUs: 0 });
+  assert.equal(evs[0].resumeIdx, 0, '0µs 不满足 >0，不进入时间映射分支');
   p.destroy();
 });

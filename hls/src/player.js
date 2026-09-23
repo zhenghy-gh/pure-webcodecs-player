@@ -26,7 +26,7 @@ import { LevelController } from './level-controller.js';
 import { MseController } from './mse-controller.js';
 import { Transmuxer } from './transmuxer.js';
 import { Aes128Decrypter } from './decrypter.js';
-import { EventBus, buildMime, logger, computeResumeIndexBySn } from './utils.js';
+import { EventBus, buildMime, logger, computeResumeIndexBySn, computeResumeIndexByTimeUs } from './utils.js';
 import { ErrorCode, stateError } from '../../core/src/errors.js';
 
 const log = logger('player');
