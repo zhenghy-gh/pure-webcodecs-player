@@ -302,13 +302,19 @@ export function findVideoDecoderConfig(initSegment) {
   for (const t of entryTypes) {
     const pos = findTagInBuf(initSegment, stsdPos, moov.contentEnd, t);
     if (pos >= 0) {
-      // 在 entry 内找配置 box
+      // 在当前 sample entry 内找配置 box，不能跨到后续轨道
+      const entryStart = pos - 4;
+      if (entryStart < 0) return null;
+      const entrySize = new DataView(initSegment.buffer, initSegment.byteOffset, initSegment.byteLength)
+        .getUint32(entryStart);
+      const entryEnd = entrySize >= 8 ? entryStart + entrySize : entryStart;
+      if (entryEnd > moov.contentEnd || entryEnd <= pos) return null;
       for (const cfgTag of ['avcC', 'hvcC', 'dvcC', 'vpcC']) {
-        const cfgPos = findTagInBuf(initSegment, pos, moov.contentEnd, cfgTag);
+        const cfgPos = findTagInBuf(initSegment, pos, entryEnd, cfgTag);
         if (cfgPos >= 0) {
           const dv = new DataView(initSegment.buffer, initSegment.byteOffset, initSegment.byteLength);
           const boxSize = dv.getUint32(cfgPos - 4); // box 头中的尺寸字段
-          if (boxSize < 8 || cfgPos - 4 + boxSize > moov.contentEnd) return null;
+          if (boxSize < 8 || cfgPos - 4 + boxSize > entryEnd) return null;
           return {
             entryType: t,
             fourcc: cfgTag,

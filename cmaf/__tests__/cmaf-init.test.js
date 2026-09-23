@@ -65,6 +65,17 @@ test('init：配置盒声明长度超过 moov 剩余数据时返回 null', () =>
   assert.equal(findVideoDecoderConfig(init), null);
 });
 
+test('init：配置搜索不跨越前一条 sample entry', () => {
+  const init = fmp4.buildInit([
+    VIDEO_TRACK({ description: { tag: 'av1C', bytes: new Uint8Array([9, 9]) } }),
+    VIDEO_TRACK({ id: 2 }),
+  ]);
+  const cfg = findVideoDecoderConfig(init);
+  assert.equal(cfg.entryType, 'avc1');
+  assert.equal(cfg.fourcc, null);
+  assert.equal(cfg.description, null);
+});
+
 test('init：hvcC 提取（hvc1 入口 + hvcC 配置盒）', () => {
   const init = fmp4.buildInit([
     VIDEO_TRACK({ codec: 'hvc1.1.6.L93.B0', description: { tag: 'hvcC', bytes: HVC_C } }),
