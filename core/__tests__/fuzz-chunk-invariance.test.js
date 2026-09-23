@@ -114,3 +114,51 @@ test('TsStreamEngine 分块不变性：3 fixture × 5 档随机切块（含 188B
     }
   }
 });
+
+/* ---------------- 变异 × 分块双应力（第二百一十波） ---------------- */
+
+const randInt = (n) => Math.floor(rand() * n);
+
+/** 高强度变异三模式：半缓冲覆写 / 纯随机流 / 极端截断（探测合计 4000 轮零泄漏） */
+function stressMutate(bytes, mode) {
+  if (mode === 0) {
+    const out = Uint8Array.from(bytes);
+    for (let i = 0, n = out.length >> 1; i < n; i++) out[randInt(out.length)] = randInt(256);
+    return out;
+  }
+  if (mode === 1) return Uint8Array.from(Array.from({ length: 1 + randInt(2000) }, () => randInt(256)));
+  return bytes.subarray(randInt(bytes.length));
+}
+
+test('流式双应力：变异字节 × 随机分块同时喂入，禁止裸抛（含 error 事件面）', async () => {
+  const { flv, ts } = await ready;
+  const targets = [
+    ['flv', FlvParser, FLV_EVENTS, flv],
+    ['ts', TsStreamEngine, TS_EVENTS, ts],
+  ];
+  for (let r = 0; r < 24; r++) {
+    for (const [label, Ctor, events, fixtures] of targets) {
+      for (const [, bytes] of fixtures) {
+        const mut = stressMutate(bytes, r % 3);
+        if (mut.length === 0) continue;
+        const p = new Ctor();
+        const offenders = [];
+        for (const name of events) {
+          p.on(name, (d) => {
+            // error/warn 载荷不得是原生类型/范围异常（契约错误面须带 code 或为受控 Error）
+            if (d instanceof Error && (d.name === 'TypeError' || d.name === 'RangeError')) {
+              offenders.push(`${name}: ${d.name}: ${d.message}`);
+            }
+          });
+        }
+        try {
+          for (const c of split(mut, 1 + randInt(500), false)) p.push(c);
+          p.flush();
+        } catch (e) {
+          if (!(e && e.code)) offenders.push(`push-throw: ${e.constructor.name}: ${e.message}`);
+        }
+        assert.deepEqual(offenders, [], `${label} 双应力 r=${r} 泄漏原始异常`);
+      }
+    }
+  }
+});
