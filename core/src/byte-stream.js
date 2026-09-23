@@ -8,6 +8,15 @@ import { sourceError } from './errors.js';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder('utf-8');
+const MAX_U64 = (1n << 64n) - 1n;
+const MIN_I64 = -(1n << 63n);
+const MAX_I64 = (1n << 63n) - 1n;
+
+function toBigIntInteger(value, what) {
+  if (typeof value === 'bigint') return value;
+  if (!Number.isSafeInteger(value)) throw sourceError(`${what} requires a BigInt or safe integer`);
+  return BigInt(value);
+}
 
 /** 大端读取器（只读视图，不复制底层数据） */
 export class ByteStream {
@@ -320,13 +329,15 @@ export class ByteWriter {
 
   /** 有符号 64 位（补码） */
   writeI64(v) {
-    let big = typeof v === 'bigint' ? v : BigInt(Math.trunc(v));
+    let big = toBigIntInteger(v, 'writeI64');
+    if (big < MIN_I64 || big > MAX_I64) throw sourceError('writeI64 value out of range');
     if (big < 0n) big += 1n << 64n;
     return this.writeU64(big);
   }
 
   writeU64(v) {
-    const big = typeof v === 'bigint' ? v : BigInt(Math.trunc(v));
+    const big = toBigIntInteger(v, "writeU64");
+    if (big < 0n || big > MAX_U64) throw sourceError("writeU64 value out of range");
     this.writeU32(Number((big >> 32n) & 0xffffffffn));
     this.writeU32(Number(big & 0xffffffffn));
     return this;

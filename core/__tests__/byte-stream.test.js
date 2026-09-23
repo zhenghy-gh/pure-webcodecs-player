@@ -29,6 +29,21 @@ test('ByteStream U64 / 定点数 / fourcc', () => {
   assert.equal(s.readUtf8(6), '中文');
 });
 
+test('ByteWriter validates 64-bit integer inputs', () => {
+  const writer = new ByteWriter();
+  assert.throws(() => writer.writeU64(1.5), (error) => error.code === 'SOURCE_ERROR');
+  assert.throws(() => writer.writeU64(Number.MAX_SAFE_INTEGER + 1), (error) => error.code === 'SOURCE_ERROR');
+  assert.throws(() => writer.writeU64(-1n), (error) => error.code === 'SOURCE_ERROR');
+  assert.throws(() => writer.writeU64(1n << 64n), (error) => error.code === 'SOURCE_ERROR');
+  assert.throws(() => writer.writeI64(1.5), (error) => error.code === 'SOURCE_ERROR');
+  assert.throws(() => writer.writeI64(-(1n << 63n) - 1n), (error) => error.code === 'SOURCE_ERROR');
+  assert.throws(() => writer.writeI64(1n << 63n), (error) => error.code === 'SOURCE_ERROR');
+  writer.writeI64(-(1n << 63n)).writeI64((1n << 63n) - 1n);
+  const reader = new ByteStream(writer.toUint8Array());
+  assert.equal(reader.readI64(), -(1n << 63n));
+  assert.equal(reader.readI64(), (1n << 63n) - 1n);
+});
+
 test('ByteStream 越界抛 SOURCE_ERROR', () => {
   const s = new ByteStream(new Uint8Array(4));
   assert.throws(() => s.readU32().valueOf && s.skip(5), (err) => err.code === 'SOURCE_ERROR');
@@ -47,7 +62,7 @@ test('ByteStream 窗口视图与 seek', () => {
 test('readU64Number 拒绝超出安全范围', async () => {
   const { sourceError } = await import('../src/errors.js');
   const w = new ByteWriter();
-  w.writeU64(Number.MAX_SAFE_INTEGER + 1);
+  w.writeU64(BigInt(Number.MAX_SAFE_INTEGER) + 1n);
   const s = new ByteStream(w.toUint8Array());
   assert.throws(() => s.readU64Number(), (e) => e instanceof Error && e.code === sourceError('').code);
 });
