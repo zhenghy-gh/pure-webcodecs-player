@@ -109,12 +109,15 @@ export function detectCompressedMoov(moovBytes) {
       try {
         iterateBoxes(moovBytes, h.contentStart, h.end, (sh) => {
           if (sh.type === 'dcom') {
-            result.vendor = String.fromCharCode(
-              moovBytes[sh.contentStart],
-              moovBytes[sh.contentStart + 1],
-              moovBytes[sh.contentStart + 2],
-              moovBytes[sh.contentStart + 3],
-            );
+            // 第二百一十六波定向 mutation：dcom 截断时按绝对偏移直读 4 字节会
+            // 越过盒尾混入零字节（fromCharCode 出 \u0000 控制字符）——
+            // 要求内容区 ≥4 字节且全为可打印 ASCII 才采纳 vendor
+            const o = sh.contentStart;
+            if (sh.end - o >= 4) {
+              const vendor = String.fromCharCode(
+                moovBytes[o], moovBytes[o + 1], moovBytes[o + 2], moovBytes[o + 3]);
+              if (/^[\u0020-\u007e]{4}$/.test(vendor)) result.vendor = vendor;
+            }
           }
           return true;
         });
@@ -237,17 +240,24 @@ function readTextAtom(bytes, box) {
 /**
  * 解释 elst 编辑列表：标出空编辑与首个有效媒体起点（秒）。
  * media_time < 0 为空编辑（占位），播放起点取第一条非负 mediaTime。
+ * 定义域守卫（第二百一十六波定向 mutation）：index.js 公开导出面，
+ * entries 形状敌意（缺数组/非数组/null 条目）不再裸 TypeError，
+ * 非有限 mediaTime 与 timescale 一律不参与产出（Infinity/NaN 泄漏封堵）。
  * @returns {{hasEmptyEdit: boolean, firstMediaTimeSec: number|null}}
  */
 export function interpretEdits(elstEntries, timescale) {
-  if (!elstEntries || elstEntries.entries.length === 0) {
+  const raw = Array.isArray(elstEntries?.entries) ? elstEntries.entries : [];
+  const entries = raw.filter((e) => e && Number.isFinite(e.mediaTime));
+  if (entries.length === 0) {
     return { hasEmptyEdit: false, firstMediaTimeSec: null };
   }
-  const firstValid = elstEntries.entries.find((e) => e.mediaTime >= 0);
+  const firstValid = entries.find((e) => e.mediaTime >= 0);
   return {
-    hasEmptyEdit: elstEntries.entries.some((e) => e.mediaTime < 0),
+    hasEmptyEdit: entries.some((e) => e.mediaTime < 0),
     firstMediaTimeSec:
-      timescale > 0 && firstValid ? firstValid.mediaTime / timescale : null,
+      Number.isFinite(timescale) && timescale > 0 && firstValid
+        ? firstValid.mediaTime / timescale
+        : null,
   };
 }
 
