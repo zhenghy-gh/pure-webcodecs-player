@@ -326,3 +326,4 @@
 | 110 | TS ChunkSource 未知流类型 EOS 回归 | 扩展 `ts/__tests__/ts-demuxer.test.js`：构造 PAT/PMT 仅含未知 `stream_type=0x06` 的流式输入，并补足三个同步包满足包长探测；验证 PSI 已解析、未知 PID 进入 ignoredStreams，`open()` 在 EOS 返回 `container=ts` 且空轨道，不挂起或误报解析错误。全仓 3029/3029、lint 559 文件、check 16/16、双契约审计 PASS。 | 本波 |
 | 111 | CMAF 视频配置搜索隔离 sample entry | 修复 `cmaf/src/isobmff.js`：`findVideoDecoderConfig()` 将配置盒搜索和尺寸校验限制在当前 sample entry 内，避免第一条轨缺配置时误取后续轨的 avcC/hvcC；新增双视频轨回归。全仓 3031/3031、lint 559 文件、check 16/16、双契约审计 PASS。 | 本波 |
 | 111 | CMAF esds 跨盒误识别防御 | 修复 `cmaf/src/isobmff.js`：`findAudioSpecificConfig()` 将扫描范围限制在合法 `esds` 盒内，避免从后续盒误识别 `0x05 + ASC`；新增跨盒误命中回归。全仓 3030/3030、lint 559 文件、check 16/16、双契约审计 PASS。 | 本波 |
+| 112 | CMAF ESDS 嵌套描述符结构解析 | 修复 `cmaf/src/isobmff.js`：按边界解析 ES_Descriptor、ES 可选字段、DecoderConfigDescriptor 与 DSI，避免在 ES_ID/bitrate 等字节中误判伪 `0x05` ASC；新增伪标签与可选字段回归。全仓 3033/3033、lint 559 文件、check 16/16、双契约审计 PASS。 | 本波 |
