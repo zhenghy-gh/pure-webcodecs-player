@@ -238,3 +238,26 @@ test('评审修复：无可播文件 → NOT_SUPPORTED 且 state 收敛为 degra
   assert.equal(player.state, 'degraded'); // 不再永久卡 loading
   await player.destroy();
 });
+
+// ── addTorrent 错误事件路径（第二百零四波）────────────────
+
+test('attach：client add 不回调但 emit error → fail() 转 ATTACH_FAILED 并摘除临时监听', async () => {
+  class EventErrorClient extends Emitter {
+    constructor() { super(); this.offCount = 0; }
+    add() {
+      // 永不回调 cb：只靠 'error' 事件驱动 settle
+      setImmediate(() => this.emit('error', new Error('tracker down')));
+    }
+    off(...args) { this.offCount += 1; return super.off(...args); }
+    async destroy() {}
+  }
+  const player = new WebTorrentPlayer({ clientFactory: async () => EventErrorClient });
+  await assert.rejects(
+    () => player.attach('magnet:?xt=urn:btih:evt'),
+    (err) => err instanceof PlayerError && err.code === 'NETWORK_ERROR'
+      && /tracker down/.test(err.message)
+      && err.detail?.reason === 'ATTACH_FAILED',
+  );
+  assert.ok(player.client.offCount >= 1, 'settle 后必须摘除临时 error 监听（防累积）');
+  await player.destroy().catch(() => {});
+});
