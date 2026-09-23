@@ -344,8 +344,12 @@ export function findTagInBuf(buf, start, end, tag) {
  */
 export function findAudioSpecificConfig(initSegment) {
   const pos = findTagInBuf(initSegment, 0, initSegment.length, 'esds');
-  if (pos < 0) return null;
-  const end = Math.min(initSegment.length, pos + 512);
+  if (pos < 4) return null;
+  const boxStart = pos - 4;
+  const view = new DataView(initSegment.buffer, initSegment.byteOffset, initSegment.byteLength);
+  const boxSize = view.getUint32(boxStart);
+  if (boxSize < 8 || boxStart + boxSize > initSegment.length) return null;
+  const end = Math.min(boxStart + boxSize, pos + 512);
   for (let i = pos; i < end - 1; i++) {
     if (initSegment[i] === 0x05) {
       // 变长长度

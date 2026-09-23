@@ -46,6 +46,15 @@ test('findAudioSpecificConfig：DSI 声明长度超过剩余数据时返回 null
   assert.equal(findAudioSpecificConfig(esds), null);
 });
 
+test('findAudioSpecificConfig：不跨 esds 后续盒误识别 ASC', () => {
+  const esds = new Uint8Array([0, 0, 0, 10, 0x65, 0x73, 0x64, 0x73, 0x06, 0x01]);
+  const free = new Uint8Array([0, 0, 0, 12, 0x66, 0x72, 0x65, 0x65, 0x05, 0x02, 0x12, 0x10]);
+  const init = new Uint8Array(esds.length + free.length);
+  init.set(esds);
+  init.set(free, esds.length);
+  assert.equal(findAudioSpecificConfig(init), null);
+});
+
 test('readBoxHeader：普通盒类型/尺寸/头长', () => {
   const b = makeBox('ftyp', 8);
   const h = readBoxHeader(b, 0);
