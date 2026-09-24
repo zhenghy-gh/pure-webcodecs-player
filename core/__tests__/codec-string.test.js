@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import {
   buildAvcCodecString,
   buildHevcCodecString,
@@ -19,6 +20,15 @@ test('avcC → avc1 codec string', () => {
   assert.equal(buildAvcCodecString(avcC), 'avc1.42E01E');
   assert.equal(buildAvcCodecString(new Uint8Array([1, 0x64, 0x00, 0x28])), 'avc1.640028'); // High L4.0
   assert.equal(buildAvcCodecString(new Uint8Array([1, 2, 3])), '');
+});
+
+test('codec configuration builders accept cross-realm ArrayBuffer values', () => {
+  const foreign = vm.runInNewContext(`(() => {
+    const buffer = new ArrayBuffer(4);
+    new Uint8Array(buffer).set([1, 0x42, 0xe0, 0x1e]);
+    return buffer;
+  })()`);
+  assert.equal(buildAvcCodecString(foreign), 'avc1.42E01E');
 });
 
 test('codec configuration builders reject scalar coercion and preserve view windows', () => {

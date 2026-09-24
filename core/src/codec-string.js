@@ -14,8 +14,12 @@ function toHex(v) {
 
 function normalizeCodecBytes(value) {
   if (value instanceof Uint8Array) return value;
-  if (value instanceof ArrayBuffer) return new Uint8Array(value);
-  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  // ArrayBuffer.prototype checks are realm-local; codec config often crosses iframe/worker boundaries.
+  if (Object.prototype.toString.call(value) === '[object ArrayBuffer]') return new Uint8Array(value);
+  const tag = Object.prototype.toString.call(value);
+  if (tag === '[object DataView]' || (ArrayBuffer.isView(value) && value.BYTES_PER_ELEMENT === 1)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
   if (Array.isArray(value) && value.every((byte) => Number.isSafeInteger(byte) && byte >= 0 && byte <= 0xff)) {
     return Uint8Array.from(value);
   }
