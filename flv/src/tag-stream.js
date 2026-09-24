@@ -109,6 +109,14 @@ export class FlvTagStream {
       const total = TAG_HEADER_SIZE + dataSize + 4;
       if (this.buffer.length < total) break;
 
+      const previousTagSize =
+        (this.buffer[TAG_HEADER_SIZE + dataSize] << 24) |
+        (this.buffer[TAG_HEADER_SIZE + dataSize + 1] << 16) |
+        (this.buffer[TAG_HEADER_SIZE + dataSize + 2] << 8) |
+        this.buffer[TAG_HEADER_SIZE + dataSize + 3];
+      if (previousTagSize !== TAG_HEADER_SIZE + dataSize) {
+        throw new Error(`FLV: PreviousTagSize 不匹配(${previousTagSize}，期望 ${TAG_HEADER_SIZE + dataSize})`);
+      }
       const data = this.buffer.subarray(TAG_HEADER_SIZE, TAG_HEADER_SIZE + dataSize).slice();
       this._take(total);
       out.push({ type, timestamp: timestamp >>> 0, data, offset: this.baseOffset + batchOrigin + o });
@@ -174,6 +182,12 @@ export function* iterateTags(bytes) {
       (bytes[pos + 7] << 24);
     const total = TAG_HEADER_SIZE + dataSize + 4;
     if (pos + total > bytes.length) return;     // 尾部截断：丢弃半包
+    const previousTagSize =
+      (bytes[pos + TAG_HEADER_SIZE + dataSize] << 24) |
+      (bytes[pos + TAG_HEADER_SIZE + dataSize + 1] << 16) |
+      (bytes[pos + TAG_HEADER_SIZE + dataSize + 2] << 8) |
+      bytes[pos + TAG_HEADER_SIZE + dataSize + 3];
+    if (previousTagSize !== TAG_HEADER_SIZE + dataSize) return;
     yield {
       type: bytes[pos],
       timestamp: timestamp >>> 0,

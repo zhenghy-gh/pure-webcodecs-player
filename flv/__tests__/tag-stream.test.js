@@ -37,6 +37,15 @@ test('iterateTags：一次性遍历类型/时间戳/数据长度', () => {
   assert.deepEqual(vts, [...vts].sort((a, b) => a - b));
 });
 
+test('iterateTags：错误 PreviousTagSize 的 tag 不被接受', () => {
+  const file = assembleFlv({ video: { frames: 1 }, audio: null });
+  const tag = [...iterateTags(file)][0];
+  const invalid = file.slice();
+  const previousSizeOffset = tag.offset + 11 + tag.data.byteLength;
+  new DataView(invalid.buffer).setUint32(previousSizeOffset, 0, false);
+  assert.deepEqual([...iterateTags(invalid)], []);
+});
+
 test('iterateTags：截断尾部不产出半包', () => {
   const file = assembleFlv({ video: { frames: 4 } });
   const cut = file.subarray(0, file.length - 10);
