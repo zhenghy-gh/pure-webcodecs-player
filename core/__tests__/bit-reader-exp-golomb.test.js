@@ -45,6 +45,15 @@ test('BitReader sign-extends 31-bit values without bit-shift overflow', () => {
   assert.equal(readSigned(0x80000000, 32), -0x80000000);
 });
 
+test('BitWriter validates initial capacity', () => {
+  for (const capacity of [-1, 1.5, NaN, Infinity]) {
+    assert.throws(() => new BitWriter(capacity), (error) => error.code === 'PARSE_ERROR');
+  }
+  const writer = new BitWriter(0);
+  writer.writeBits(1, 1);
+  assert.deepEqual([...writer.finish()], [0x80]);
+});
+
 test('BitWriter writes wide values and rejects invalid inputs', () => {
   const writer = new BitWriter();
   writer.writeBits(0x1_0000_0001, 33).writeBits(0x123456789abcdef0n, 64);

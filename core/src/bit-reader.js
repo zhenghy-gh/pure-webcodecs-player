@@ -150,6 +150,7 @@ export class BitReader {
  */
 export class BitWriter {
   constructor(initialCapacity = 64) {
+    if (!Number.isSafeInteger(initialCapacity) || initialCapacity < 0) throw parseError('BitWriter initial capacity must be non-negative safe integer');
     this._buf = new Uint8Array(initialCapacity);
     this._len = 0; // 已写满的字节数
     this._bit = 0; // 当前字节的已写位数（0 = 从最高位开始）
