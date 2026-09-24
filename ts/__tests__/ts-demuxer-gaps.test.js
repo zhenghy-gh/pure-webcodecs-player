@@ -162,13 +162,18 @@ function mkNullPacket() {
   return p;
 }
 
-test('泵：源 read 抛错 → 视为 EOF 收尾 → 同一 PARSE_ERROR 面', async () => {
+test('泵：源 read 抛错 → 保留 SOURCE_ERROR 与原始原因', async () => {
   const src = { size: 1000, read: async () => { throw new Error('io down'); } };
   const d = new TsDemuxer(src);
   await assert.rejects(
     d.open(),
-    (e) => e.code === 'PARSE_ERROR' && /先于任何 PAT\/PMT 结束/.test(e.message),
+    (e) => e.code === 'SOURCE_ERROR' && /TS 数据源读取失败: io down/.test(e.message) && e.detail?.cause?.message === 'io down',
   );
+});
+
+test('泵：源返回非 Uint8Array → SOURCE_ERROR', async () => {
+  const d = new TsDemuxer({ size: 10, read: async () => ({ length: 10 }) });
+  await assert.rejects(d.open(), (e) => e.code === 'SOURCE_ERROR' && /必须返回 Uint8Array/.test(e.message));
 });
 
 test('泵：源返回空数据 → 视为 EOF 收尾 → 同一 PARSE_ERROR 面', async () => {
