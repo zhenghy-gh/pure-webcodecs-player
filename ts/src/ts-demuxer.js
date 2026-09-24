@@ -344,9 +344,10 @@ export class TsDemuxer extends Demuxer {
   async _pumpOnce() {
     const src = /** @type {any} */ (this.source);
     if (this._sourceEof) return false;
+    const size = await src.size;
     let want = PUMP_CHUNK;
-    if (src.size != null && src.size !== Infinity) {
-      want = Math.min(want, src.size - this._pos);
+    if (size != null && size !== Infinity) {
+      want = Math.min(want, size - this._pos);
       if (want <= 0) {
         this._finishSource();
         return false;
@@ -364,9 +365,9 @@ export class TsDemuxer extends Demuxer {
       return false;
     }
     this._pos += data.length;
-    this.emit('progress', { loadedBytes: this._pos, totalBytes: src.size ?? null });
+    this.emit('progress', { loadedBytes: this._pos, totalBytes: size ?? null });
     this._feed(this.engine.push.bind(this.engine), data);
-    if (src.size != null && src.size !== Infinity && this._pos >= src.size) this._finishSource();
+    if (size != null && size !== Infinity && this._pos >= size) this._finishSource();
     else if (data.length < want) this._finishSource();
     return true;
   }
@@ -530,7 +531,12 @@ async function sniffBytes(src) {
   }
   if (typeof src?.read === 'function') {
     const ds = asDataSource(src);
-    return ds.read(0, Math.min(4096, ds.size ?? 4096));
+    const size = await ds.size;
+    if (size !== undefined && size !== Infinity && (!Number.isSafeInteger(size) || size < 0)) {
+      throw probeFailed(`TS：数据源 size 非法：${size}`);
+    }
+    const length = size === undefined || size === Infinity ? 4096 : Math.min(4096, size);
+    return ds.read(0, length);
   }
   return new Uint8Array(0);
 }

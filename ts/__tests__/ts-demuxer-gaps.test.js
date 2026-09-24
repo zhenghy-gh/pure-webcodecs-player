@@ -223,6 +223,26 @@ test('_doSeek：无索引容器拒绝 seek；getBufferedRanges 恒空', async ()
   await d.destroy();
 });
 
+test('createTsDemuxer：异步 DataSource size 用于限长 probe', async () => {
+  const bytes = stdFile();
+  const reads = [];
+  const source = {
+    size: Promise.resolve(bytes.byteLength),
+    read: async (offset, length) => {
+      reads.push([offset, length]);
+      return bytes.subarray(offset, offset + length);
+    },
+  };
+  const demuxer = await createTsDemuxer(source);
+  assert.ok(demuxer);
+  assert.deepEqual(reads[0], [0, Math.min(4096, bytes.byteLength)]);
+});
+
+test('createTsDemuxer：异步 DataSource size 解析为非法值时拒绝', async () => {
+  const source = { size: Promise.resolve(-1), read: async () => new Uint8Array(0) };
+  await assert.rejects(() => createTsDemuxer(source), (error) => error.code === 'PROBE_FAILED');
+});
+
 /* ------------------------------ createTsDemuxer 工厂 ------------------------------ */
 
 test('工厂：URL + fetch 成功路径全链', async () => {
