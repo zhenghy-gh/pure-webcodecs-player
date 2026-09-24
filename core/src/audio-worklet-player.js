@@ -26,10 +26,29 @@ class PcmRingWorklet extends AudioWorkletProcessor {
       if (msg.type === 'push') {
         const channels = msg.channels;
         const frames = msg.frames;
-        if (this.rings.length !== channels.length || this.capacity < frames) {
-          // 首次或容量变化：重建环形缓冲（容量取最大需求与 4 倍块长）
+        if (this.rings.length !== channels.length) {
+          // 声道布局变化时丢弃旧布局残留，避免把旧通道样本误路由到新布局。
           this.capacity = Math.max(this.capacity, frames, currentSampleRate >> 1);
-          while (this.rings.length < channels.length) this.rings.push(new Float32Array(this.capacity));
+          this.rings = Array.from({ length: channels.length }, () => new Float32Array(this.capacity));
+          this.writePos = 0;
+          this.bufferedFrames = 0;
+        } else if (this.capacity === 0) {
+          this.capacity = Math.max(frames, currentSampleRate >> 1);
+          this.rings = Array.from({ length: channels.length }, () => new Float32Array(this.capacity));
+        }
+        const required = this.bufferedFrames + frames;
+        if (required > this.capacity) {
+          const oldCapacity = this.capacity;
+          let capacity = oldCapacity;
+          while (capacity < required) capacity = Math.max(capacity * 2, required);
+          const readPos = (this.writePos - this.bufferedFrames + oldCapacity) % oldCapacity;
+          this.rings = this.rings.map((ring) => {
+            const grown = new Float32Array(capacity);
+            for (let i = 0; i < this.bufferedFrames; i++) grown[i] = ring[(readPos + i) % oldCapacity];
+            return grown;
+          });
+          this.capacity = capacity;
+          this.writePos = this.bufferedFrames;
         }
         const chCount = Math.min(this.rings.length, channels.length);
         for (let ch = 0; ch < chCount; ch++) {

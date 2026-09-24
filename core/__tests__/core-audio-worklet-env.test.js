@@ -15,6 +15,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { runInNewContext } from 'node:vm';
 import {
   PCM_WORKLET_CODE,
   AUDIO_SINK_PROCESSOR_NAME,
@@ -36,6 +37,26 @@ function withoutAudioContext(fn) {
     assert.equal(typeof globalThis.AudioContext, had ? 'function' : 'undefined', 'AudioContext 全局已还原');
   }
 }
+
+test('PCM worklet：环形缓冲扩容保留未消费样本与顺序', () => {
+  let Processor;
+  const context = {
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage() {} }; } },
+    registerProcessor(_name, ctor) { Processor = ctor; },
+    currentSampleRate: 4,
+    sampleRate: 4,
+    currentTime: 0,
+  };
+  runInNewContext(PCM_WORKLET_CODE, context);
+  const processor = new Processor();
+  processor.port.onmessage({ data: { type: 'push', channels: [new Float32Array([1, 2, 3])], frames: 3 } });
+  processor.port.onmessage({ data: { type: 'push', channels: [new Float32Array([4, 5, 6])], frames: 3 } });
+  assert.ok(processor.capacity >= 6);
+  const output = [new Float32Array(6)];
+  processor.process([], [output]);
+  assert.deepEqual([...output[0]], [1, 2, 3, 4, 5, 6]);
+  assert.equal(processor.bufferedFrames, 0);
+});
 
 test('PCM_WORKLET_CODE：内联处理器源码，注册名与契约 §7 一致', () => {
   assert.equal(typeof PCM_WORKLET_CODE, 'string');
