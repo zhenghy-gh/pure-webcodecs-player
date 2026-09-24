@@ -109,6 +109,17 @@ test('ByteWriter accepts zero capacity and rejects invalid initial capacity', ()
   }
 });
 
+test('writeRaw preserves typed-array windows and rejects invalid inputs', () => {
+  const bytes = new Uint8Array([0, 1, 2, 3, 4]);
+  const view = new DataView(bytes.buffer, 1, 3);
+  const writer = new ByteWriter();
+  writer.writeRaw(view).writeRaw(bytes.buffer.slice(3, 5));
+  assert.deepEqual([...writer.toUint8Array()], [1, 2, 3, 3, 4]);
+  for (const value of [null, undefined, 1, 'bytes', {}]) {
+    assert.throws(() => new ByteWriter().writeRaw(value), (error) => error.code === 'SOURCE_ERROR');
+  }
+});
+
 test('patchU32 validates values and offsets', () => {
   const w = new ByteWriter(16);
   w.writeU32(1);

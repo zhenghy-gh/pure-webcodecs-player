@@ -174,11 +174,11 @@ export function buildDinf() {
 
 /** avcC 直接透传解码私有配置字节 */
 export function buildAvcC(bytes) {
-  return box('avcC', (w) => w.writeRaw(bytes));
+  return box('avcC', (w) => w.writeRaw(bytes ?? new Uint8Array()));
 }
 
 export function buildHvcC(bytes) {
-  return box('hvcC', (w) => w.writeRaw(bytes));
+  return box('hvcC', (w) => w.writeRaw(bytes ?? new Uint8Array()));
 }
 
 /** 视觉 sample entry 公共体（avc1/hev1/hvc1...） */

@@ -104,7 +104,7 @@ export function buildQuickTimeMovFixture() {
                     box('stbl', (sw) => {
                       sw.writeRaw(buildStsd(videoTrackMeta));
                       sw.writeRaw(buildStts([{ count: 6, delta: 40 }]));
-                      sw.writeRaw(buildCtts(null));
+                      if (buildCtts(null)) sw.writeRaw(buildCtts(null));
                       sw.writeRaw(buildStss([0, 3]));
                       sw.writeRaw(buildStsc(sizes.map((_, k) => ({ firstChunk: k, samplesPerChunk: 1 }))));
                       sw.writeRaw(buildStsz(sizes));

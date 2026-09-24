@@ -28,6 +28,13 @@ function signedInteger(value, min, max, what) {
   return value;
 }
 
+function asByteView(data) {
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  throw sourceError('writeRaw expects ArrayBuffer or ArrayBufferView');
+}
+
 /** 大端读取器（只读视图，不复制底层数据） */
 export class ByteStream {
   /**
@@ -412,7 +419,7 @@ export class ByteWriter {
 
   /** 原样写入一段字节 */
   writeRaw(data) {
-    const u8 = data instanceof Uint8Array ? data : new Uint8Array(data);
+    const u8 = asByteView(data);
     this._reserve(u8.byteLength);
     this._buf.set(u8, this._len);
     this._len += u8.byteLength;
