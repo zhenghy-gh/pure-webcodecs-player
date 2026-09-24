@@ -48,7 +48,7 @@ export const DEFAULT_MAX_TRUN_SAMPLES = 1_000_000;
  */
 export function assertByteLength(value, max, what = '长度') {
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0 || n > max) {
+  if (!Number.isSafeInteger(n) || n < 0 || n > max) {
     throw parseError(
       `${what}越界: ${value}（上限 ${max} 字节）；疑似畸形长度字段，已拒绝以防内存爆炸`,
     );

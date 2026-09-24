@@ -189,6 +189,20 @@ test('read rejects NaN, fractional and unsafe offsets before requesting bytes', 
   assert.equal(rangeCalls, 0);
 });
 
+test('read：非法 length 在 open 前拒绝且不触发网络请求', async () => {
+  let calls = 0;
+  const ds = new HttpRangeDataSource('http://fixture.invalid/invalid-length.mp4', {
+    fetchImpl: async () => {
+      calls += 1;
+      return fakeRes(200, { headers: { 'content-length': '256' } });
+    },
+  });
+  for (const length of [-1, NaN, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(() => ds.read(0, length), (error) => error.code === 'PARSE_ERROR');
+  }
+  assert.equal(calls, 0, '非法 length 不应先执行 HEAD 或 Range 探测');
+});
+
 test('read：offset ≥ size 或 < 0 → SOURCE_ERROR', async () => {
   const whole = makeWhole(256);
   const ds = new HttpRangeDataSource('http://fixture.invalid/oob.mp4', {

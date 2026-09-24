@@ -143,9 +143,9 @@ export class HttpRangeDataSource {
     if (!Number.isSafeInteger(offset) || offset < 0) {
       throw sourceError(`read offset must be a non-negative safe integer: ${offset}`);
     }
-    if (!this._opened) await this.open();
-    // I5：单次读取上界——畸形容器长度字段不得触发超大 Range 请求与内存分配
+    // I5：先校验单次读取上界，畸形容器长度不得在任何网络探测前触发 I/O。
     assertByteLength(length, this.maxReadLength, `HTTP Range 单次读取`);
+    if (!this._opened) await this.open();
     if (offset > this.size) {
       throw sourceError(`read out of range: offset=${offset} size=${this.size}`);
     }
