@@ -3,6 +3,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import {
   ChunkBuffer,
   MemoryDataSource,
@@ -16,6 +17,13 @@ function makeWhole(len = 1024) {
   for (let i = 0; i < len; i++) u8[i] = i & 0xff;
   return u8;
 }
+
+test('MemoryDataSource accepts cross-realm ArrayBuffer and rejects multi-byte views', async () => {
+  const foreign = vm.runInNewContext('(() => { const b = new ArrayBuffer(4); new Uint8Array(b).set([1,2,3,4]); return b; })()');
+  const source = new MemoryDataSource(foreign);
+  assert.deepEqual([...await source.read(1, 2)], [2, 3]);
+  assert.throws(() => new MemoryDataSource(new Uint16Array([1])), /byte buffer|byte view/);
+});
 
 test('ChunkBuffer：跨块读取与整段一致性', async () => {
   const whole = makeWhole(1000);

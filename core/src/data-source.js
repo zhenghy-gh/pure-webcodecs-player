@@ -10,9 +10,11 @@ import { DEFAULT_MAX_READ_BYTES } from './limits.js';
 
 function toChunkView(chunk) {
   if (chunk instanceof Uint8Array) return chunk;
-  if (chunk instanceof ArrayBuffer) return new Uint8Array(chunk);
-  if (ArrayBuffer.isView(chunk)) return new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-  throw sourceError('ChunkBuffer append expects ArrayBuffer or ArrayBufferView');
+  if (Object.prototype.toString.call(chunk) === '[object ArrayBuffer]') return new Uint8Array(chunk);
+  if (Object.prototype.toString.call(chunk) === '[object DataView]' || (ArrayBuffer.isView(chunk) && chunk.BYTES_PER_ELEMENT === 1)) {
+    return new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+  }
+  throw sourceError('ChunkBuffer append expects a byte buffer or byte view');
 }
 
 function validateReadRange(offset, length, size, label) {
@@ -31,10 +33,7 @@ function validateReadRange(offset, length, size, label) {
 export class MemoryDataSource {
   /** @param {Uint8Array|ArrayBuffer} bytes */
   constructor(bytes) {
-    if (bytes instanceof Uint8Array) this.bytes = bytes;
-    else if (bytes instanceof ArrayBuffer) this.bytes = new Uint8Array(bytes);
-    else if (ArrayBuffer.isView(bytes)) this.bytes = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    else throw sourceError('MemoryDataSource expects ArrayBuffer or ArrayBufferView');
+    this.bytes = toChunkView(bytes);
     this.size = this.bytes.byteLength;
     this.uri = 'memory';
   }
