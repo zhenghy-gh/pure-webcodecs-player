@@ -81,6 +81,16 @@ test('MemoryDataSource：Uint8Array 与 ArrayBuffer 两种入参', async () => {
   assert.deepEqual([...(await fromAb.read(0))], [1, 2, 3, 4], '省略 length 读至末尾');
 });
 
+test('MemoryDataSource：保留 ArrayBufferView 子窗口并拒绝非法输入', async () => {
+  const bytes = Uint8Array.from([0, 1, 2, 3]);
+  const ds = new MemoryDataSource(new DataView(bytes.buffer, 1, 2));
+  assert.equal(ds.size, 2);
+  assert.deepEqual([...await ds.read(0)], [1, 2]);
+  for (const value of [null, undefined, 1, 'bytes']) {
+    assert.throws(() => new MemoryDataSource(value), (error) => error.code === 'SOURCE_ERROR');
+  }
+});
+
 test('MemoryDataSource：越界三类一律 SOURCE_ERROR', async () => {
   const ds = new MemoryDataSource(Uint8Array.from([1, 2, 3, 4]));
   await assert.rejects(() => ds.read(-1, 2), (e) => e.code === 'SOURCE_ERROR');
