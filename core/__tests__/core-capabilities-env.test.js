@@ -182,6 +182,23 @@ test('detectCapabilities：MSE 支持路径按 isTypeSupported 命中收集 mime
   });
 });
 
+test('detectCapabilities：codec 列表去重、去空白并忽略非字符串', async () => {
+  await withGlobals(
+    { VideoDecoder: FakeVideoDecoder, AudioDecoder: FakeAudioDecoder, EncodedVideoChunk: class {} },
+    async () => {
+      const report = await detectCapabilities({
+        deep: true,
+        videoCodecs: [' ok ', 'ok', '', null, 7],
+        audioCodecs: [' a-ok ', 'a-ok', {}],
+      });
+      assert.deepEqual(report.webcodecs.video, { ok: true });
+      assert.deepEqual(report.webcodecs.audio, { 'a-ok': true });
+    },
+  );
+  const empty = await detectCapabilities([]);
+  assert.equal(empty.webcodecs.supported, false);
+});
+
 test('detectCapabilities：非 deep 结果进程内缓存，deep 绕过缓存', async () => {
   resetCapabilityCache();
   const first = await detectCapabilities();

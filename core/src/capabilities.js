@@ -74,14 +74,25 @@ export const DEFAULT_AUDIO_CODECS = ['mp4a.40.2', 'mp3', 'opus', 'flac'];
  *   secureContext: boolean,
  * }>}
  */
+function normalizeCodecList(value, fallback) {
+  if (value === undefined) return fallback;
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value
+    .filter((codec) => typeof codec === 'string')
+    .map((codec) => codec.trim())
+    .filter(Boolean))];
+}
+
 export async function detectCapabilities(options = {}) {
-  const key = JSON.stringify(options);
-  if (!options.deep && detectCapabilities._cache.has(key)) {
+  const input = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+  const deep = input.deep === true;
+  const videoCodecs = normalizeCodecList(input.videoCodecs, DEFAULT_VIDEO_CODECS);
+  const audioCodecs = normalizeCodecList(input.audioCodecs, DEFAULT_AUDIO_CODECS);
+  const cacheOptions = { deep, videoCodecs, audioCodecs };
+  const key = JSON.stringify(cacheOptions);
+  if (!deep && detectCapabilities._cache.has(key)) {
     return detectCapabilities._cache.get(key);
   }
-
-  const videoCodecs = options.videoCodecs ?? DEFAULT_VIDEO_CODECS;
-  const audioCodecs = options.audioCodecs ?? DEFAULT_AUDIO_CODECS;
 
   const report = {
     webcodecs: {
@@ -134,7 +145,7 @@ export async function detectCapabilities(options = {}) {
   }
   await Promise.all(jobs);
 
-  if (!options.deep) detectCapabilities._cache.set(key, report);
+  if (!deep) detectCapabilities._cache.set(key, report);
   return report;
 }
 detectCapabilities._cache = new Map();
