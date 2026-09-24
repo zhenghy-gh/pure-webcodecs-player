@@ -130,7 +130,8 @@ function readObject(d, refs, depth) {
 }
 
 function readObjectBody(d, refs, depth, isEcma) {
-  const obj = {};
+  // Null-prototype objects prevent AMF keys such as __proto__ from mutating globals.
+  const obj = Object.create(null);
   const objIndex = refs.size;
   refs.set(objIndex, obj);
   while (true) {

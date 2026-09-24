@@ -16,6 +16,15 @@ test('标量编解码往返', () => {
   assert.equal(value, null);
 });
 
+test('AMF object keys cannot mutate Object.prototype', () => {
+  const key = new TextEncoder().encode('__proto__');
+  const bytes = new Uint8Array([0x03, 0, key.length, ...key, 0x01, 1, 0, 0, 0x09]);
+  const { value } = decodeAmf0(bytes);
+  assert.equal(Object.getPrototypeOf(value), null);
+  assert.equal(value.__proto__, true);
+  assert.equal({}.polluted, undefined);
+});
+
 test('嵌套对象与 ECMA 数组', () => {
   const meta = {
     width: 1920,
