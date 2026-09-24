@@ -109,10 +109,12 @@ export class ByteStream {
   }
 
   skip(n) {
+    if (!Number.isSafeInteger(n) || n < 0) throw sourceError("skip length must be a non-negative safe integer");
     return this.seek(this._pos + n);
   }
 
   rewind(n) {
+    if (!Number.isSafeInteger(n) || n < 0) throw sourceError("rewind length must be a non-negative safe integer");
     return this.seek(this._pos - n);
   }
 

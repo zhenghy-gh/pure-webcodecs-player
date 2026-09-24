@@ -59,6 +59,17 @@ test('ByteStream rejects invalid read and patch lengths', () => {
   }
 });
 
+test('skip and rewind reject invalid lengths', () => {
+  const reader = new ByteStream(new Uint8Array([1, 2, 3]));
+  for (const length of [-1, 1.5, NaN, Infinity]) {
+    assert.throws(() => reader.skip(length), (error) => error.code === 'SOURCE_ERROR');
+    assert.throws(() => reader.rewind(length), (error) => error.code === 'SOURCE_ERROR');
+    assert.equal(reader.position, 0);
+  }
+  reader.skip(2).rewind(1);
+  assert.equal(reader.position, 1);
+});
+
 test('readSlice 越界 → read overflow sourceError', () => {
   const s = new ByteStream(new Uint8Array(4));
   assert.throws(
