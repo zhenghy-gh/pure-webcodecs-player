@@ -217,6 +217,30 @@ test('HttpRangeDataSource（core 版）：HEAD 探长 + 跨块读 + 缓存淘汰
   assert.ok(requests > 3, `应发生多次 Range 请求，实际 ${requests}`);
 });
 
+test('HttpRangeDataSource：拒绝非安全文件长度声明', async () => {
+  for (const raw of ['1.5', '-1', '9007199254740992', '']) {
+    const ds = new HttpRangeDataSource('http://fixture.invalid/invalid-head.mp4', {
+      fetchImpl: async (_url, init = {}) => init.method === 'HEAD'
+        ? new Response(null, { status: 200, headers: { 'content-length': raw } })
+        : new Response(null, { status: 500 }),
+    });
+    await assert.rejects(() => ds.open(), (error) => error.code === 'SOURCE_ERROR');
+  }
+
+  for (const raw of ['*', '1.5', '9007199254740992']) {
+    const ds = new HttpRangeDataSource('http://fixture.invalid/invalid-range.mp4', {
+      fetchImpl: async (_url, init = {}) => {
+        if (init.method === 'HEAD') return new Response(null, { status: 405 });
+        return new Response(new Uint8Array([0]), {
+          status: 206,
+          headers: { 'content-range': `bytes 0-0/${raw}` },
+        });
+      },
+    });
+    await assert.rejects(() => ds.open(), (error) => error.code === 'SOURCE_ERROR');
+  }
+});
+
 test('HttpRangeDataSource：无 HEAD 允许时退回 Content-Range 探测', async () => {
   const whole = makeWhole(512);
   const ds = new HttpRangeDataSource('http://fixture.invalid/b.mp4', {

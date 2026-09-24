@@ -12,6 +12,14 @@ import { DEFAULT_MAX_READ_BYTES, assertByteLength } from './limits.js';
 
 const DEFAULT_CHUNK = 1 << 18; // 256KB
 
+function parseSafeSize(raw, what) {
+  const text = String(raw ?? '').trim();
+  if (!/^\d+$/.test(text)) throw sourceError(`${what} must be a non-negative decimal integer: ${raw}`);
+  const value = Number(text);
+  if (!Number.isSafeInteger(value)) throw sourceError(`${what} exceeds safe integer range: ${raw}`);
+  return value;
+}
+
 export class HttpRangeDataSource {
   /**
    * @param {string} url
@@ -70,9 +78,9 @@ export class HttpRangeDataSource {
         headers: { ...this.requestInit.headers, ...this.headers },
       });
       if (res.ok) {
-        const len = Number(res.headers.get('content-length') ?? NaN);
-        if (Number.isFinite(len)) {
-          this.size = len;
+        const rawLength = res.headers.get('content-length');
+        if (rawLength !== null) {
+          this.size = parseSafeSize(rawLength, 'Content-Length');
           this.acceptRanges = (res.headers.get('accept-ranges') ?? '').includes('bytes');
         }
       }
@@ -93,11 +101,11 @@ export class HttpRangeDataSource {
           { status: res.status },
         );
       }
-      const total = Number(contentRange.split('/')[1]);
-      if (!Number.isFinite(total)) {
+      const totalText = contentRange.split('/')[1]?.trim();
+      if (!totalText || totalText === '*') {
         throw sourceError(`cannot determine file size from Content-Range: ${contentRange}`);
       }
-      this.size = total;
+      this.size = parseSafeSize(totalText, 'Content-Range total');
       this.acceptRanges = true;
       try {
         res.body?.cancel?.();
