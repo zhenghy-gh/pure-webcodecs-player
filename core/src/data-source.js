@@ -56,6 +56,9 @@ export class BlobDataSource {
     if (typeof Blob === 'undefined') {
       throw sourceError('Blob is not available in this environment');
     }
+    if (!(blob instanceof Blob)) throw sourceError('BlobDataSource expects a Blob or File');
+    if (!Number.isSafeInteger(blob.size) || blob.size < 0) throw sourceError('Blob size must be a non-negative safe integer');
+    if (typeof name !== 'string') throw sourceError('BlobDataSource name must be a string');
     this.blob = blob;
     this.size = blob.size;
     this.name = name || blob.name || 'blob';

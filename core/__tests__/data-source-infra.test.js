@@ -135,6 +135,14 @@ test('BlobDataSource：尾部越界截断到 size，负偏移/超界报 SOURCE_E
   assert.equal((await ds.read(3, 1)).byteLength, 0, 'offset == size 允许，返回空');
 });
 
+test('BlobDataSource：拒绝伪造 Blob 与非法名称', () => {
+  const valid = new Blob([Uint8Array.from([1])]);
+  for (const value of [null, undefined, { size: 1, slice() {} }, new Uint8Array([1])]) {
+    assert.throws(() => new BlobDataSource(value), (error) => error.code === 'SOURCE_ERROR');
+  }
+  assert.throws(() => new BlobDataSource(valid, 1), (error) => error.code === 'SOURCE_ERROR');
+});
+
 test('BlobDataSource：环境无 Blob 时构造即 SOURCE_ERROR', () => {
   const saved = globalThis.Blob;
   // 先构造好对象（Blob 的第二参是 options，文件名只有 File 支持）
