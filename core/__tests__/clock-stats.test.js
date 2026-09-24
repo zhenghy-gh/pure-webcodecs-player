@@ -114,6 +114,20 @@ test('Stats 计数与 fps EMA（注入时钟）', () => {
   assert.equal(stats._lastRenderAt, null, 'reset 应清除渲染时间锚点');
 });
 
+test('Stats rejects invalid byte and dropped-frame counters', () => {
+  const stats = new Stats({ now: () => 0 });
+  for (const value of [-1, 1.5, NaN, Infinity]) {
+    assert.throws(() => stats.markDemuxed(value), RangeError);
+    assert.throws(() => stats.markAppended(value), RangeError);
+    assert.throws(() => stats.markVideoDropped(value), RangeError);
+  }
+  assert.deepEqual(stats.snapshot(), {
+    bytesDemuxed: 0, bytesAppended: 0, samplesDecoded: 0, videoFramesRendered: 0,
+    videoFramesDropped: 0, audioUnderruns: 0, seekCount: 0, decodeErrors: 0,
+    fps: 0, averageDecodeMs: 0, maxDecodeMs: 0,
+  });
+});
+
 test('Stats：demux 计数、decodeError 事件与 Date.now 时钟回退', async () => {
   const detail = { code: 'DECODE_ERROR', track: 'video' };
   const seen = [];

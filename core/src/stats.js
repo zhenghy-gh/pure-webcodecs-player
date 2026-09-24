@@ -6,6 +6,13 @@
  */
 import { Emitter } from './emitter.js';
 
+function nonNegativeCount(value, what) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError(`${what} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
 export class Stats extends Emitter {
   /**
    * @param {{now?: () => number}} [options] now 返回秒
@@ -38,11 +45,11 @@ export class Stats extends Emitter {
   }
 
   markDemuxed(bytes) {
-    this.counters.bytesDemuxed += bytes;
+    this.counters.bytesDemuxed += nonNegativeCount(bytes, 'bytes');
   }
 
   markAppended(bytes) {
-    this.counters.bytesAppended += bytes;
+    this.counters.bytesAppended += nonNegativeCount(bytes, 'bytes');
     this.emit('update', this.snapshot());
   }
 
@@ -68,7 +75,7 @@ export class Stats extends Emitter {
   }
 
   markVideoDropped(n = 1) {
-    this.counters.videoFramesDropped += n;
+    this.counters.videoFramesDropped += nonNegativeCount(n, 'dropped frame count');
   }
 
   markAudioUnderrun() {
