@@ -18,6 +18,8 @@ import {
   parseMvhd,
   parseMdhd,
   parseSampleEntry,
+  parseStsz,
+  parseStz2,
 } from '../src/box-parser.js';
 import { buildMvhd } from '../src/box-builder.js';
 
@@ -98,6 +100,16 @@ test('parseMdhd version 1：64 位时间字段 + language 解包', () => {
   assert.equal(mdhd.timescale, 44100);
   assert.equal(mdhd.duration, 441000);
   assert.equal(mdhd.language, 'und');
+});
+
+test('sample table parsers reject unbounded entry counts before allocation', () => {
+  const huge = new ByteWriter();
+  huge.writeU8(0).writeU24(0).writeU32(0).writeU32(0xffffffff);
+  assert.throws(() => parseStsz(new ByteStream(huge.toUint8Array(), 0)), /stsz entry count exceeds limit/);
+
+  const compact = new ByteWriter();
+  compact.writeU8(0).writeU24(0).writeU24(0).writeU8(8).writeU32(0xffffffff);
+  assert.throws(() => parseStz2(new ByteStream(compact.toUint8Array(), 0)), /stz2 entry count exceeds limit/);
 });
 
 /* ------------------------------ sample entry 版本分支 ------------------------------ */

@@ -69,6 +69,14 @@ function readVersionFlags(s) {
   return { version, flags };
 }
 
+function readTableCount(s, what) {
+  const count = s.readU32();
+  if (count > DEFAULT_MAX_TRUN_SAMPLES) {
+    throw parseError(`${what} entry count exceeds limit: ${count}`);
+  }
+  return count;
+}
+
 export function parseFtyp(s) {
   return {
     majorBrand: s.readFourCC(),
@@ -170,7 +178,7 @@ export function parseHdlr(s) {
 
 export function parseElst(s) {
   const { version } = readVersionFlags(s);
-  const count = s.readU32();
+  const count = readTableCount(s, 'elst');
   const entries = [];
   for (let i = 0; i < count; i++) {
     if (version === 1) {
@@ -196,7 +204,7 @@ export function parseElst(s) {
 
 export function parseStts(s) {
   readVersionFlags(s);
-  const count = s.readU32();
+  const count = readTableCount(s, 'stts');
   const runs = [];
   for (let i = 0; i < count; i++) {
     runs.push({ count: s.readU32(), delta: s.readU32() });
@@ -206,7 +214,7 @@ export function parseStts(s) {
 
 export function parseCtts(s) {
   const { version } = readVersionFlags(s);
-  const count = s.readU32();
+  const count = readTableCount(s, 'ctts');
   const runs = [];
   for (let i = 0; i < count; i++) {
     const c = s.readU32();
@@ -218,7 +226,7 @@ export function parseCtts(s) {
 
 export function parseStss(s) {
   readVersionFlags(s);
-  const count = s.readU32();
+  const count = readTableCount(s, 'stss');
   const indices = [];
   for (let i = 0; i < count; i++) indices.push(s.readU32() - 1);
   return { indices };
@@ -226,7 +234,7 @@ export function parseStss(s) {
 
 export function parseStsc(s) {
   readVersionFlags(s);
-  const count = s.readU32();
+  const count = readTableCount(s, 'stsc');
   const entries = [];
   for (let i = 0; i < count; i++) {
     entries.push({
@@ -241,7 +249,7 @@ export function parseStsc(s) {
 export function parseStsz(s) {
   readVersionFlags(s);
   const defaultSize = s.readU32();
-  const count = s.readU32();
+  const count = readTableCount(s, 'stsz');
   if (defaultSize !== 0) return { defaultSize, sizes: null, sampleCount: count };
   const sizes = new Array(count);
   for (let i = 0; i < count; i++) sizes[i] = s.readU32();
@@ -258,7 +266,7 @@ export function parseStz2(s) {
   readVersionFlags(s);
   s.readU24();                    // reserved
   const fieldSize = s.readU8();
-  const count = s.readU32();
+  const count = readTableCount(s, 'stz2');
   const sizes = new Array(count);
   if (fieldSize === 16) {
     for (let i = 0; i < count; i++) sizes[i] = s.readU16();
@@ -279,7 +287,7 @@ export function parseStz2(s) {
 
 export function parseStco(s, isCo64 = false) {
   readVersionFlags(s);
-  const count = s.readU32();
+  const count = readTableCount(s, isCo64 ? 'co64' : 'stco');
   const offsets = new Array(count);
   for (let i = 0; i < count; i++) {
     offsets[i] = isCo64 ? s.readU64Number() : s.readU32();
@@ -640,7 +648,7 @@ const TABLE_PARSERS = {
 
 export function parseStsd(s) {
   readVersionFlags(s);
-  const count = s.readU32();
+  const count = readTableCount(s, 'stsd');
   const entries = [];
   iterateBoxes(s.bytes, s.position, s.position + s.remaining, (h) => {
     if (entries.length >= count) return false;
