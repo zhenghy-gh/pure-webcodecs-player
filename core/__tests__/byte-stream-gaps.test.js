@@ -109,9 +109,13 @@ test('ByteWriter accepts zero capacity and rejects invalid initial capacity', ()
   }
 });
 
-test('patchU32 越界 → sourceError', () => {
+test('patchU32 validates values and offsets', () => {
   const w = new ByteWriter(16);
   w.writeU32(1);
+  for (const value of [-1, 1.5, 0x100000000]) {
+    assert.throws(() => w.patchU32(0, value), (error) => error.code === 'SOURCE_ERROR');
+    assert.equal(w.toUint8Array()[3], 1, 'invalid value must not mutate the field');
+  }
   assert.throws(
     () => w.patchU32(2, 0x11223344), // 2+4 > 4
     (e) => e.code === 'SOURCE_ERROR' && /patchU32 out of range/.test(e.message)

@@ -421,6 +421,7 @@ export class ByteWriter {
 
   /** 回写已写入内容中的某个位置（用于 patch size 字段） */
   patchU32(offset, value) {
+    value = unsignedInteger(value, 0xffffffff, 'patchU32');
     if (!Number.isSafeInteger(offset) || offset < 0 || offset + 4 > this._len) {
       throw sourceError(`patchU32 out of range: ${offset}`);
     }
