@@ -28,6 +28,11 @@ function signedInteger(value, min, max, what) {
   return value;
 }
 
+function fixed16Signed(value, what) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw sourceError(what + ' must be finite');
+  return signedInteger(Math.round(value * 65536), -0x80000000, 0x7fffffff, what);
+}
+
 function asByteView(data) {
   if (data instanceof Uint8Array) return data;
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
@@ -397,15 +402,24 @@ export class ByteWriter {
    * unity 矩阵 = [1,0,0 | 0,1,0 | 0,0,1] → 字节序列 …|00 01 00 00|…|40 00 00 00|
    */
   writeMatrix(a = 1, b = 0, u = 0, c = 0, d = 1, v = 0, tx = 0, ty = 0, w = 0x40000000) {
-    this.writeI32(Math.round(a * 65536));
-    this.writeI32(Math.round(b * 65536));
-    this.writeU32(u);
-    this.writeI32(Math.round(c * 65536));
-    this.writeI32(Math.round(d * 65536));
-    this.writeU32(v);
-    this.writeI32(Math.round(tx * 65536));
-    this.writeI32(Math.round(ty * 65536));
-    this.writeU32(w); // 2.30 定点直接写原值
+    const aFixed = fixed16Signed(a, 'matrix a');
+    const bFixed = fixed16Signed(b, 'matrix b');
+    const cFixed = fixed16Signed(c, 'matrix c');
+    const dFixed = fixed16Signed(d, 'matrix d');
+    const txFixed = fixed16Signed(tx, 'matrix tx');
+    const tyFixed = fixed16Signed(ty, 'matrix ty');
+    const uRaw = unsignedInteger(u, 0xffffffff, 'matrix u');
+    const vRaw = unsignedInteger(v, 0xffffffff, 'matrix v');
+    const wRaw = unsignedInteger(w, 0xffffffff, 'matrix w');
+    this.writeI32(aFixed);
+    this.writeI32(bFixed);
+    this.writeU32(uRaw);
+    this.writeI32(cFixed);
+    this.writeI32(dFixed);
+    this.writeU32(vRaw);
+    this.writeI32(txFixed);
+    this.writeI32(tyFixed);
+    this.writeU32(wRaw); // 2.30 定点直接写原值
     return this;
   }
 

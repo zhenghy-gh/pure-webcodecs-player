@@ -39,6 +39,10 @@ test('writeMatrix preserves raw unsigned 2.30 fields', () => {
   assert.equal(view.getUint32(20, false), 0x89abcdef);
   assert.equal(view.getUint32(32, false), 0x40000000);
   assert.throws(() => new ByteWriter().writeMatrix(1, 0, -1), (error) => error.code === 'SOURCE_ERROR');
+  const partial = new ByteWriter();
+  partial.writeU8(0xaa);
+  assert.throws(() => partial.writeMatrix(1, 0, 0, 0, 1, 0, 0, 0, -1), (error) => error.code === 'SOURCE_ERROR');
+  assert.deepEqual([...partial.toUint8Array()], [0xaa], 'invalid matrix must not partially write');
 });
 
 test('worklet processor 注册名为契约定稿 player-audio-sink', () => {
