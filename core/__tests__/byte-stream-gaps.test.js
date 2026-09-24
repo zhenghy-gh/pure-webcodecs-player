@@ -111,6 +111,17 @@ test('ByteStream.readCString validates length and does not consume beyond limit'
   assert.equal(reader.position, 4);
 });
 
+test('ByteWriter UTF-8 writer rejects non-string values', () => {
+  for (const value of [null, undefined, 1, {}, new String('text')]) {
+    const writer = new ByteWriter();
+    assert.throws(() => writer.writeUtf8(value), (error) => error.code === 'SOURCE_ERROR');
+    assert.equal(writer.length, 0);
+  }
+  const writer = new ByteWriter();
+  writer.writeUtf8('中文');
+  assert.deepEqual([...writer.toUint8Array()], [0xe4, 0xb8, 0xad, 0xe6, 0x96, 0x87]);
+});
+
 test('ByteWriter fixed-point writer rejects invalid values', () => {
   for (const value of [NaN, Infinity, -Infinity, '1', null, 1e100]) {
     const writer = new ByteWriter();

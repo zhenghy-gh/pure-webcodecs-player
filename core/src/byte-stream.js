@@ -446,7 +446,8 @@ export class ByteWriter {
   }
 
   writeUtf8(str) {
-    const bytes = textEncoder.encode(String(str));
+    if (typeof str !== 'string') throw sourceError('writeUtf8 expects a string');
+    const bytes = textEncoder.encode(str);
     this.writeRaw(bytes);
     return this;
   }
