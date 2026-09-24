@@ -97,6 +97,7 @@ export class ChunkBuffer {
     this._starts = [];
     this._len = 0;
     this._ended = false;
+    this._endError = null;
   }
 
   /** @param {Uint8Array} chunk */
@@ -111,7 +112,12 @@ export class ChunkBuffer {
     return this;
   }
 
-  end() {
+  end(error = undefined) {
+    if (this._ended) throw sourceError('ChunkBuffer already ended');
+    if (error !== undefined && error !== null && !(error instanceof Error)) {
+      throw sourceError('ChunkBuffer end error must be an Error');
+    }
+    this._endError = error ?? null;
     this._ended = true;
     return this;
   }
@@ -134,6 +140,7 @@ export class ChunkBuffer {
     }
     const want = length === undefined ? this._len - offset : length;
     if (!Number.isSafeInteger(offset + want) || offset + want > this._len) {
+      if (this._ended && this._endError) throw this._endError;
       throw sourceError(
         this._ended
           ? `ChunkBuffer read beyond end: need ${want} at ${offset}, available ${this._len - offset}`

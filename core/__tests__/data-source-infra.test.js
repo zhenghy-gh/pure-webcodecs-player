@@ -41,6 +41,24 @@ test('ChunkBuffer：未 end 时数据不足给出"尚不足"语义错误', async
   );
 });
 
+test('ChunkBuffer：end(err) 传播终止错误且拒绝重复结束', async () => {
+  const buffer = new ChunkBuffer();
+  const terminal = new Error('upstream failed');
+  buffer.append(Uint8Array.from([1])).end(terminal);
+  await assert.rejects(() => buffer.read(0, 2), (error) => error === terminal);
+  assert.throws(() => buffer.end(), (error) => error.code === 'SOURCE_ERROR');
+  for (const error of [null, 1, 'failed']) {
+    const next = new ChunkBuffer();
+    if (error === null) {
+      next.end(error);
+      assert.equal(next.ended, true);
+    } else {
+      assert.throws(() => next.end(error), (e) => e.code === 'SOURCE_ERROR');
+      assert.equal(next.ended, false);
+    }
+  }
+});
+
 test('ChunkBuffer：end 后越界与重复 end 保护', async () => {
   const buf = new ChunkBuffer();
   buf.append(new Uint8Array(4)).end();
