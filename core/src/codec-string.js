@@ -12,6 +12,16 @@ function toHex(v) {
   return v.toString(16).toUpperCase().padStart(2, '0');
 }
 
+function normalizeCodecBytes(value) {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  if (Array.isArray(value) && value.every((byte) => Number.isSafeInteger(byte) && byte >= 0 && byte <= 0xff)) {
+    return Uint8Array.from(value);
+  }
+  return null;
+}
+
 /** 十六进制大整数转字符串：去前导零与尾随零（ISO 14496-15 Annex E 兼容性元素规则），全零返回 '0' */
 function compactHex(bigintValue) {
   if (bigintValue === 0n) return '0';
@@ -38,8 +48,8 @@ function constraintHexFromBytes(bytes, offset = 0) {
  */
 export function buildAvcCodecString(avcC, prefix = 'avc1') {
   if (!avcC) return '';
-  const p = avcC instanceof Uint8Array ? avcC : new Uint8Array(avcC);
-  if (p.byteLength < 4) return '';
+  const p = normalizeCodecBytes(avcC);
+  if (!p || p.byteLength < 4) return '';
   return `${prefix}.${toHex(p[1])}${toHex(p[2])}${toHex(p[3])}`;
 }
 
@@ -58,8 +68,8 @@ export function buildAvcCodecString(avcC, prefix = 'avc1') {
  */
 export function buildHevcCodecString(hvcC, prefix = 'hvc1') {
   if (!hvcC) return '';
-  const p = hvcC instanceof Uint8Array ? hvcC : new Uint8Array(hvcC);
-  if (p.byteLength < 23) return '';
+  const p = normalizeCodecBytes(hvcC);
+  if (!p || p.byteLength < 23) return '';
 
   const profileSpace = (p[1] >> 6) & 0x03;
   const tierFlag = (p[1] >> 5) & 0x01;

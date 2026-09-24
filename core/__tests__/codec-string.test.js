@@ -21,6 +21,17 @@ test('avcC → avc1 codec string', () => {
   assert.equal(buildAvcCodecString(new Uint8Array([1, 2, 3])), '');
 });
 
+test('codec configuration builders reject scalar coercion and preserve view windows', () => {
+  const avc = Uint8Array.from([0, 1, 0x42, 0xe0, 0x1e]);
+  assert.equal(buildAvcCodecString(new DataView(avc.buffer, 1, 4)), 'avc1.42E01E');
+  assert.equal(buildAvcCodecString(avc.buffer.slice(1)), 'avc1.42E01E');
+  assert.equal(buildAvcCodecString([1, 0x42, 0xe0, 0x1e]), 'avc1.42E01E');
+  for (const value of [null, undefined, 4, {}, [1, 2, 300]]) {
+    assert.equal(buildAvcCodecString(value), '');
+    assert.equal(buildHevcCodecString(value), '');
+  }
+});
+
 test('hvcC → hvc1 codec string（Annex E 规则）', () => {
   // Main@L3.1：profile_idc=1、compat=0x60000000→'6'、level=93、约束 B0 00..→'B0'
   const hvcC = new Uint8Array(23);
