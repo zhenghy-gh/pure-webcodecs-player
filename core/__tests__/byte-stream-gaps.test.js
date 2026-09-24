@@ -111,6 +111,16 @@ test('ByteStream.readCString validates length and does not consume beyond limit'
   assert.equal(reader.position, 4);
 });
 
+test('ByteWriter float writers reject invalid values', () => {
+  for (const method of ['writeF32', 'writeF64']) {
+    for (const value of [NaN, Infinity, -Infinity, '1', null]) {
+      const writer = new ByteWriter();
+      assert.throws(() => writer[method](value), (error) => error.code === 'SOURCE_ERROR');
+      assert.equal(writer.length, 0);
+    }
+  }
+});
+
 test('ByteWriter accepts zero capacity and rejects invalid initial capacity', () => {
   const writer = new ByteWriter(0);
   writer.writeU8(0x5a);

@@ -372,6 +372,7 @@ export class ByteWriter {
   }
 
   writeF32(v) {
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw sourceError('writeF32 expects a finite number');
     const dv = new DataView(new ArrayBuffer(4));
     dv.setFloat32(0, v, false);
     for (let i = 0; i < 4; i++) this.writeU8(dv.getUint8(i));
@@ -379,6 +380,7 @@ export class ByteWriter {
   }
 
   writeF64(v) {
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw sourceError('writeF64 expects a finite number');
     const dv = new DataView(new ArrayBuffer(8));
     dv.setFloat64(0, v, false);
     for (let i = 0; i < 8; i++) this.writeU8(dv.getUint8(i));
