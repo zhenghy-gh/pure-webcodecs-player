@@ -49,6 +49,14 @@ test('parseTimestamp：非字符串输入抛错', () => {
   assert.throws(() => /** @type {any} */ (parseTimestamp)(42), SubtitleError);
 });
 
+test('formatters normalize non-finite timestamps instead of emitting invalid text', () => {
+  for (const value of [NaN, Infinity, -Infinity]) {
+    assert.equal(formatSrtTimestamp(value), '00:00:00,000');
+    assert.equal(formatVttTimestamp(value), '00:00.000');
+    assert.equal(formatAssTimestamp(value), '0:00:00.00');
+  }
+});
+
 test('formatSrtTimestamp：进位与补零正确', () => {
   assert.equal(formatSrtTimestamp(3_661_500_000), '01:01:01,500');
 });

@@ -48,7 +48,8 @@ export function parseTimestamp(str) {
 
 /** 内部：微秒 → {h,m,s,ms} 分量 */
 function splitUs(us) {
-  const total = Math.max(0, Math.round(us / 1000)); // 毫秒域
+  const safeUs = Number.isFinite(us) ? us : 0;
+  const total = Math.max(0, Math.round(safeUs / 1000)); // 毫秒域
   const h = Math.floor(total / 3600000);
   const m = Math.floor((total % 3600000) / 60000);
   const s = Math.floor((total % 60000) / 1000);
@@ -87,7 +88,8 @@ export function formatVttTimestamp(us) {
  * @returns {string}
  */
 export function formatAssTimestamp(us) {
-  const cs = Math.max(0, Math.round(us / 10000)); // 厘秒域（四舍五入）
+  const safeUs = Number.isFinite(us) ? us : 0;
+  const cs = Math.max(0, Math.round(safeUs / 10000)); // 厘秒域（四舍五入）
   const h = Math.floor(cs / 360000);
   const m = Math.floor((cs % 360000) / 6000);
   const s = Math.floor((cs % 6000) / 100);
