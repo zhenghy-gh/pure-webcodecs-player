@@ -241,7 +241,18 @@ export function mseIsTypeSupported(mime) {
  * → 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'
  */
 export function buildMseMimeType(container, codecs) {
-  const list = [...new Set(codecs.filter(Boolean))];
-  const mime = container.includes('/') ? container : `video/${container}`;
+  if (typeof container !== 'string') return '';
+  const base = container.trim();
+  if (!base || /[\u0000-\u0020\"',;]/.test(base)) return '';
+  const mime = base.includes('/') ? base : `video/${base}`;
+  const list = [];
+  if (Array.isArray(codecs)) {
+    for (const codec of codecs) {
+      if (typeof codec !== 'string') continue;
+      const token = codec.trim();
+      if (!token || /[\u0000-\u0020\"',;]/.test(token) || list.includes(token)) continue;
+      list.push(token);
+    }
+  }
   return list.length > 0 ? `${mime}; codecs="${list.join(', ')}"` : mime;
 }

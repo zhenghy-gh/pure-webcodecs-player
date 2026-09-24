@@ -90,6 +90,13 @@ test('MSE mimeType 组装', () => {
 
 /* ---------------- CONTRACTS §3 定稿助手（生成逻辑收敛点） ---------------- */
 
+test('buildMseMimeType rejects injected container and codec tokens', () => {
+  assert.equal(buildMseMimeType(' video/mp4 ', ['avc1.42E01E', '', ' mp4a.40.2 ', null, 4, 'evil\"; codecs=\"x']), 'video/mp4; codecs=\"avc1.42E01E, mp4a.40.2\"');
+  assert.equal(buildMseMimeType('video/mp4; codecs=\"evil\"', ['avc1.42E01E']), '');
+  assert.equal(buildMseMimeType(null, ['avc1.42E01E']), '');
+  assert.equal(buildMseMimeType('mp4'), 'video/mp4');
+});
+
 test('h264CodecStringFromSps：SPS NAL → avc1.PPCCLL', () => {
   // mp4 fixture 的手工 SPS：profile 66 / constraint 0 / level 30
   assert.equal(h264CodecStringFromSps(makeSpsNalu()), 'avc1.42001E');
