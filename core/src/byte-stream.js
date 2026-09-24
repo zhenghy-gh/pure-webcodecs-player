@@ -394,6 +394,7 @@ export class ByteWriter {
   }
 
   writeFixed16_16(v) {
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw sourceError('writeFixed16_16 expects a finite number');
     return this.writeU32(Math.round(v * 65536));
   }
 

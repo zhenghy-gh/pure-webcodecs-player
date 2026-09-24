@@ -111,6 +111,17 @@ test('ByteStream.readCString validates length and does not consume beyond limit'
   assert.equal(reader.position, 4);
 });
 
+test('ByteWriter fixed-point writer rejects invalid values', () => {
+  for (const value of [NaN, Infinity, -Infinity, '1', null, 1e100]) {
+    const writer = new ByteWriter();
+    assert.throws(() => writer.writeFixed16_16(value), (error) => error.code === 'SOURCE_ERROR');
+    assert.equal(writer.length, 0);
+  }
+  const writer = new ByteWriter();
+  writer.writeFixed16_16(1.5);
+  assert.equal(new ByteStream(writer.toUint8Array()).readFixed16_16(), 1.5);
+});
+
 test('ByteWriter float writers reject invalid values', () => {
   for (const method of ['writeF32', 'writeF64']) {
     for (const value of [NaN, Infinity, -Infinity, '1', null]) {
