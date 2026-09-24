@@ -101,6 +101,11 @@ test('remuxer tfdt v1：基时间 >2^32 ticks 时按 64 位写出且往返精确
  * 2. elst 空编辑表边界
  * ============================================================ */
 
+test('tfdt v1 rejects unsafe base decode times', () => {
+  const box = fullBox('tfdt', 1, 0, (w) => w.writeU64(1n << 53n));
+  assert.throws(() => parseBoxByType(new ByteStream(box, 8, box.byteLength - 8), 'tfdt'), (error) => error.code === 'SOURCE_ERROR');
+});
+
 test('elst 空编辑表：entry_count=0 解析为空数组；构造侧整体省略 edts', () => {
   // v0：仅 4 字节 entry_count
   const v0 = fullBox('elst', 0, 0, (w) => w.writeU32(0));

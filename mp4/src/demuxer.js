@@ -177,7 +177,7 @@ export class Mp4Demuxer extends Demuxer {
       let headerSize = 8;
       if (size === 1) {
         if (head.byteLength < 16) throw parseError(`largesize truncated at ${pos}`);
-        size = Number(bs.readU64());
+        size = bs.readU64Number();
         headerSize = 16;
       } else if (size === 0) {
         size = total - pos;
@@ -623,5 +623,5 @@ export function parseMoofTracks(moofBytes, contentStart, end) {
 function readTfdt(s) {
   const version = s.bytes[0]; // fullbox 第 0 字节是 version
   s.skip(4); // version+flags
-  return version === 1 ? Number(s.readU64()) : s.readU32();
+  return version === 1 ? s.readU64Number() : s.readU32();
 }
