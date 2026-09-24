@@ -61,7 +61,7 @@ test('requestInit headers cannot override Range header', async () => {
   const ds = new HttpRangeDataSource('http://fixture.invalid/headers.mp4', {
     chunkSize: 128,
     headers: { Authorization: 'token' },
-    requestInit: { headers: { Range: 'bytes=999-999', 'X-Request': 'yes' } },
+    requestInit: { headers: { rAnGe: 'bytes=999-999', 'X-Request': 'yes' } },
     fetchImpl: async (_url, init = {}) => {
       seen.push(init);
       if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '256' } });
@@ -75,6 +75,25 @@ test('requestInit headers cannot override Range header', async () => {
   assert.equal(seen[0].headers.Authorization, 'token');
   assert.equal(seen[1].headers['X-Request'], 'yes');
   assert.equal(seen[1].headers.Range, 'bytes=0-127');
+});
+
+test('header 合并支持 Headers/tuple 输入且移除大小写变体 Range', async () => {
+  const seen = [];
+  const ds = new HttpRangeDataSource('http://fixture.invalid/header-shapes.mp4', {
+    headers: new Headers([['x-token', 'yes'], ['rAnGe', 'bytes=99-99']]),
+    requestInit: { headers: [['X-Trace', 'trace']] },
+    fetchImpl: async (_url, init = {}) => {
+      seen.push(init.headers);
+      if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '4' } });
+      return fakeRes(206, { headers: { 'content-range': 'bytes 0-3/4' }, body: makeWhole(4) });
+    },
+  });
+  await ds.open();
+  await ds.read(0, 1);
+  assert.equal(seen[0]['x-token'], 'yes');
+  assert.equal(seen[0]['X-Trace'], 'trace');
+  assert.equal(seen[1].Range, 'bytes=0-3');
+  assert.equal(Object.keys(seen[1]).some((key) => key.toLowerCase() === 'range' && key !== 'Range'), false);
 });
 
 test('构造：环境无 fetch → SOURCE_ERROR（非 TypeError）', () => {

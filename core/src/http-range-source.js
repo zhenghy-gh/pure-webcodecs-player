@@ -12,6 +12,28 @@ import { DEFAULT_MAX_READ_BYTES, assertByteLength } from './limits.js';
 
 const DEFAULT_CHUNK = 1 << 18; // 256KB
 
+function mergeHeaders(...sources) {
+  const entries = new Map();
+  const set = (key, value) => {
+    if (typeof key !== 'string') return;
+    const lower = key.toLowerCase();
+    if (lower === 'range') return;
+    entries.delete(lower);
+    entries.set(lower, [key, value]);
+  };
+  for (const source of sources) {
+    if (!source) continue;
+    if (Array.isArray(source)) {
+      for (const pair of source) if (Array.isArray(pair) && pair.length >= 2) set(pair[0], pair[1]);
+    } else if (typeof source.forEach === 'function') {
+      source.forEach((value, key) => set(key, value));
+    } else if (typeof source === 'object') {
+      for (const [key, value] of Object.entries(source)) set(key, value);
+    }
+  }
+  return Object.fromEntries(entries.values());
+}
+
 function parseSafeSize(raw, what) {
   const text = String(raw ?? '').trim();
   if (!/^\d+$/.test(text)) throw sourceError(`${what} must be a non-negative decimal integer: ${raw}`);
@@ -75,7 +97,7 @@ export class HttpRangeDataSource {
       const res = await this._fetch(this.url, {
         ...this.requestInit,
         method: 'HEAD',
-        headers: { ...this.requestInit.headers, ...this.headers },
+        headers: mergeHeaders(this.requestInit.headers, this.headers),
       });
       if (res.ok) {
         const rawLength = res.headers.get('content-length');
@@ -92,7 +114,7 @@ export class HttpRangeDataSource {
       // 退路：GET 首字节，从 Content-Range 里拿总长
       const res = await this._fetch(this.url, {
         ...this.requestInit,
-        headers: { ...this.requestInit.headers, ...this.headers, Range: 'bytes=0-0' },
+        headers: { ...mergeHeaders(this.requestInit.headers, this.headers), Range: 'bytes=0-0' },
       });
       const contentRange = res.headers.get('content-range');
       if (res.status !== 206 || !contentRange) {
@@ -170,7 +192,7 @@ export class HttpRangeDataSource {
   async _rangeGet(start, endInclusive) {
     const res = await this._fetch(this.url, {
       ...this.requestInit,
-      headers: { ...this.requestInit.headers, ...this.headers, Range: `bytes=${start}-${endInclusive}` },
+      headers: { ...mergeHeaders(this.requestInit.headers, this.headers), Range: `bytes=${start}-${endInclusive}` },
     });
     if (res.status !== 206 && res.status !== 200) {
       throw sourceError(`range request failed (${res.status}) for ${this.url}`);
