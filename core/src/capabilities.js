@@ -87,8 +87,8 @@ export function mseIsTypeSupportedSafe(mime) {
 }
 
 /** WebCodecs 深度探测默认 codec 清单（chooseRoute 裁决 + demo 展示用；可并入媒体实际 codec 追加探测） */
-export const DEFAULT_VIDEO_CODECS = ['avc1.42E01E', 'avc1.640028', 'hvc1.1.6.L93.B0', 'vp09.00.10.08'];
-export const DEFAULT_AUDIO_CODECS = ['mp4a.40.2', 'mp3', 'opus', 'flac'];
+export const DEFAULT_VIDEO_CODECS = Object.freeze(['avc1.42E01E', 'avc1.640028', 'hvc1.1.6.L93.B0', 'vp09.00.10.08']);
+export const DEFAULT_AUDIO_CODECS = Object.freeze(['mp4a.40.2', 'mp3', 'opus', 'flac']);
 
 /**
  * 深探测（真实走 isConfigSupported / isTypeSupported），结果进程内缓存。

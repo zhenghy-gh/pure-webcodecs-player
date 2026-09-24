@@ -17,6 +17,8 @@ import {
   hasCryptoSubtle,
   mseIsTypeSupportedSafe,
   detectCapabilities,
+  DEFAULT_VIDEO_CODECS,
+  DEFAULT_AUDIO_CODECS,
   resetCapabilityCache,
   canDecodeVideo,
   canDecodeAudio,
@@ -40,6 +42,15 @@ async function withGlobals(patch, fn) {
     }
   }
 }
+
+test('默认 codec 清单不可被调用方修改', () => {
+  assert.equal(Object.isFrozen(DEFAULT_VIDEO_CODECS), true);
+  assert.equal(Object.isFrozen(DEFAULT_AUDIO_CODECS), true);
+  assert.throws(() => DEFAULT_VIDEO_CODECS.push('evil'), TypeError);
+  assert.throws(() => { DEFAULT_AUDIO_CODECS[0] = 'evil'; }, TypeError);
+  assert.equal(DEFAULT_VIDEO_CODECS[0], 'avc1.42E01E');
+  assert.equal(DEFAULT_AUDIO_CODECS[0], 'mp4a.40.2');
+});
 
 /* ------------------------------ has* 同步快判 ------------------------------ */
 
