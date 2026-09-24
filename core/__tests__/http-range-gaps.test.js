@@ -276,6 +276,18 @@ test('_rangeGet：206 短响应且未到文件尾 → SOURCE_ERROR（short range
   await assert.rejects(() => ds.read(0, 100), /short range response: got 100, want 256/);
 });
 
+test('_rangeGet：200 短整文件响应 → SOURCE_ERROR 且不缓存短块', async () => {
+  const ds = new HttpRangeDataSource('http://fixture.invalid/full-short.mp4', {
+    chunkSize: 128,
+    fetchImpl: async (_u, init = {}) => {
+      if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '512', 'accept-ranges': 'bytes' } });
+      return fakeRes(200, { body: makeWhole(64) });
+    },
+  });
+  await ds.open();
+  await assert.rejects(() => ds.read(0, 10), /short full response: got 64, want at least 128/);
+});
+
 test('_rangeGet：200 整文件且 start=0 → 直接截取可用区间', async () => {
   const whole = makeWhole(512);
   const ds = new HttpRangeDataSource('http://fixture.invalid/full.mp4', {

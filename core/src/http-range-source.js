@@ -224,8 +224,13 @@ export class HttpRangeDataSource {
       }
       return new Uint8Array(buf);
     }
-    // 200 整文件响应且 start=0：直接可用
-    return new Uint8Array(buf).subarray(start, Math.min(endInclusive + 1, buf.byteLength));
+    // 200 整文件响应且 start=0：必须覆盖整个请求区间，不能把短响应缓存成完整块。
+    const bytes = new Uint8Array(buf);
+    const expected = endInclusive + 1;
+    if (bytes.byteLength < expected) {
+      throw sourceError(`short full response: got ${bytes.byteLength}, want at least ${expected}`);
+    }
+    return bytes.subarray(start, expected);
   }
 
   _assemble(offset, length) {
