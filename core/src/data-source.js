@@ -8,6 +8,13 @@
 import { sourceError } from './errors.js';
 import { DEFAULT_MAX_READ_BYTES } from './limits.js';
 
+function toChunkView(chunk) {
+  if (chunk instanceof Uint8Array) return chunk;
+  if (chunk instanceof ArrayBuffer) return new Uint8Array(chunk);
+  if (ArrayBuffer.isView(chunk)) return new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+  throw sourceError('ChunkBuffer append expects ArrayBuffer or ArrayBufferView');
+}
+
 function validateReadRange(offset, length, size, label) {
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > size ||
       (length !== undefined && (!Number.isSafeInteger(length) || length < 0 || length > DEFAULT_MAX_READ_BYTES))) {
@@ -95,8 +102,9 @@ export class ChunkBuffer {
   /** @param {Uint8Array} chunk */
   append(chunk) {
     if (this._ended) throw sourceError('ChunkBuffer already ended');
-    const u8 = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
+    const u8 = toChunkView(chunk);
     if (u8.byteLength === 0) return this;
+    if (!Number.isSafeInteger(this._len + u8.byteLength)) throw sourceError('ChunkBuffer size exceeds safe integer range');
     this._starts.push(this._len);
     this._chunks.push(u8);
     this._len += u8.byteLength;
@@ -118,11 +126,14 @@ export class ChunkBuffer {
 
   /** @returns {Promise<Uint8Array>} 恰好 length 字节 */
   async read(offset, length = undefined) {
-    if (offset < 0 || offset > this._len) {
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > this._len) {
       throw sourceError(`ChunkBuffer read out of range: offset=${offset} size=${this._len}`);
     }
+    if (length !== undefined && (!Number.isSafeInteger(length) || length < 0)) {
+      throw sourceError(`ChunkBuffer read length out of range: length=${length}`);
+    }
     const want = length === undefined ? this._len - offset : length;
-    if (offset + want > this._len) {
+    if (!Number.isSafeInteger(offset + want) || offset + want > this._len) {
       throw sourceError(
         this._ended
           ? `ChunkBuffer read beyond end: need ${want} at ${offset}, available ${this._len - offset}`

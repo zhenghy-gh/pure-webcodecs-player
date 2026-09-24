@@ -148,6 +148,19 @@ test('ChunkBuffer：append 支持 ArrayBuffer，空块被忽略', async () => {
   assert.deepEqual([...(await buf.read(2))], [3], 'end 后省略 length 仍可读尾部');
 });
 
+test('ChunkBuffer：保留 ArrayBufferView 子窗口并拒绝非法块与范围', async () => {
+  const source = new Uint8Array([0, 1, 2, 3]);
+  const buffer = new ChunkBuffer();
+  buffer.append(new DataView(source.buffer, 1, 2));
+  assert.deepEqual([...await buffer.read(0, 2)], [1, 2]);
+  for (const chunk of [null, undefined, 1, 'bytes']) {
+    assert.throws(() => buffer.append(chunk), (error) => error.code === 'SOURCE_ERROR');
+  }
+  for (const [offset, length] of [[NaN, 1], [0, -1], [0, 1.5], [0, Infinity]]) {
+    await assert.rejects(() => buffer.read(offset, length), (error) => error.code === 'SOURCE_ERROR');
+  }
+});
+
 test('ChunkBuffer：负偏移与超界偏移报 out of range', async () => {
   const buf = new ChunkBuffer();
   buf.append(Uint8Array.from([1, 2, 3])).end();
