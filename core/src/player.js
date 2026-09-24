@@ -19,9 +19,14 @@ const DEFAULT_WC_PIPELINE = webcodecsPipelineFactory();
 /** MSE 兼宽容错路线下的默认管线工厂 */
 const DEFAULT_MSE_PIPELINE = msePipelineFactory();
 
-function hasWebCodecsCtor() {
+function hasWebCodecsCtor(mediaInfo) {
   try {
-    return typeof VideoDecoder === 'function' || typeof AudioDecoder === 'function';
+    const tracks = mediaInfo?.tracks ?? [];
+    const needsVideo = tracks.some((track) => track.type === 'video');
+    const needsAudio = tracks.some((track) => track.type === 'audio');
+    if (needsVideo && (typeof VideoDecoder !== 'function' || typeof EncodedVideoChunk !== 'function')) return false;
+    if (needsAudio && typeof AudioDecoder !== 'function') return false;
+    return needsVideo || needsAudio || typeof VideoDecoder === 'function' || typeof AudioDecoder === 'function';
   } catch {
     return false;
   }
@@ -274,7 +279,7 @@ export class Player extends Emitter {
     if (this.routeValue === 'none') throw notSupported('当前环境没有可用的解码播放路线', { container: info.container, tracks: info.tracks });
     const factory =
       this.options.pipelineFactory ??
-      (this.routeValue === 'webcodecs' && hasWebCodecsCtor()
+      (this.routeValue === 'webcodecs' && hasWebCodecsCtor(info)
         ? DEFAULT_WC_PIPELINE
         : this.routeValue === 'mse' && hasMseCtor()
           ? DEFAULT_MSE_PIPELINE

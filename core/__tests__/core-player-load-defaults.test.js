@@ -158,6 +158,32 @@ test('默认 MSE 管线：注入 MediaSource 全局 + 宿主级 mse/element/remu
   });
 });
 
+test('默认 WC 工厂：复合轨缺少任一所需 decoder 时不初始化不完整管线', async () => {
+  await withGlobals({ VideoDecoder: FakeVideoDecoder, EncodedVideoChunk: class {} }, async () => {
+    const p = new Player({
+      route: 'webcodecs',
+      demuxerFactory: async () => ({ open: async () => mediaInfo, destroy: async () => {} }),
+    });
+    await p.load({ read: async () => new Uint8Array([1]) });
+    assert.equal(p.route, 'webcodecs');
+    assert.equal(p.pipeline, null);
+    await p.destroy();
+  });
+});
+
+test('默认 WC 工厂：纯音频只要求 AudioDecoder', async () => {
+  const audioOnly = { ...mediaInfo, tracks: [mediaInfo.tracks[1]] };
+  await withGlobals({ AudioDecoder: FakeAudioDecoder }, async () => {
+    const p = new Player({
+      route: 'webcodecs',
+      demuxerFactory: async () => ({ open: async () => audioOnly, destroy: async () => {} }),
+    });
+    await p.load({ read: async () => new Uint8Array([1]) });
+    assert.ok(p.pipeline instanceof WebCodecsPipeline);
+    await p.destroy();
+  });
+});
+
 test('默认工厂皆无：pipeline=null 仍可 load 成功（仅编排层）', async () => {
   const p = new Player({
     route: 'webcodecs', // Node 无 VideoDecoder：hasWebCodecsCtor() false → factory null
