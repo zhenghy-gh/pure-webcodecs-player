@@ -249,6 +249,8 @@ export function buildMseMimeType(container, codecs) {
   const base = container.trim();
   if (!base || /[\u0000-\u0020\"',;]/.test(base)) return '';
   const mime = base.includes('/') ? base : `video/${base}`;
+  // RFC 6838 type/subtype tokens: reject path-like or punctuation-bearing values.
+  if (!/^[!#$&^_.+\-a-z0-9]+\/[!#$&^_.+\-a-z0-9]+$/i.test(mime)) return '';
   const list = [];
   if (Array.isArray(codecs)) {
     for (const codec of codecs) {

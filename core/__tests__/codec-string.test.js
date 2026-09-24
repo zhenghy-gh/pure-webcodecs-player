@@ -102,6 +102,8 @@ test('MSE mimeType 组装', () => {
 test('buildMseMimeType rejects injected container and codec tokens', () => {
   assert.equal(buildMseMimeType(' video/mp4 ', ['avc1.42E01E', '', ' mp4a.40.2 ', null, 4, 'evil\"; codecs=\"x']), 'video/mp4; codecs=\"avc1.42E01E, mp4a.40.2\"');
   assert.equal(buildMseMimeType('video/mp4; codecs=\"evil\"', ['avc1.42E01E']), '');
+  assert.equal(buildMseMimeType('video/mp4/extra', ['avc1.42E01E']), '');
+  assert.equal(buildMseMimeType('video/mp4@evil', ['avc1.42E01E']), '');
   assert.equal(buildMseMimeType(null, ['avc1.42E01E']), '');
   assert.equal(buildMseMimeType('mp4'), 'video/mp4');
 });
