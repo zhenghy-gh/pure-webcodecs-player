@@ -14,14 +14,25 @@ function assertNalLengthSize(lengthSize) {
   }
 }
 
+function asByteView(data, what) {
+  if (!ArrayBuffer.isView(data) || data.BYTES_PER_ELEMENT !== 1) {
+    throw parseError(`${what} expects a byte typed array`);
+  }
+  return data instanceof Uint8Array
+    ? data
+    : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+}
+
 /** H.264 NAL 类型（nal_unit_type = 第 1 字节低 5 位） */
 export function h264NalType(nalu) {
-  return nalu.length > 0 ? nalu[0] & 0x1f : -1;
+  nalu = asByteView(nalu, 'h264NalType');
+  return nalu.byteLength > 0 ? nalu[0] & 0x1f : -1;
 }
 
 /** H.265 NAL 类型（第 1 字节 bit6 + 第 2 字节高 2 位，共 6 位） */
 export function hevcNalType(nalu) {
-  if (nalu.length < 2) return -1;
+  nalu = asByteView(nalu, 'hevcNalType');
+  if (nalu.byteLength < 2) return -1;
   return ((nalu[0] & 0x7e) >> 1) & 0x3f;
 }
 
@@ -41,6 +52,7 @@ export function isHevcIrap(nalu) {
  * @param {Uint8Array} nalu 不含起始码
  */
 export function removeEmulationPrevention(nalu) {
+  nalu = asByteView(nalu, 'removeEmulationPrevention');
   const out = new Uint8Array(nalu.byteLength);
   let len = 0;
   let zeros = 0;
@@ -61,6 +73,7 @@ export function removeEmulationPrevention(nalu) {
  * 为 RBSP 加回 emulation prevention bytes（写 SPS/PPS 时使用）。
  */
 export function addEmulationPrevention(rbsp) {
+  rbsp = asByteView(rbsp, 'addEmulationPrevention');
   const out = [];
   let zeros = 0;
   for (let i = 0; i < rbsp.byteLength; i++) {
@@ -81,6 +94,7 @@ export function addEmulationPrevention(rbsp) {
  * @returns {{offset:number, size:number}[]} 每个单元的载荷区间（不含起始码）
  */
 export function scanAnnexBNalUnits(data) {
+  data = asByteView(data, 'scanAnnexBNalUnits');
   const units = [];
   let i = 0;
   let currentStart = -1;
@@ -146,6 +160,7 @@ export function annexbToAvcc(annexb, lengthSize = 4) {
  */
 export function splitAvcc(avccData, lengthSize = 4) {
   assertNalLengthSize(lengthSize);
+  avccData = asByteView(avccData, 'splitAvcc');
   const units = [];
   let pos = 0;
   while (pos + lengthSize <= avccData.byteLength) {

@@ -5,8 +5,26 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 
-import { scanAnnexBNalUnits, splitAnnexB, annexbToAvcc, splitAvcc } from '../src/nal.js';
+import {
+  h264NalType,
+  hevcNalType,
+  removeEmulationPrevention,
+  scanAnnexBNalUnits,
+  splitAnnexB,
+  annexbToAvcc,
+  splitAvcc,
+} from '../src/nal.js';
+
+test('NAL byte APIs accept cross-realm Uint8Array and reject non-byte inputs', () => {
+  const foreign = vm.runInNewContext('new Uint8Array([0x65, 0x01, 0x02])');
+  assert.equal(h264NalType(foreign), 5);
+  assert.equal(hevcNalType(foreign), 50);
+  assert.deepEqual([...removeEmulationPrevention(foreign)], [0x65, 0x01, 0x02]);
+  assert.throws(() => h264NalType(new Uint16Array([0x65])), (e) => e.code === 'PARSE_ERROR');
+  assert.throws(() => scanAnnexBNalUnits(new DataView(new ArrayBuffer(4))), (e) => e.code === 'PARSE_ERROR');
+});
 
 test('scanAnnexBNalUnits：空 NAL 单元（起始码紧邻）→ PARSE_ERROR', () => {
   assert.throws(
