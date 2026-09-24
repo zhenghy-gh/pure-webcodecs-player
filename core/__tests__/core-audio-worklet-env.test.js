@@ -227,11 +227,22 @@ test('init/push/play 未按序调用抛 STATE_ERROR；push 空数据早退；pus
     player.push([ch, ch]);
     assert.equal(node.port.sent[2].transfer.length, 1, '重复 channel buffer 只 transfer 一次');
 
+    const foreignFloat = runInNewContext('new Float32Array([0.6, 0.7])');
+    player.push([foreignFloat]);
+    const foreignCopy = node.port.sent[3];
+    assert.deepEqual([...foreignCopy.msg.channels[0]], [...foreignFloat]);
+    assert.ok(foreignCopy.msg.channels[0].buffer instanceof ArrayBuffer);
+
+    assert.throws(
+      () => player.push([runInNewContext('new Uint16Array([1, 2])')]),
+      (error) => error.code === ErrorCode.STATE_ERROR,
+    );
+
     if (typeof SharedArrayBuffer === 'function') {
       const shared = new Float32Array(new SharedArrayBuffer(8));
       shared.set([0.4, 0.5]);
       player.push([shared]);
-      const copied = node.port.sent[3];
+      const copied = node.port.sent[4];
       assert.deepEqual([...copied.msg.channels[0]], [...shared]);
       assert.ok(copied.msg.channels[0].buffer instanceof ArrayBuffer);
       assert.deepEqual(copied.transfer, [copied.msg.channels[0].buffer]);

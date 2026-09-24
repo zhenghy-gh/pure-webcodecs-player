@@ -116,6 +116,14 @@ registerProcessor('player-audio-sink', PcmRingWorklet);
 /** 契约 §7 定稿的 processor 注册名 */
 export const AUDIO_SINK_PROCESSOR_NAME = 'player-audio-sink';
 const WORKLET_NAME = AUDIO_SINK_PROCESSOR_NAME;
+const getTypedArrayName = Object.getOwnPropertyDescriptor(
+  Object.getPrototypeOf(Uint8Array.prototype),
+  Symbol.toStringTag,
+).get;
+
+function isFloat32Array(value) {
+  return ArrayBuffer.isView(value) && getTypedArrayName.call(value) === 'Float32Array';
+}
 
 /** 生成可 addModule 的 Blob URL */
 export function createWorkletUrl(code = PCM_WORKLET_CODE) {
@@ -214,7 +222,7 @@ export class AudioWorkletPlayer extends Emitter {
     if (!this.node) throw stateError('call init() before push()');
     if (!Array.isArray(channels)) throw stateError('push() expects an array of Float32Array channels');
     if (channels.length === 0) return;
-    if (!channels.every((channel) => channel instanceof Float32Array)) {
+    if (!channels.every(isFloat32Array)) {
       throw stateError('push() channels must be Float32Array instances');
     }
     const frames = channels[0].length;
