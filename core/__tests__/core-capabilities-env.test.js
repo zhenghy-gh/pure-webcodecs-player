@@ -311,6 +311,22 @@ test('detectCapabilities：并发同 key 只执行一次 probe，reset 不接收
   );
 });
 
+test('detectCapabilities：secureContext getter 抛错时安全返回 false', async () => {
+  const desc = Object.getOwnPropertyDescriptor(globalThis, 'isSecureContext');
+  Object.defineProperty(globalThis, 'isSecureContext', {
+    configurable: true,
+    get() { throw new Error('secure context accessor 抛错'); },
+  });
+  try {
+    resetCapabilityCache();
+    const report = await detectCapabilities({ deep: true });
+    assert.equal(report.secureContext, false);
+  } finally {
+    if (desc) Object.defineProperty(globalThis, 'isSecureContext', desc);
+    else delete globalThis.isSecureContext;
+  }
+});
+
 test('detectCapabilities：secureContext 与 audioWorklet/webgpu 反映注入环境', async () => {
   class FakeAudioContext {}
   FakeAudioContext.prototype.audioWorklet = {};

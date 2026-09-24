@@ -64,6 +64,14 @@ export function hasWebGPU() {
   }
 }
 
+function readSecureContext() {
+  try {
+    return globalThis.isSecureContext === true;
+  } catch {
+    return false;
+  }
+}
+
 /** 查 crypto.subtle 存在性（Node≥22 与现代浏览器均具备；hls AES-128 依赖） */
 export function hasCryptoSubtle() {
   try {
@@ -117,8 +125,7 @@ async function detectCapabilitiesUncached({ videoCodecs, audioCodecs }) {
     audioWorklet: hasAudioWorklet(),
     webgpu: hasWebGPU(),
     cryptoSubtle: hasCryptoSubtle(),
-    secureContext:
-      typeof globalThis.isSecureContext === 'boolean' ? globalThis.isSecureContext : false,
+    secureContext: readSecureContext(),
   };
 
   const jobs = [];
