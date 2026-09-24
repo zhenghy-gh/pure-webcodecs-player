@@ -20,11 +20,19 @@ const DEFAULT_WC_PIPELINE = webcodecsPipelineFactory();
 const DEFAULT_MSE_PIPELINE = msePipelineFactory();
 
 function hasWebCodecsCtor() {
-  return typeof VideoDecoder === 'function' || typeof AudioDecoder === 'function';
+  try {
+    return typeof VideoDecoder === 'function' || typeof AudioDecoder === 'function';
+  } catch {
+    return false;
+  }
 }
 
 function hasMseCtor() {
-  return typeof MediaSource === 'function' || typeof ManagedMediaSource === 'function';
+  try {
+    return typeof MediaSource === 'function' || typeof ManagedMediaSource === 'function';
+  } catch {
+    return false;
+  }
 }
 
 /** 默认起播前向缓冲目标（µs）：CONTRACTS §5 bufferTargetUs 缺省 3s */

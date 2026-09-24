@@ -21,6 +21,24 @@ class ToyPlayerDemuxer extends Demuxer {
 function factory() { return new ToyPlayerDemuxer(new MemoryDataSource(new Uint8Array([1]))); }
 const caps = { webcodecs: { supported: true, video: {}, audio: { 'pcm-s16': true } }, mse: { supported: false, mimeTypes: [] } };
 
+test('load：WebCodecs 全局 getter 抛错时安全跳过默认管线', async () => {
+  const desc = Object.getOwnPropertyDescriptor(globalThis, 'VideoDecoder');
+  Object.defineProperty(globalThis, 'VideoDecoder', {
+    configurable: true,
+    get() { throw new Error('VideoDecoder accessor 抛错'); },
+  });
+  const p = new Player({ demuxerFactory: factory, capabilities: caps });
+  try {
+    await p.load(new Uint8Array([1]));
+    assert.equal(p.state, 'ready');
+    assert.equal(p.pipeline, null);
+  } finally {
+    await p.destroy();
+    if (desc) Object.defineProperty(globalThis, 'VideoDecoder', desc);
+    else delete globalThis.VideoDecoder;
+  }
+});
+
 test('createPlayer/load：接入 demuxer、路线和轨道事件', async () => {
   const p = await createPlayer({ demuxerFactory: factory, capabilities: caps, pipelineFactory: async () => ({ pushSample() {} }) });
   let states = [];
