@@ -226,6 +226,16 @@ test('init/push/play 未按序调用抛 STATE_ERROR；push 空数据早退；pus
 
     player.push([ch, ch]);
     assert.equal(node.port.sent[2].transfer.length, 1, '重复 channel buffer 只 transfer 一次');
+
+    if (typeof SharedArrayBuffer === 'function') {
+      const shared = new Float32Array(new SharedArrayBuffer(8));
+      shared.set([0.4, 0.5]);
+      player.push([shared]);
+      const copied = node.port.sent[3];
+      assert.deepEqual([...copied.msg.channels[0]], [...shared]);
+      assert.ok(copied.msg.channels[0].buffer instanceof ArrayBuffer);
+      assert.deepEqual(copied.transfer, [copied.msg.channels[0].buffer]);
+    }
   });
 });
 

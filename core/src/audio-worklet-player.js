@@ -223,7 +223,9 @@ export class AudioWorkletPlayer extends Emitter {
     }
     if (frames === 0) return;
     const packed = channels.map((channel) => (
-      channel.byteOffset === 0 && channel.byteLength === channel.buffer.byteLength
+      channel.buffer instanceof ArrayBuffer
+        && channel.byteOffset === 0
+        && channel.byteLength === channel.buffer.byteLength
         ? channel
         : new Float32Array(channel)
     ));
