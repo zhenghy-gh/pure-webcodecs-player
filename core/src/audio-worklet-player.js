@@ -220,17 +220,31 @@ export class AudioWorkletPlayer extends Emitter {
   }
 
   _onWorkletMessage(msg) {
-    switch (msg.type) {
-      case 'stats':
-        this._bufferedFrames = msg.bufferedFrames;
-        this._onPlayedFrames(msg.playedFrames);
-        break;
-      case 'underrun':
-        this._underruns += 1;
-        this.emit('underrun', { contextTime: msg.at });
-        break;
-      default:
-        break;
+    if (!msg || typeof msg !== 'object') return;
+    try {
+      switch (msg.type) {
+        case 'stats': {
+          const { bufferedFrames, playedFrames, sampleRate } = msg;
+          if (!Number.isSafeInteger(bufferedFrames) || bufferedFrames < 0
+            || bufferedFrames > (1 << 24)
+            || !Number.isSafeInteger(playedFrames) || playedFrames < 0
+            || playedFrames < this._playedFrames
+            || !Number.isFinite(sampleRate) || sampleRate <= 0) return;
+          this.sampleRate = sampleRate;
+          this._bufferedFrames = bufferedFrames;
+          this._onPlayedFrames(playedFrames);
+          break;
+        }
+        case 'underrun':
+          if (!Number.isFinite(msg.at) || msg.at < 0) return;
+          this._underruns += 1;
+          this.emit('underrun', { contextTime: msg.at });
+          break;
+        default:
+          break;
+      }
+    } catch {
+      // Worklet 消息来自独立线程，异常数据不得污染主线程状态。
     }
   }
 

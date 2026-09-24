@@ -361,9 +361,25 @@ test('worklet 上行消息：stats 驱动 progress（值不变不重发）；und
     node.port.dispatch({ type: 'stats', bufferedFrames: 960, playedFrames: 4800, sampleRate: 48000 });
     assert.equal(progress.length, 1, 'playedFrames 未变化不重发 progress');
 
+    for (const bad of [
+      { type: 'stats', bufferedFrames: -1, playedFrames: 4801, sampleRate: 48000 },
+      { type: 'stats', bufferedFrames: 960, playedFrames: 4799, sampleRate: 48000 },
+      { type: 'stats', bufferedFrames: 960, playedFrames: 4801, sampleRate: NaN },
+      { type: 'stats', bufferedFrames: 960, playedFrames: 4801, sampleRate: 0 },
+      { type: 'stats', bufferedFrames: 1 << 25, playedFrames: 4801, sampleRate: 48000 },
+      null,
+    ]) node.port.dispatch(bad);
+    assert.equal(player._bufferedFrames, 960, '非法 stats 不得污染 bufferedFrames');
+    assert.equal(player._playedFrames, 4800, '非法 stats 不得回退或跳变 playedFrames');
+    assert.equal(player.sampleRate, 48000, '非法 stats 不得修改采样率');
+
     node.port.dispatch({ type: 'underrun', at: 1.25 });
     assert.equal(player.underrunCount, 1);
     assert.deepEqual(underruns, [{ contextTime: 1.25 }]);
+
+    node.port.dispatch({ type: 'underrun', at: -1 });
+    node.port.dispatch({ type: 'underrun', at: NaN });
+    assert.equal(player.underrunCount, 1, '非法 underrun 时间戳被忽略');
 
     node.port.dispatch({ type: 'unknown-type' }); // default 分支静默
     assert.equal(player.underrunCount, 1);
