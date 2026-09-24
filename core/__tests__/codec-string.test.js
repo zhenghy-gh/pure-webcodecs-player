@@ -80,6 +80,15 @@ test('aac codec string 与解析', () => {
   assert.equal(parseCodecString('').family, '');
 });
 
+test('parseCodecString rejects partial numeric fields without coercion', () => {
+  assert.deepEqual(parseCodecString('avc1.42E01EX').profile, undefined);
+  assert.deepEqual(parseCodecString('avc1.42E01E0').profile, undefined);
+  assert.equal(parseCodecString('hvcx.1.6.L93').family, 'hvcx');
+  assert.equal(parseCodecString('mp4a.40.2x').objectType, undefined);
+  assert.equal(parseCodecString('mp4a.40.0').objectType, undefined);
+  assert.equal(parseCodecString('mp4a.40.96').objectType, undefined);
+});
+
 test('MSE mimeType 组装', () => {
   assert.equal(
     buildMseMimeType('video/mp4', ['mp4a.40.2', 'avc1.42E01E', 'mp4a.40.2']),

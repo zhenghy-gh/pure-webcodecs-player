@@ -190,23 +190,27 @@ export function parseCodecString(codec) {
   const base = { family: familyRaw, raw, parts };
 
   if (/^avc/.test(familyRaw)) {
-    // avc1.PPCCLL
-    const packed = parseInt(parts[1] ?? '', 16);
+    // avc1.PPCCLL；必须是完整的 6 位十六进制字段，避免 parseInt 接受前缀。
+    const packedText = parts[1] ?? '';
+    const packed = /^[0-9a-f]{6}$/i.test(packedText) ? Number.parseInt(packedText, 16) : NaN;
     return Number.isNaN(packed)
       ? Object.assign(base, { family: 'avc' })
       : Object.assign(base, { family: 'avc', profile: packed >>> 16, level: packed & 0xff });
   }
-  if (/^hv|^he/.test(familyRaw)) {
+  if (/^(?:hvc|hev)[1-4]$/.test(familyRaw)) {
     return Object.assign(base, { family: 'hevc' });
   }
   if (/^mp4a$/.test(familyRaw)) {
-    // mp4a.40.<objectType>
-    const oti = Number(parts[1]);
-    const objectType = Number(parts[2]);
+    // mp4a.40.<objectType>；仅解析完整十进制安全整数。
+    const parseDecimal = (value) => /^\d+$/.test(value ?? '') && Number.isSafeInteger(Number(value))
+      ? Number(value)
+      : undefined;
+    const oti = parseDecimal(parts[1]);
+    const objectType = parseDecimal(parts[2]);
     return Object.assign(base, {
       family: 'aac',
-      oti: Number.isFinite(oti) ? oti : undefined,
-      objectType: Number.isFinite(objectType) ? objectType : undefined,
+      oti,
+      objectType: objectType >= 1 && objectType <= 95 ? objectType : undefined,
     });
   }
   if (/^opus$/.test(familyRaw)) return Object.assign(base, { family: 'opus' });
