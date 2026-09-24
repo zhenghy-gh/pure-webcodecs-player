@@ -295,6 +295,20 @@ test('HttpRangeDataSource：校验 206 Content-Range 与响应长度', async () 
   }
 });
 
+test('HttpRangeDataSource：EOF 零长度读取不发起 Range 请求', async () => {
+  let rangeCalls = 0;
+  const ds = new HttpRangeDataSource('http://fixture.invalid/empty-read.mp4', {
+    fetchImpl: async (_url, init = {}) => {
+      if (init.method === 'HEAD') return new Response(null, { status: 200, headers: { 'content-length': '4' } });
+      rangeCalls += 1;
+      throw new Error('unexpected range request');
+    },
+  });
+  assert.equal((await ds.read(4, 0)).byteLength, 0);
+  await assert.rejects(() => ds.read(5, 0), (error) => error.code === 'SOURCE_ERROR');
+  assert.equal(rangeCalls, 0);
+});
+
 test('HttpRangeDataSource：拒绝非安全文件长度声明', async () => {
   for (const raw of ['1.5', '-1', '9007199254740992', '']) {
     const ds = new HttpRangeDataSource('http://fixture.invalid/invalid-head.mp4', {

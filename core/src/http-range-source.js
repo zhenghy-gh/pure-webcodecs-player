@@ -144,11 +144,12 @@ export class HttpRangeDataSource {
       throw sourceError(`read offset must be a non-negative safe integer: ${offset}`);
     }
     if (!this._opened) await this.open();
-    if (offset >= this.size) {
-      throw sourceError(`read out of range: offset=${offset} size=${this.size}`);
-    }
     // I5：单次读取上界——畸形容器长度字段不得触发超大 Range 请求与内存分配
     assertByteLength(length, this.maxReadLength, `HTTP Range 单次读取`);
+    if (offset > this.size) {
+      throw sourceError(`read out of range: offset=${offset} size=${this.size}`);
+    }
+    if (length === 0) return new Uint8Array(0);
     const want = Math.min(length, this.size - offset);
 
     // 命中检查：全部落在缓存则直接拼
