@@ -82,8 +82,15 @@ export class BlobDataSource {
  * mp4 的 RangeLoader / mkv 的网络流都可直接传入。
  */
 export function asDataSource(sourceLike) {
-  if (typeof sourceLike?.read === 'function') return sourceLike;
-  throw new TypeError('not a DataSource: missing read(offset, length)');
+  if (typeof sourceLike?.read !== 'function') {
+    throw new TypeError('not a DataSource: missing read(offset, length)');
+  }
+  const size = sourceLike.size;
+  const isPromiseLike = size !== null && typeof size === 'object' && typeof size.then === 'function';
+  if (size !== undefined && size !== Infinity && !isPromiseLike && (!Number.isSafeInteger(size) || size < 0)) {
+    throw sourceError(`DataSource size must be a non-negative safe integer, Infinity, or Promise: ${size}`);
+  }
+  return sourceLike;
 }
 
 /**

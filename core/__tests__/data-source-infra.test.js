@@ -161,6 +161,15 @@ test('BlobDataSource：环境无 Blob 时构造即 SOURCE_ERROR', () => {
 
 // ── asDataSource ────────────────────────────────────────
 
+test('asDataSource：校验 size 契约并保留异步 size', () => {
+  const read = async () => new Uint8Array(0);
+  assert.equal(asDataSource({ read, size: Infinity }).size, Infinity);
+  assert.equal(asDataSource({ read, size: Promise.resolve(4) }).size instanceof Promise, true);
+  for (const size of [null, -1, 1.5, NaN, '4', {}]) {
+    assert.throws(() => asDataSource({ read, size }), (error) => error.code === 'SOURCE_ERROR');
+  }
+});
+
 test('asDataSource：鸭子类型直通，缺 read 抛 TypeError', () => {
   const src = { read: async () => new Uint8Array(0), size: 1 };
   assert.equal(asDataSource(src), src, '具备 read 即原样返回');
