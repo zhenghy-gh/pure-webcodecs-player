@@ -176,7 +176,7 @@ export function parseElst(s) {
     if (version === 1) {
       entries.push({
         segmentDuration: s.readU64Number(),
-        mediaTime: Number(s.readI64()),
+        mediaTime: s.readI64Number(),
         mediaRateInteger: s.readU16(),
         mediaRateFraction: s.readU16(),
       });

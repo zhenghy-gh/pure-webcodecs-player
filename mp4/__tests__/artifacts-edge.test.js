@@ -166,6 +166,11 @@ test('elst v0/v1 双版本解析', async () => {
   const p1 = parseElst(new ByteStream(v1.subarray(8)));
   assert.equal(p1.entries[0].mediaTime, -2);
   assert.equal(p1.entries[0].segmentDuration, 96000);
+
+  const unsafe = new ByteWriter();
+  unsafe.writeU32(1).writeU64(96000n).writeI64(1n << 53n).writeU16(1).writeU16(0);
+  const unsafeBox = fullBox('elst', 1, 0, (w) => w.writeRaw(unsafe.toUint8Array()));
+  assert.throws(() => parseElst(new ByteStream(unsafeBox.subarray(8))), (error) => error.code === 'SOURCE_ERROR');
 });
 
 test('分片未建立索引时 seek 回退流起点', async () => {

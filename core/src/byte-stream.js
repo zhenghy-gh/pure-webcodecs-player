@@ -213,6 +213,16 @@ export class ByteStream {
     return v;
   }
 
+  readI64Number(maxSafe = Number.MAX_SAFE_INTEGER) {
+    if (!Number.isSafeInteger(maxSafe) || maxSafe < 0) throw sourceError("readI64Number maxSafe must be non-negative safe integer");
+    this._need(8);
+    const v = this._dataView.getBigInt64(this._pos, false);
+    const limit = BigInt(maxSafe);
+    if (v < -limit || v > limit) throw sourceError(`signed 64-bit value exceeds safe range: ${v}`);
+    this._pos += 8;
+    return Number(v);
+  }
+
   /**
    * 64 位长度字段的安全读取：绝大多数场景值在 Number 安全范围内，
    * 直接转 number 方便算术；超过安全范围抛错而不是静默截断。

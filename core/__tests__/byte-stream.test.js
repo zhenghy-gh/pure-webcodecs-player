@@ -87,6 +87,23 @@ test('ByteStream 窗口视图与 seek', () => {
   assert.equal(s.position, 0, 'peek 不移动游标');
 });
 
+test('readI64Number preserves precision and cursor on rejected values', () => {
+  const writer = new ByteWriter();
+  writer.writeI64(-BigInt(Number.MAX_SAFE_INTEGER)).writeI64(BigInt(Number.MAX_SAFE_INTEGER));
+  const reader = new ByteStream(writer.toUint8Array());
+  assert.equal(reader.readI64Number(), -Number.MAX_SAFE_INTEGER);
+  assert.equal(reader.readI64Number(), Number.MAX_SAFE_INTEGER);
+  const unsafeWriter = new ByteWriter();
+  unsafeWriter.writeI64(-(1n << 53n));
+  const unsafeReader = new ByteStream(unsafeWriter.toUint8Array());
+  assert.throws(() => unsafeReader.readI64Number(), (error) => error.code === 'SOURCE_ERROR');
+  assert.equal(unsafeReader.position, 0);
+  for (const maxSafe of [-1, 1.5, NaN, Infinity]) {
+    assert.throws(() => unsafeReader.readI64Number(maxSafe), (error) => error.code === 'SOURCE_ERROR');
+    assert.equal(unsafeReader.position, 0);
+  }
+});
+
 test('readU64Number 拒绝超出安全范围', async () => {
   const { sourceError } = await import('../src/errors.js');
   const w = new ByteWriter();
