@@ -44,6 +44,25 @@ test('ByteWriter validates 64-bit integer inputs', () => {
   assert.equal(reader.readI64(), (1n << 63n) - 1n);
 });
 
+test('ByteWriter primitive integers reject truncation', () => {
+  const cases = [
+    ['writeU8', 0x100], ['writeU16', 0x10000], ['writeU24', 0x1000000],
+    ['writeU32', 0x100000000], ['writeI32', 0x80000000],
+  ];
+  for (const [method, value] of cases) {
+    assert.throws(() => new ByteWriter()[method](value), (error) => error.code === 'SOURCE_ERROR');
+    assert.throws(() => new ByteWriter()[method](value - 0.5), (error) => error.code === 'SOURCE_ERROR');
+  }
+  const writer = new ByteWriter();
+  writer.writeU8(0xff).writeU16(0xffff).writeU24(0xffffff).writeU32(0xffffffff).writeI32(-0x80000000);
+  const reader = new ByteStream(writer.toUint8Array());
+  assert.equal(reader.readU8(), 0xff);
+  assert.equal(reader.readU16(), 0xffff);
+  assert.equal(reader.readU24(), 0xffffff);
+  assert.equal(reader.readU32(), 0xffffffff);
+  assert.equal(reader.readI32(), -0x80000000);
+});
+
 test('ByteStream 越界抛 SOURCE_ERROR', () => {
   const s = new ByteStream(new Uint8Array(4));
   assert.throws(() => s.readU32().valueOf && s.skip(5), (err) => err.code === 'SOURCE_ERROR');

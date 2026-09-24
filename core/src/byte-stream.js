@@ -18,6 +18,16 @@ function toBigIntInteger(value, what) {
   return BigInt(value);
 }
 
+function unsignedInteger(value, max, what) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > max) throw sourceError(what + ' out of range');
+  return value;
+}
+
+function signedInteger(value, min, max, what) {
+  if (!Number.isSafeInteger(value) || value < min || value > max) throw sourceError(what + ' out of range');
+  return value;
+}
+
 /** 大端读取器（只读视图，不复制底层数据） */
 export class ByteStream {
   /**
@@ -298,12 +308,14 @@ export class ByteWriter {
   }
 
   writeU8(v) {
+    v = unsignedInteger(v, 0xff, "writeU8");
     this._reserve(1);
     this._buf[this._len++] = v & 0xff;
     return this;
   }
 
   writeU16(v) {
+    v = unsignedInteger(v, 0xffff, "writeU16");
     this._reserve(2);
     this._buf[this._len++] = (v >>> 8) & 0xff;
     this._buf[this._len++] = v & 0xff;
@@ -311,6 +323,7 @@ export class ByteWriter {
   }
 
   writeU24(v) {
+    v = unsignedInteger(v, 0xffffff, "writeU24");
     this._reserve(3);
     this._buf[this._len++] = (v >>> 16) & 0xff;
     this._buf[this._len++] = (v >>> 8) & 0xff;
@@ -319,6 +332,7 @@ export class ByteWriter {
   }
 
   writeU32(v) {
+    v = unsignedInteger(v, 0xffffffff, "writeU32");
     this._reserve(4);
     this._buf[this._len++] = (v >>> 24) & 0xff;
     this._buf[this._len++] = (v >>> 16) & 0xff;
@@ -328,7 +342,8 @@ export class ByteWriter {
   }
 
   writeI32(v) {
-    return this.writeU32(v >>> 0);
+    v = signedInteger(v, -0x80000000, 0x7fffffff, "writeI32");
+    return this.writeU32(v < 0 ? v + 0x100000000 : v);
   }
 
   /** 有符号 64 位（补码） */
