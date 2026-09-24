@@ -30,8 +30,8 @@ test('splitAnnexB：零拷贝切片与 scan 结果一致', () => {
   assert.equal(units[0].buffer, data.buffer);
 });
 
-test('annexbToAvcc：lengthSize 越界 → PARSE_ERROR', () => {
-  for (const bad of [0, 5]) {
+test('annexbToAvcc：lengthSize 必须是 1..4 的安全整数', () => {
+  for (const bad of [0, -1, 1.5, NaN, Infinity, 5]) {
     assert.throws(
       () => annexbToAvcc(new Uint8Array([0, 0, 1, 1]), bad),
       (e) => e.code === 'PARSE_ERROR' && new RegExp(`invalid nal length size: ${bad}`).test(e.message),
@@ -39,8 +39,8 @@ test('annexbToAvcc：lengthSize 越界 → PARSE_ERROR', () => {
   }
 });
 
-test('splitAvcc：lengthSize 越界 → PARSE_ERROR', () => {
-  for (const bad of [0, 5]) {
+test('splitAvcc：lengthSize 必须是 1..4 的安全整数', () => {
+  for (const bad of [0, -1, 1.5, NaN, Infinity, 5]) {
     assert.throws(
       () => splitAvcc(new Uint8Array(8), bad),
       (e) => e.code === 'PARSE_ERROR' && new RegExp(`invalid nal length size: ${bad}`).test(e.message),

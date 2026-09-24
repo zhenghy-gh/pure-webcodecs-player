@@ -8,6 +8,12 @@
  */
 import { parseError } from './errors.js';
 
+function assertNalLengthSize(lengthSize) {
+  if (!Number.isSafeInteger(lengthSize) || lengthSize < 1 || lengthSize > 4) {
+    throw parseError(`invalid nal length size: ${lengthSize}`);
+  }
+}
+
 /** H.264 NAL 类型（nal_unit_type = 第 1 字节低 5 位） */
 export function h264NalType(nalu) {
   return nalu.length > 0 ? nalu[0] & 0x1f : -1;
@@ -113,9 +119,7 @@ export function splitAnnexB(data) {
  * @param {number} [lengthSize] 长度字段字节数（1~4，默认 4）
  */
 export function annexbToAvcc(annexb, lengthSize = 4) {
-  if (lengthSize < 1 || lengthSize > 4) {
-    throw parseError(`invalid nal length size: ${lengthSize}`);
-  }
+  assertNalLengthSize(lengthSize);
   const units = scanAnnexBNalUnits(annexb);
   let total = 0;
   for (const u of units) total += lengthSize + u.size;
@@ -141,9 +145,7 @@ export function annexbToAvcc(annexb, lengthSize = 4) {
  * @param {number} [lengthSize]
  */
 export function splitAvcc(avccData, lengthSize = 4) {
-  if (lengthSize < 1 || lengthSize > 4) {
-    throw parseError(`invalid nal length size: ${lengthSize}`);
-  }
+  assertNalLengthSize(lengthSize);
   const units = [];
   let pos = 0;
   while (pos + lengthSize <= avccData.byteLength) {
