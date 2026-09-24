@@ -49,14 +49,14 @@ export class ByteStream {
    */
   constructor(buffer, byteOffset = 0, byteLength = undefined) {
     let view;
-    if (buffer instanceof Uint8Array) {
+    if (Object.prototype.toString.call(buffer) === '[object Uint8Array]') {
       const start = byteOffset ?? 0;
       const len = byteLength === undefined ? buffer.byteLength - start : byteLength;
       if (!Number.isSafeInteger(start) || !Number.isSafeInteger(len) || start < 0 || len < 0 || start + len > buffer.byteLength) {
         throw sourceError(`ByteStream window out of range: offset=${start} length=${len}`);
       }
       view = new Uint8Array(buffer.buffer, buffer.byteOffset + start, len);
-    } else if (ArrayBuffer.isView(buffer)) {
+    } else if (Object.prototype.toString.call(buffer) === '[object DataView]' || ArrayBuffer.isView(buffer)) {
       // 尊重调用方传入的 byteOffset/byteLength 子窗口（此前会丢弃这两个参数）。
       const start = byteOffset ?? 0;
       const len = byteLength === undefined ? buffer.byteLength - start : byteLength;
@@ -65,7 +65,7 @@ export class ByteStream {
       }
       const u8 = new Uint8Array(buffer.buffer, buffer.byteOffset + start, len);
       return new ByteStream(u8, 0);
-    } else if (buffer instanceof ArrayBuffer) {
+    } else if (Object.prototype.toString.call(buffer) === '[object ArrayBuffer]') {
       const start = byteOffset ?? 0;
       const len = byteLength === undefined ? buffer.byteLength - start : byteLength;
       if (!Number.isSafeInteger(start) || !Number.isSafeInteger(len) || start < 0 || len < 0 || start + len > buffer.byteLength) {

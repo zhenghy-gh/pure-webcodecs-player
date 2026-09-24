@@ -6,8 +6,15 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 
 import { ByteStream, ByteWriter } from '../src/byte-stream.js';
+
+test('ByteStream accepts cross-realm Uint8Array windows', () => {
+  const foreign = vm.runInNewContext('new Uint8Array([0x01, 0x02, 0x03])');
+  const stream = new ByteStream(foreign, 1, 2);
+  assert.deepEqual([...stream.readSlice(2)], [0x02, 0x03]);
+});
 
 test('构造器：Uint8Array 窗口越界 → sourceError', () => {
   const u8 = new Uint8Array(8);
