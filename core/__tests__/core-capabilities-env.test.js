@@ -225,6 +225,41 @@ test('detectCapabilities：非 deep 结果进程内缓存，deep 绕过缓存', 
   assert.deepEqual(afterReset.webcodecs, first.webcodecs);
 });
 
+test('detectCapabilities：并发同 key 只执行一次 probe，reset 不接收旧结果', async () => {
+  let videoCalls = 0;
+  let audioCalls = 0;
+  class SlowVideoDecoder {
+    static async isConfigSupported() {
+      videoCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { supported: true };
+    }
+  }
+  class SlowAudioDecoder {
+    static async isConfigSupported() {
+      audioCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { supported: true };
+    }
+  }
+  await withGlobals(
+    { VideoDecoder: SlowVideoDecoder, AudioDecoder: SlowAudioDecoder, EncodedVideoChunk: class {} },
+    async () => {
+      resetCapabilityCache();
+      const p1 = detectCapabilities({ videoCodecs: ['x', ' x '], audioCodecs: ['y'] });
+      const p2 = detectCapabilities({ videoCodecs: ['x'], audioCodecs: ['y'] });
+      resetCapabilityCache();
+      const first = await p1;
+      assert.equal(await p2, first);
+      assert.equal(videoCalls, 1);
+      assert.equal(audioCalls, 1);
+      assert.notEqual(await detectCapabilities({ videoCodecs: ['x'], audioCodecs: ['y'] }), first);
+      assert.equal(videoCalls, 2);
+      assert.equal(audioCalls, 2);
+    },
+  );
+});
+
 test('detectCapabilities：secureContext 与 audioWorklet/webgpu 反映注入环境', async () => {
   class FakeAudioContext {}
   FakeAudioContext.prototype.audioWorklet = {};

@@ -83,17 +83,7 @@ function normalizeCodecList(value, fallback) {
     .filter((codec) => codec && codec !== '__proto__' && codec !== 'constructor' && codec !== 'prototype'))];
 }
 
-export async function detectCapabilities(options = {}) {
-  const input = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
-  const deep = input.deep === true;
-  const videoCodecs = normalizeCodecList(input.videoCodecs, DEFAULT_VIDEO_CODECS);
-  const audioCodecs = normalizeCodecList(input.audioCodecs, DEFAULT_AUDIO_CODECS);
-  const cacheOptions = { deep, videoCodecs, audioCodecs };
-  const key = JSON.stringify(cacheOptions);
-  if (!deep && detectCapabilities._cache.has(key)) {
-    return detectCapabilities._cache.get(key);
-  }
-
+async function detectCapabilitiesUncached({ videoCodecs, audioCodecs }) {
   const report = {
     webcodecs: {
       supported: hasWebCodecs(),
@@ -145,14 +135,41 @@ export async function detectCapabilities(options = {}) {
   }
   await Promise.all(jobs);
 
-  if (!deep) detectCapabilities._cache.set(key, report);
   return report;
 }
+
+export async function detectCapabilities(options = {}) {
+  const input = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+  const deep = input.deep === true;
+  const videoCodecs = normalizeCodecList(input.videoCodecs, DEFAULT_VIDEO_CODECS);
+  const audioCodecs = normalizeCodecList(input.audioCodecs, DEFAULT_AUDIO_CODECS);
+  if (deep) return detectCapabilitiesUncached({ videoCodecs, audioCodecs });
+
+  const key = JSON.stringify({ videoCodecs, audioCodecs });
+  if (detectCapabilities._cache.has(key)) return detectCapabilities._cache.get(key);
+  const inFlight = detectCapabilities._inflight.get(key);
+  if (inFlight) return inFlight;
+
+  const generation = detectCapabilities._generation;
+  let pending;
+  pending = detectCapabilitiesUncached({ videoCodecs, audioCodecs }).then((report) => {
+    if (generation === detectCapabilities._generation) detectCapabilities._cache.set(key, report);
+    return report;
+  }).finally(() => {
+    if (detectCapabilities._inflight.get(key) === pending) detectCapabilities._inflight.delete(key);
+  });
+  detectCapabilities._inflight.set(key, pending);
+  return pending;
+}
 detectCapabilities._cache = new Map();
+detectCapabilities._inflight = new Map();
+detectCapabilities._generation = 0;
 
 /** 清空探测缓存（测试用） */
 export function resetCapabilityCache() {
+  detectCapabilities._generation += 1;
   detectCapabilities._cache.clear();
+  detectCapabilities._inflight.clear();
 }
 
 /** 单个视频 codec 的 WebCodecs 解码可用性（失败计 false） */
