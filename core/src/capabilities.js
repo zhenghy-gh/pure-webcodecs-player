@@ -41,7 +41,11 @@ export function hasAudioWorklet() {
 
 /** 仅查 navigator.gpu 存在性（§4） */
 export function hasWebGPU() {
-  return typeof navigator !== 'undefined' && !!navigator.gpu;
+  try {
+    return typeof navigator !== 'undefined' && !!navigator.gpu;
+  } catch {
+    return false;
+  }
 }
 
 /** 查 crypto.subtle 存在性（Node≥22 与现代浏览器均具备；hls AES-128 依赖） */

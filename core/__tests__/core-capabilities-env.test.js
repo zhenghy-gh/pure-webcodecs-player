@@ -92,9 +92,12 @@ test('hasAudioWorklet：只查原型属性存在性，不触发 getter（Chrome 
   assert.equal(globalThis.AudioContext, undefined);
 });
 
-test('hasWebGPU：仅查 navigator.gpu 存在性', async () => {
+test('hasWebGPU：仅查 navigator.gpu 存在性，getter 抛错时安全返回 false', async () => {
   await withGlobals({ navigator: {} }, () => assert.equal(hasWebGPU(), false));
   await withGlobals({ navigator: { gpu: {} } }, () => assert.equal(hasWebGPU(), true));
+  await withGlobals({ navigator: { get gpu() { throw new Error('gpu accessor 抛错'); } } }, () =>
+    assert.equal(hasWebGPU(), false),
+  );
 });
 
 test('hasCryptoSubtle：具备 crypto.subtle.importKey 为 true，访问抛错吞为 false', async () => {
