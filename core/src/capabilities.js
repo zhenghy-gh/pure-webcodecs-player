@@ -24,23 +24,35 @@ export function hasWebCodecs() {
 
 /** 是否存在 MediaSource */
 export function hasMSE() {
-  return typeof MediaSource === 'function';
+  try {
+    return typeof MediaSource === 'function';
+  } catch {
+    return false;
+  }
 }
 
 /** iOS 17+ 的 ManagedMediaSource（后台播放更友好） */
 export function hasManagedMediaSource() {
-  return typeof ManagedMediaSource === 'function';
+  try {
+    return typeof ManagedMediaSource === 'function';
+  } catch {
+    return false;
+  }
 }
 
 /** AudioContext.audioWorklet 是否可用 */
 export function hasAudioWorklet() {
-  // 注意：audioWorklet 是原型上的 accessor getter，直接读 prototype.audioWorklet 时
-  // this=prototype（非合法实例）会在 Chrome 抛 Illegal invocation；用 `in` 只查属性
-  // 存在性、不触发 getter（真实缺陷由浏览器端到端验收暴露）。
-  return (
-    typeof AudioContext === 'function' &&
-    'audioWorklet' in AudioContext.prototype
-  );
+  try {
+    // 注意：audioWorklet 是原型上的 accessor getter，直接读 prototype.audioWorklet 时
+    // this=prototype（非合法实例）会在 Chrome 抛 Illegal invocation；用 `in` 只查属性
+    // 存在性、不触发 getter（真实缺陷由浏览器端到端验收暴露）。
+    return (
+      typeof AudioContext === 'function' &&
+      'audioWorklet' in AudioContext.prototype
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** 仅查 navigator.gpu 存在性（§4） */

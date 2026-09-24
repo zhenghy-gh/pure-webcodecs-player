@@ -71,6 +71,26 @@ test('hasWebCodecs：全局构造器 getter 抛错时安全返回 false', () => 
   }
 });
 
+test('hasMSE / hasManagedMediaSource：全局 getter 抛错时安全返回 false', () => {
+  const saved = new Map();
+  for (const key of ['MediaSource', 'ManagedMediaSource']) {
+    saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, {
+      configurable: true,
+      get() { throw new Error(key + ' accessor 抛错'); },
+    });
+  }
+  try {
+    assert.equal(hasMSE(), false);
+    assert.equal(hasManagedMediaSource(), false);
+  } finally {
+    for (const [key, desc] of saved) {
+      if (desc) Object.defineProperty(globalThis, key, desc);
+      else delete globalThis[key];
+    }
+  }
+});
+
 test('hasMSE / hasManagedMediaSource：按构造器存在性判定', async () => {
   assert.equal(hasMSE(), false);
   assert.equal(hasManagedMediaSource(), false);
@@ -104,6 +124,20 @@ test('hasAudioWorklet：只查原型属性存在性，不触发 getter（Chrome 
     assert.equal(hasAudioWorklet(), false, '无 audioWorklet 原型属性为 false'),
   );
   assert.equal(globalThis.AudioContext, undefined);
+});
+
+test('hasAudioWorklet：AudioContext getter 抛错时安全返回 false', () => {
+  const desc = Object.getOwnPropertyDescriptor(globalThis, 'AudioContext');
+  Object.defineProperty(globalThis, 'AudioContext', {
+    configurable: true,
+    get() { throw new Error('AudioContext accessor 抛错'); },
+  });
+  try {
+    assert.equal(hasAudioWorklet(), false);
+  } finally {
+    if (desc) Object.defineProperty(globalThis, 'AudioContext', desc);
+    else delete globalThis.AudioContext;
+  }
 });
 
 test('hasWebGPU：仅查 navigator.gpu 存在性，getter 抛错时安全返回 false', async () => {
