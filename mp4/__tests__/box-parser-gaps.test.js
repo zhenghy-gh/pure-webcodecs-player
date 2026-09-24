@@ -19,6 +19,7 @@ import {
   parseMdhd,
   parseSampleEntry,
 } from '../src/box-parser.js';
+import { buildMvhd } from '../src/box-builder.js';
 
 /** 8 字节标准头 box；sizeOverride 可写非常规声明值 */
 function box(type, payload, sizeOverride) {
@@ -79,6 +80,12 @@ test('parseMvhd version 1：creation/modification/duration 按 u64 读', () => {
   assert.equal(mvhd.duration, 12345);
   assert.equal(mvhd.rate, 1);
   assert.equal(mvhd.volume, 1);
+});
+
+test('buildMvhd rate uses numeric 16.16 input', () => {
+  const bytes = buildMvhd({ timescale: 1000 });
+  const mvhd = parseMvhd(new ByteStream(bytes, 8));
+  assert.equal(mvhd.rate, 1);
 });
 
 test('parseMdhd version 1：64 位时间字段 + language 解包', () => {

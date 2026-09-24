@@ -81,7 +81,7 @@ export function buildMvhd({ timescale = 1000, duration = 0, nextTrackId = 3, cre
   return fullBox('mvhd', 0, 0, (w) => {
     w.writeU32(creationTime).writeU32(modificationTime);
     w.writeU32(timescale).writeU32(duration);
-    w.writeFixed16_16(0x00010000); // rate 1.0
+    w.writeFixed16_16(1); // rate 1.0
     w.writeU16(0x0100); // volume 1.0
     w.writeU16(0).writeU32(0).writeU32(0); // reserved
     w.writeMatrix(); // unity matrix
