@@ -83,6 +83,23 @@ test('writeF32 大端往返', () => {
   assert.equal(s.readF32(), 3.5);
 });
 
+test('ByteStream.readCString validates length and does not consume beyond limit', () => {
+  const reader = new ByteStream(new Uint8Array([65, 0, 66, 0]));
+  for (const length of [-1, 1.5, NaN, Infinity]) {
+    assert.throws(() => reader.readCString(length), (error) => error.code === 'SOURCE_ERROR');
+  }
+  assert.equal(reader.readCString(0), '');
+  assert.equal(reader.position, 0);
+  assert.equal(reader.readCString(1), 'A');
+  assert.equal(reader.position, 1, 'terminator beyond maxLen remains unread');
+  assert.equal(reader.readCString(1), '');
+  assert.equal(reader.position, 2, 'in-range terminator is consumed');
+  assert.equal(reader.readCString(1), 'B');
+  assert.equal(reader.position, 3);
+  assert.equal(reader.readCString(1), '');
+  assert.equal(reader.position, 4);
+});
+
 test('ByteWriter accepts zero capacity and rejects invalid initial capacity', () => {
   const writer = new ByteWriter(0);
   writer.writeU8(0x5a);

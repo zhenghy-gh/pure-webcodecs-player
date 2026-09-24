@@ -242,11 +242,14 @@ export class ByteStream {
 
   /** 读以 \\0 结尾的字符串（最多 maxLen 字节，含终止符） */
   readCString(maxLen = this.remaining) {
+    if (!Number.isSafeInteger(maxLen) || maxLen < 0) {
+      throw sourceError(`readCString maxLen must be a non-negative safe integer: ${maxLen}`);
+    }
     const end = this._view.indexOf(0, this._pos);
     const limit = Math.min(this._pos + maxLen, this.length);
     const stop = end >= 0 && end < limit ? end : limit;
     const str = textDecoder.decode(this._view.subarray(this._pos, stop));
-    this.seek(stop < this.length && this._view[stop] === 0 ? stop + 1 : stop);
+    this.seek(stop < limit && this._view[stop] === 0 ? stop + 1 : stop);
     return str;
   }
 
