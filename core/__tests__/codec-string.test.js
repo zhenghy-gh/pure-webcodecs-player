@@ -59,6 +59,15 @@ test('hvcC → hvc1 codec string（Annex E 规则）', () => {
   assert.equal(buildHevcCodecString(hvcC3, 'hev1'), 'hev1.A4.8.H153');
 });
 
+test('aac codec string validates object type range', () => {
+  assert.equal(aacCodecString(), 'mp4a.40.2');
+  assert.equal(aacCodecString(1), 'mp4a.40.1');
+  assert.equal(aacCodecString(95), 'mp4a.40.95');
+  for (const value of [0, -1, 96, 1.5, NaN, Infinity, '2', null, {}]) {
+    assert.equal(aacCodecString(value), 'mp4a.40');
+  }
+});
+
 test('aac codec string 与解析', () => {
   assert.equal(aacCodecString(), 'mp4a.40.2');
   const parsed = parseCodecString('mp4a.40.2');

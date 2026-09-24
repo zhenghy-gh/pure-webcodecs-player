@@ -96,6 +96,9 @@ export function buildHevcCodecString(hvcC, prefix = 'hvc1') {
 
 /** AAC codec string：objectType 默认 2(AAC-LC) → "mp4a.40.2" */
 export function aacCodecString(audioObjectType = 2) {
+  if (!Number.isSafeInteger(audioObjectType) || audioObjectType < 1 || audioObjectType > 95) {
+    return 'mp4a.40';
+  }
   return `mp4a.40.${audioObjectType}`;
 }
 
