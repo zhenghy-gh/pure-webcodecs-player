@@ -394,14 +394,14 @@ export class ByteWriter {
    * unity 矩阵 = [1,0,0 | 0,1,0 | 0,0,1] → 字节序列 …|00 01 00 00|…|40 00 00 00|
    */
   writeMatrix(a = 1, b = 0, u = 0, c = 0, d = 1, v = 0, tx = 0, ty = 0, w = 0x40000000) {
-    this.writeU32(Math.round(a * 65536));
-    this.writeU32(Math.round(b * 65536));
-    this.writeU32(u);
-    this.writeU32(Math.round(c * 65536));
-    this.writeU32(Math.round(d * 65536));
-    this.writeU32(v);
-    this.writeU32(Math.round(tx * 65536));
-    this.writeU32(Math.round(ty * 65536));
+    this.writeI32(Math.round(a * 65536));
+    this.writeI32(Math.round(b * 65536));
+    this.writeI32(Math.round(u * 65536));
+    this.writeI32(Math.round(c * 65536));
+    this.writeI32(Math.round(d * 65536));
+    this.writeI32(Math.round(v * 65536));
+    this.writeI32(Math.round(tx * 65536));
+    this.writeI32(Math.round(ty * 65536));
     this.writeU32(w >>> 0); // 2.30 定点直接写原值
     return this;
   }

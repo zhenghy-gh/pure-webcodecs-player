@@ -21,6 +21,15 @@ test('writeMatrix：unity 矩阵字节序列（末元素为 2.30 定点 0x400000
   );
 });
 
+test('writeMatrix preserves signed 16.16 coefficients and translation', () => {
+  const writer = new ByteWriter();
+  writer.writeMatrix(1, -0.5, 0, 0, 1, 0, -1.25, 0);
+  const bytes = writer.toUint8Array();
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  assert.equal(view.getInt32(4, false), -0x8000);
+  assert.equal(view.getInt32(24, false), -0x14000);
+});
+
 test('worklet processor 注册名为契约定稿 player-audio-sink', () => {
   assert.equal(AUDIO_SINK_PROCESSOR_NAME, 'player-audio-sink');
   assert.ok(
