@@ -188,8 +188,8 @@ test('detectCapabilities：codec 列表去重、去空白并忽略非字符串',
     async () => {
       const report = await detectCapabilities({
         deep: true,
-        videoCodecs: [' ok ', 'ok', '', null, 7],
-        audioCodecs: [' a-ok ', 'a-ok', {}],
+        videoCodecs: [' ok ', 'ok', '', null, 7, '__proto__', 'constructor', 'prototype'],
+        audioCodecs: [' a-ok ', 'a-ok', {}, '__proto__'],
       });
       assert.deepEqual(report.webcodecs.video, { ok: true });
       assert.deepEqual(report.webcodecs.audio, { 'a-ok': true });
@@ -197,6 +197,19 @@ test('detectCapabilities：codec 列表去重、去空白并忽略非字符串',
   );
   const empty = await detectCapabilities([]);
   assert.equal(empty.webcodecs.supported, false);
+});
+
+test('chooseRoute：不采信继承来的 codec 支持属性', () => {
+  const video = Object.create({ evil: true });
+  assert.equal(chooseRoute({
+    webcodecs: { supported: true, video, audio: {} },
+    mse: { supported: false, mimeTypes: [] },
+  }, { container: 'mp4', tracks: [{ type: 'video', codec: 'evil' }] }), 'none');
+  video.good = true;
+  assert.equal(chooseRoute({
+    webcodecs: { supported: true, video, audio: {} },
+    mse: { supported: false, mimeTypes: [] },
+  }, { container: 'mp4', tracks: [{ type: 'video', codec: 'good' }] }), 'webcodecs');
 });
 
 test('detectCapabilities：非 deep 结果进程内缓存，deep 绕过缓存', async () => {

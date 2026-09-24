@@ -80,7 +80,7 @@ function normalizeCodecList(value, fallback) {
   return [...new Set(value
     .filter((codec) => typeof codec === 'string')
     .map((codec) => codec.trim())
-    .filter(Boolean))];
+    .filter((codec) => codec && codec !== '__proto__' && codec !== 'constructor' && codec !== 'prototype'))];
 }
 
 export async function detectCapabilities(options = {}) {
@@ -203,11 +203,15 @@ export function chooseRoute(caps, mediaInfo, options = {}) {
       for (const track of mediaInfo.tracks) {
         if (track.type === 'metadata') continue; // 元数据轨不参与解码
         anyTrack = true;
+        const videoSupport = caps.webcodecs.video;
+        const audioSupport = caps.webcodecs.audio;
+        const hasOwn = (map, key) => map != null
+          && Object.prototype.hasOwnProperty.call(map, key);
         const ok =
           track.type === 'video'
-            ? caps.webcodecs.video[track.codec] === true
+            ? hasOwn(videoSupport, track.codec) && videoSupport[track.codec] === true
             : track.type === 'audio'
-              ? caps.webcodecs.audio[track.codec] === true
+              ? hasOwn(audioSupport, track.codec) && audioSupport[track.codec] === true
               : true; // text 走 Cue 流，与解码路径无关
         if (track.type !== 'text' && !ok) allOk = false;
       }
