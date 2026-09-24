@@ -25,7 +25,11 @@ test('Node 环境下探测不抛错且返回 false（§4：探测失败吞掉计
 test('detectCapabilities 契约形状（Node 全 false 路径）', async () => {
   resetCapabilityCache();
   const report = await detectCapabilities();
-  assert.deepEqual(report.webcodecs, { supported: false, video: {}, audio: {} });
+  assert.equal(report.webcodecs.supported, false);
+  assert.deepEqual({ ...report.webcodecs.video }, {});
+  assert.deepEqual({ ...report.webcodecs.audio }, {});
+  assert.equal(Object.getPrototypeOf(report.webcodecs.video), null);
+  assert.equal(Object.getPrototypeOf(report.webcodecs.audio), null);
   assert.deepEqual(report.mse, { supported: false, mimeTypes: [] });
   assert.equal(report.audioWorklet, false);
   assert.equal(report.webgpu, false);

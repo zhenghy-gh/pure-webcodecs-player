@@ -202,13 +202,13 @@ test('detectCapabilities：WebCodecs 支持路径逐 codec 深探测，异常/un
         audioCodecs: ['a-ok', 'a-no-x', 'aboom'],
       });
       assert.equal(report.webcodecs.supported, true);
-      assert.deepEqual(report.webcodecs.video, {
+      assert.deepEqual({ ...report.webcodecs.video }, {
         ok: true,
         no: false,
         boom: false,
         undef: false,
       });
-      assert.deepEqual(report.webcodecs.audio, { 'a-ok': true, 'a-no-x': false, aboom: false });
+      assert.deepEqual({ ...report.webcodecs.audio }, { 'a-ok': true, 'a-no-x': false, aboom: false });
       assert.equal(report.mse.supported, false);
       assert.deepEqual(report.mse.mimeTypes, []);
     },
@@ -242,8 +242,11 @@ test('detectCapabilities：codec 列表去重、去空白并忽略非字符串',
         videoCodecs: [' ok ', 'ok', '', null, 7, '__proto__', 'constructor', 'prototype'],
         audioCodecs: [' a-ok ', 'a-ok', {}, '__proto__'],
       });
-      assert.deepEqual(report.webcodecs.video, { ok: true });
-      assert.deepEqual(report.webcodecs.audio, { 'a-ok': true });
+      assert.deepEqual({ ...report.webcodecs.video }, { ok: true });
+      assert.deepEqual({ ...report.webcodecs.audio }, { 'a-ok': true });
+      assert.equal(Object.getPrototypeOf(report.webcodecs.video), null);
+      assert.equal(Object.getPrototypeOf(report.webcodecs.audio), null);
+      assert.equal(report.webcodecs.video.__proto__, undefined);
     },
   );
   const empty = await detectCapabilities([]);

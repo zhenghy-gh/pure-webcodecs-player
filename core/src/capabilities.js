@@ -115,8 +115,8 @@ async function detectCapabilitiesUncached({ videoCodecs, audioCodecs }) {
   const report = {
     webcodecs: {
       supported: hasWebCodecs(),
-      video: {},
-      audio: {},
+      video: Object.create(null),
+      audio: Object.create(null),
     },
     mse: {
       supported: hasMSE(),
