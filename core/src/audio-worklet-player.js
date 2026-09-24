@@ -156,8 +156,16 @@ export class AudioWorkletPlayer extends Emitter {
     if (typeof AudioContext === 'undefined') {
       throw notSupported('AudioContext is not available');
     }
-    this.sampleRate = options.sampleRate ?? 48000;
-    this.channelCount = options.channelCount ?? 2;
+    const sampleRate = options.sampleRate ?? 48000;
+    const channelCount = options.channelCount ?? 2;
+    if (typeof sampleRate !== 'number' || !Number.isFinite(sampleRate) || sampleRate <= 0) {
+      throw stateError('sampleRate must be a finite positive number');
+    }
+    if (!Number.isInteger(channelCount) || channelCount < 1 || channelCount > 32) {
+      throw stateError('channelCount must be an integer between 1 and 32');
+    }
+    this.sampleRate = sampleRate;
+    this.channelCount = channelCount;
     /** @type {AudioContext|null} */
     this.context = null;
     this.node = null;

@@ -77,6 +77,18 @@ test('createWorkletUrl：生成 blob: URL（Node 22 原生 Blob + URL.createObje
   URL.revokeObjectURL(custom);
 });
 
+test('AudioWorkletPlayer：拒绝非法采样率与声道数配置', async () => {
+  await withGlobals({ AudioContext: class {} }, async () => {
+    for (const sampleRate of [0, -1, NaN, Infinity, '48000']) {
+      assert.throws(() => new AudioWorkletPlayer({ sampleRate }), (error) => error.code === ErrorCode.STATE_ERROR);
+    }
+    for (const channelCount of [0, -1, 1.5, 33, NaN]) {
+      assert.throws(() => new AudioWorkletPlayer({ channelCount }), (error) => error.code === ErrorCode.STATE_ERROR);
+    }
+    assert.doesNotThrow(() => new AudioWorkletPlayer({ sampleRate: 48000, channelCount: 32 }));
+  });
+});
+
 test('AudioWorkletPlayer 构造守卫：无 AudioContext（Node 默认）抛 NOT_SUPPORTED', () => {
   withoutAudioContext(() => {
     assert.equal(typeof AudioContext, 'undefined', 'Node 默认无 AudioContext');
