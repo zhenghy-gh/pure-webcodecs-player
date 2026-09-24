@@ -281,11 +281,13 @@ export function chooseRoute(caps, mediaInfo, options = {}) {
     };
 
     const available = { webcodecs: canWebCodecs, mse: canMse };
-    const preference = Array.isArray(options.preference) && options.preference.length > 0
-      ? options.preference
-      : ['webcodecs', 'mse'];
+    const hasPreference = Array.isArray(options.preference) && options.preference.length > 0;
+    const requested = hasPreference
+      ? options.preference.filter((route) => route === 'webcodecs' || route === 'mse')
+      : [];
+    const preference = hasPreference ? requested : ['webcodecs', 'mse'];
     for (const route of preference) {
-      if (available[route]?.() === true) return route;
+      if (available[route]() === true) return route;
     }
     return 'none';
   } catch {

@@ -471,6 +471,8 @@ test('chooseRoute：preference 列表内的未知路线被安全跳过', () => {
   const info = mp4Info([{ id: 1, type: 'video', codec: 'v1' }]);
   assert.equal(chooseRoute(caps, info, { preference: ['bogus'] }), 'none');
   assert.equal(chooseRoute(caps, info, { preference: ['bogus', 'webcodecs'] }), 'webcodecs');
+  assert.equal(chooseRoute(caps, info, { preference: ['__proto__', 'constructor', null, {}, 'webcodecs'] }), 'webcodecs');
+  assert.equal(chooseRoute(caps, info, { preference: ['__proto__'] }), 'none', '危险路线名不会隐式启用默认路线');
   assert.equal(chooseRoute(caps, info, { preference: 'not-an-array' }), 'webcodecs', '非法 preference 回落默认');
 });
 
