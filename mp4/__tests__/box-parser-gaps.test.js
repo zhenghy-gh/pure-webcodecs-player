@@ -161,6 +161,20 @@ test('parseMoov：largesize（size=1）16 字节头正确剥离', () => {
   assert.deepEqual(moov.traks, []);
 });
 
+test('parseMoov：拒绝截断或超出安全范围的 largesize', () => {
+  const truncated = new Uint8Array(12);
+  new DataView(truncated.buffer).setUint32(0, 1);
+  truncated.set(fourcc('moov'), 4);
+  assert.throws(() => parseMoov(truncated), /truncated moov largesize header/);
+
+  const unsafe = new Uint8Array(16);
+  const view = new DataView(unsafe.buffer);
+  view.setUint32(0, 1);
+  unsafe.set(fourcc('moov'), 4);
+  view.setBigUint64(8, 1n << 60n, false);
+  assert.throws(() => parseMoov(unsafe), /moov size exceeds safe range/);
+});
+
 test('parseMoov：size=0 头按容器实际长度收口', () => {
   const moov = parseMoov(box('moov', mvhdV0(), 0));
   assert.equal(moov.mvhd.timescale, 600);

@@ -562,7 +562,10 @@ export function parseMoov(moovBytes) {
     let size = dv.getUint32(0, false);
     let headerSize = 8;
     if (size === 1) {
-      size = Number(dv.getBigUint64(8, false));
+      if (moovBytes.byteLength < 16) throw parseError('truncated moov largesize header');
+      const bigSize = dv.getBigUint64(8, false);
+      if (bigSize > BigInt(Number.MAX_SAFE_INTEGER)) throw parseError(`moov size exceeds safe range: ${bigSize}`);
+      size = Number(bigSize);
       headerSize = 16;
     } else if (size === 0) {
       size = moovBytes.byteLength;
