@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import { BitReader, BitWriter } from '../src/bit-reader.js';
 import {
   ExpGolombReader,
@@ -31,6 +32,13 @@ test('BitReader 基本读取与回溯', () => {
   assert.equal(r.readSignedBits(5), -1);
   r.alignToByte();
   assert.equal(r.byteAligned, true);
+});
+
+test('BitReader accepts a cross-realm byte typed array without changing bit semantics', () => {
+  const foreign = vm.runInNewContext('new Uint8Array([0b10100000])');
+  const reader = new BitReader(foreign);
+  assert.equal(reader.readBits(3), 0b101);
+  assert.equal(reader.readBits(5), 0);
 });
 
 test('BitReader sign-extends 31-bit values without bit-shift overflow', () => {

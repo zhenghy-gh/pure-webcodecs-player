@@ -8,7 +8,13 @@ import { parseError } from './errors.js';
 export class BitReader {
   /** @param {Uint8Array} bytes */
   constructor(bytes, bitOffset = 0) {
-    if (!(bytes instanceof Uint8Array)) throw new TypeError('BitReader expects Uint8Array');
+    // ArrayBuffer.isView 兼容来自 iframe/worker 的跨 realm Uint8Array；instanceof 在跨 realm 下会误拒绝。
+    if (!ArrayBuffer.isView(bytes) || bytes.BYTES_PER_ELEMENT !== 1) {
+      throw new TypeError('BitReader expects a byte typed array');
+    }
+    if (!(bytes instanceof Uint8Array)) {
+      bytes = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    }
     if (!Number.isSafeInteger(bitOffset) || bitOffset < 0 || bitOffset > bytes.byteLength * 8) {
       throw parseError(`bit offset out of range: ${bitOffset}`);
     }
