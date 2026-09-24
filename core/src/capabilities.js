@@ -11,11 +11,15 @@ import { buildMseMimeType, mseIsTypeSupported } from './codec-string.js';
 
 /** 是否存在 WebCodecs 全家桶 */
 export function hasWebCodecs() {
-  return (
-    typeof VideoDecoder === 'function' &&
-    typeof AudioDecoder === 'function' &&
-    typeof EncodedVideoChunk === 'function'
-  );
+  try {
+    return (
+      typeof VideoDecoder === 'function' &&
+      typeof AudioDecoder === 'function' &&
+      typeof EncodedVideoChunk === 'function'
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** 是否存在 MediaSource */

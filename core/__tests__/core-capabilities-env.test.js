@@ -57,6 +57,20 @@ test('hasWebCodecs：三家齐全才为 true，缺一即 false', async () => {
   assert.equal(globalThis.EncodedVideoChunk, undefined, 'Fake 已还原');
 });
 
+test('hasWebCodecs：全局构造器 getter 抛错时安全返回 false', () => {
+  const desc = Object.getOwnPropertyDescriptor(globalThis, 'VideoDecoder');
+  Object.defineProperty(globalThis, 'VideoDecoder', {
+    configurable: true,
+    get() { throw new Error('VideoDecoder accessor 抛错'); },
+  });
+  try {
+    assert.equal(hasWebCodecs(), false);
+  } finally {
+    if (desc) Object.defineProperty(globalThis, 'VideoDecoder', desc);
+    else delete globalThis.VideoDecoder;
+  }
+});
+
 test('hasMSE / hasManagedMediaSource：按构造器存在性判定', async () => {
   assert.equal(hasMSE(), false);
   assert.equal(hasManagedMediaSource(), false);
