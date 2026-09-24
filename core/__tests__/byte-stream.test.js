@@ -63,6 +63,15 @@ test('ByteWriter primitive integers reject truncation', () => {
   assert.equal(reader.readI32(), -0x80000000);
 });
 
+test('ByteWriter validates FourCC inputs without lossy coercion', () => {
+  const writer = new ByteWriter();
+  writer.writeFourCC('ft');
+  assert.deepEqual([...writer.toUint8Array()], [0x66, 0x74, 0x20, 0x20]);
+  for (const value of [null, undefined, 1, 'five5', '汉']) {
+    assert.throws(() => new ByteWriter().writeFourCC(value), (error) => error.code === 'SOURCE_ERROR');
+  }
+});
+
 test('ByteStream 越界抛 SOURCE_ERROR', () => {
   const s = new ByteStream(new Uint8Array(4));
   assert.throws(() => s.readU32().valueOf && s.skip(5), (err) => err.code === 'SOURCE_ERROR');

@@ -407,9 +407,13 @@ export class ByteWriter {
   }
 
   writeFourCC(str) {
-    const s = String(str).padEnd(4, ' ');
+    if (typeof str !== 'string' || str.length > 4) throw sourceError('writeFourCC expects at most 4 characters');
+    const s = str.padEnd(4, ' ');
+    for (let i = 0; i < 4; i++) {
+      if (s.charCodeAt(i) > 0xff) throw sourceError('writeFourCC only supports single-byte characters');
+    }
     this._reserve(4);
-    for (let i = 0; i < 4; i++) this._buf[this._len++] = s.charCodeAt(i) & 0xff;
+    for (let i = 0; i < 4; i++) this._buf[this._len++] = s.charCodeAt(i);
     return this;
   }
 
