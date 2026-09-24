@@ -67,6 +67,14 @@ test('readU64Number 拒绝超出安全范围', async () => {
   assert.throws(() => s.readU64Number(), (e) => e instanceof Error && e.code === sourceError('').code);
 });
 
+test('readU64Number validates maxSafe without consuming', () => {
+  const reader = new ByteStream(new Uint8Array(8));
+  for (const maxSafe of [-1, 1.5, NaN, Infinity]) {
+    assert.throws(() => reader.readU64Number(maxSafe), (error) => error.code === 'SOURCE_ERROR');
+    assert.equal(reader.position, 0);
+  }
+});
+
 test('ByteWriter patchU32 与扩容', () => {
   const w = new ByteWriter(4); // 小初始容量触发多次扩容
   for (let i = 0; i < 100; i++) w.writeU32(i);

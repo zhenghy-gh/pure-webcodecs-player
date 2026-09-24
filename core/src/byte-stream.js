@@ -194,6 +194,7 @@ export class ByteStream {
    * 直接转 number 方便算术；超过安全范围抛错而不是静默截断。
    */
   readU64Number(maxSafe = Number.MAX_SAFE_INTEGER) {
+    if (!Number.isSafeInteger(maxSafe) || maxSafe < 0) throw sourceError("readU64Number maxSafe must be non-negative safe integer");
     const v = this.readU64();
     if (v > BigInt(maxSafe)) {
       throw sourceError(`64-bit value exceeds safe range: ${v}`);
