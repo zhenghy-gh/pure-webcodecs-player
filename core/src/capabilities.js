@@ -267,12 +267,13 @@ export function chooseRoute(caps, mediaInfo, options = {}) {
       // remuxable：本仓 mp4/mov/flv 可出 fMP4；此处以容器白名单表达
       const REMUXABLE = new Set(['mp4', 'mov', 'flv']);
       if (!REMUXABLE.has(mediaInfo.container)) return false;
-      const codecs = mediaInfo.tracks
-        .filter((t) => t.type === 'video' || t.type === 'audio')
-        .map((t) => t.codec)
-        .filter(Boolean);
+      const codecTracks = mediaInfo.tracks
+        .filter((t) => t.type === 'video' || t.type === 'audio');
+      const codecs = codecTracks.map((t) => t.codec);
       if (codecs.length === 0) return true;
+      if (codecs.some((codec) => typeof codec !== 'string' || !codec.trim())) return false;
       const mime = buildMseMimeType('video/mp4', codecs);
+      if (!mime || !mime.includes('codecs=\"')) return false;
       // 深探测命中即采信（无 MediaSource 的环境也能确定性裁决）；
       // 未命中一律回落实时 isTypeSupported —— 探测清单未必覆盖素材实际 codec 组合。
       const probed = caps.mse?.mimeTypes;

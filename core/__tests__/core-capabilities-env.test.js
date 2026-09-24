@@ -430,6 +430,16 @@ test('chooseRoute：未知轨类型不计入 WC 失败（else 分支）', () => 
   );
 });
 
+test('chooseRoute：MSE 拒绝缺失或非字符串 codec', () => {
+  const caps = {
+    webcodecs: { supported: false, video: {}, audio: {} },
+    mse: { supported: true, mimeTypes: ['video/mp4'] },
+  };
+  assert.equal(chooseRoute(caps, mp4Info([{ id: 1, type: 'video', codec: null }])), 'none');
+  assert.equal(chooseRoute(caps, mp4Info([{ id: 1, type: 'video', codec: 42 }])), 'none');
+  assert.equal(chooseRoute(caps, mp4Info([{ id: 1, type: 'video', codec: '   ' }])), 'none');
+});
+
 test('chooseRoute：MSE 仅在可 remux 容器（mp4/mov/flv）上可用，其余回落 none', () => {
   const mseCaps = {
     webcodecs: { supported: false, video: {}, audio: {} },
