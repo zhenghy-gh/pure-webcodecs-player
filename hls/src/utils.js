@@ -96,11 +96,12 @@ export function parseAttributes(str) {
 
 /** 十六进制字符串（可含 0x 前缀）转 Uint8Array。用于 EXT-X-KEY 的 IV。 */
 export function hexToUint8(hex) {
-  if (typeof hex === 'string') hex = hex.replace(/^0[xX]/, '');
-  if (!hex) return new Uint8Array(0);
+  if (typeof hex !== 'string') return new Uint8Array(0);
+  hex = hex.replace(/^0[xX]/, '');
+  if (!hex || /[^0-9a-fA-F]/.test(hex)) return new Uint8Array(0);
   if (hex.length % 2 !== 0) hex = '0' + hex;
   const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  for (let i = 0; i < out.length; i++) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   return out;
 }
 

@@ -148,6 +148,9 @@ test('工具边界：无效 URL/属性、十六进制、MIME 与续播定位', (
   assert.deepEqual(hexToUint8('0xabc'), new Uint8Array([0x0a, 0xbc]));
   assert.deepEqual(hexToUint8(''), new Uint8Array());
   assert.deepEqual(hexToUint8(null), new Uint8Array());
+  assert.deepEqual(hexToUint8('0xzz'), new Uint8Array(), 'invalid hex must not silently become zero bytes');
+  assert.deepEqual(hexToUint8('12xz'), new Uint8Array());
+  assert.deepEqual(hexToUint8(1234), new Uint8Array());
   assert.equal(buildMime('avc1.640028', 'mp4a.40.2'), 'video/mp4; codecs="avc1.640028, mp4a.40.2"');
   assert.equal(buildMime('', ''), 'video/mp4');
   assert.equal(computeResumeIndexBySn([{ sn: 10 }, { sn: 12 }], null), 0);
