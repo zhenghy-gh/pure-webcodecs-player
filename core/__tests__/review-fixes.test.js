@@ -30,6 +30,17 @@ test('writeMatrix preserves signed 16.16 coefficients and translation', () => {
   assert.equal(view.getInt32(24, false), -0x14000);
 });
 
+test('writeMatrix preserves raw unsigned 2.30 fields', () => {
+  const writer = new ByteWriter();
+  writer.writeMatrix(1, 0, 0x12345678, 0, 1, 0x89abcdef, 0, 0, 0x40000000);
+  const bytes = writer.toUint8Array();
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  assert.equal(view.getUint32(8, false), 0x12345678);
+  assert.equal(view.getUint32(20, false), 0x89abcdef);
+  assert.equal(view.getUint32(32, false), 0x40000000);
+  assert.throws(() => new ByteWriter().writeMatrix(1, 0, -1), (error) => error.code === 'SOURCE_ERROR');
+});
+
 test('worklet processor 注册名为契约定稿 player-audio-sink', () => {
   assert.equal(AUDIO_SINK_PROCESSOR_NAME, 'player-audio-sink');
   assert.ok(

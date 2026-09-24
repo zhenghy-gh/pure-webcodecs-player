@@ -399,13 +399,13 @@ export class ByteWriter {
   writeMatrix(a = 1, b = 0, u = 0, c = 0, d = 1, v = 0, tx = 0, ty = 0, w = 0x40000000) {
     this.writeI32(Math.round(a * 65536));
     this.writeI32(Math.round(b * 65536));
-    this.writeI32(Math.round(u * 65536));
+    this.writeU32(u);
     this.writeI32(Math.round(c * 65536));
     this.writeI32(Math.round(d * 65536));
-    this.writeI32(Math.round(v * 65536));
+    this.writeU32(v);
     this.writeI32(Math.round(tx * 65536));
     this.writeI32(Math.round(ty * 65536));
-    this.writeU32(w >>> 0); // 2.30 定点直接写原值
+    this.writeU32(w); // 2.30 定点直接写原值
     return this;
   }
 
