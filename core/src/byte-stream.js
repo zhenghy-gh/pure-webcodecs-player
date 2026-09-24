@@ -375,6 +375,7 @@ export class ByteWriter {
     if (typeof v !== 'number' || !Number.isFinite(v)) throw sourceError('writeF32 expects a finite number');
     const dv = new DataView(new ArrayBuffer(4));
     dv.setFloat32(0, v, false);
+    if (!Number.isFinite(dv.getFloat32(0, false))) throw sourceError('writeF32 value exceeds finite float32 range');
     for (let i = 0; i < 4; i++) this.writeU8(dv.getUint8(i));
     return this;
   }

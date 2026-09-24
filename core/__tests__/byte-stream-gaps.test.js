@@ -119,6 +119,11 @@ test('ByteWriter float writers reject invalid values', () => {
       assert.equal(writer.length, 0);
     }
   }
+  const writer = new ByteWriter();
+  assert.throws(() => writer.writeF32(1e100), (error) => error.code === 'SOURCE_ERROR');
+  assert.equal(writer.length, 0, 'overflow must not append encoded Infinity');
+  writer.writeF32(3.4028234663852886e38);
+  assert.ok(Number.isFinite(new ByteStream(writer.toUint8Array()).readF32()));
 });
 
 test('ByteWriter accepts zero capacity and rejects invalid initial capacity', () => {
