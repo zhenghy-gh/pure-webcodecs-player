@@ -31,6 +31,14 @@ test('PlaybackClock 播放/暂停/seek/倍速', () => {
   assert.equal(clock.getTimeSec(), 50);
 });
 
+test('PlaybackClock rejects non-finite seek positions', () => {
+  const clock = new PlaybackClock({ now: manualClock().now });
+  for (const value of [NaN, Infinity, -Infinity]) {
+    assert.throws(() => clock.seekTo(value), RangeError);
+    assert.throws(() => clock.play(value), RangeError);
+  }
+});
+
 test('PlaybackClock 非法倍速抛错', () => {
   const clock = new PlaybackClock({ now: manualClock().now });
   assert.throws(() => clock.setRate(0), RangeError);
@@ -47,6 +55,12 @@ test('DEFAULT_SYNC_OPTIONS 对齐 CONTRACTS §7 ±20ms 窗口', () => {
     DEFAULT_SYNC_OPTIONS.maxEarlySec,
     '早到/迟到窗口应对称对齐 ±20ms'
   );
+});
+
+test('AvSyncController validates master clock callbacks', () => {
+  const sync = new AvSyncController();
+  assert.throws(() => sync.attachMaster(42), TypeError);
+  assert.doesNotThrow(() => sync.attachMaster(null));
 });
 
 test('AvSyncController 决策矩阵', () => {

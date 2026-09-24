@@ -69,6 +69,7 @@ export class PlaybackClock extends Emitter {
   }
 
   seekTo(sec) {
+    if (!Number.isFinite(sec)) throw new RangeError(`invalid media time: ${sec}`);
     this._mediaAnchor = sec;
     this._monoAnchor = this._now();
     this.emit('seek', sec);
@@ -106,6 +107,7 @@ export class AvSyncController extends Emitter {
   }
 
   attachMaster(fn) {
+    if (fn !== null && typeof fn !== 'function') throw new TypeError('master clock must be a function or null');
     this.masterClockFn = fn;
   }
 
