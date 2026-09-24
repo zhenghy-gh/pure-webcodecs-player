@@ -152,8 +152,14 @@ function materializeSamples(buf, moofBox, traf) {
   // trun 无 data-offset 标志时退回 mdat 载荷起点。
   const moofStart = moofBox.contentStart - 8;
   let cursor = trun.hasDataOffset ? moofStart + trun.dataOffset : mdatDataStart;
+  if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > buf.byteLength) {
+    throw notSupported(`样本数据起点越界: ${cursor}`);
+  }
   let dtsOffset = baseTime; // 所属 timescale 的 ticks
   for (const row of rows) {
+    if (!Number.isSafeInteger(row.size) || row.size < 0 || cursor + row.size > buf.byteLength) {
+      throw notSupported(`样本数据超出 mdat: start=${cursor}, size=${row.size}`);
+    }
     out.push({
       durationUs: 0, // 由上层按轨 timescale 换算（契约：公共边界 µs）
       durationTicks: row.duration,

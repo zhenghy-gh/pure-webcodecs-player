@@ -125,6 +125,13 @@ test('splitChunks：initRange 与 frag 交替流中 init 定位精确', () => {
 
 /* ---------------- 异常输入 ---------------- */
 
+test('splitChunks：样本大小超出 mdat → 抛 NOT_SUPPORTED 而非返回越界位置', () => {
+  const frag = makeFrag(0);
+  const moof = [...iterateBoxes(frag)].find((b) => b.type === 'moof');
+  const truncated = frag.subarray(0, moof.contentEnd + 8);
+  assert.throws(() => splitChunks(truncated), (e) => e.code === 'NOT_SUPPORTED' && /样本数据超出 mdat|找不到完整 mdat|未找到 mdat/.test(e.message));
+});
+
 test('splitChunks：mdat 声明尺寸被截断 → 抛 NOT_SUPPORTED（找不到完整 mdat）', () => {
   const frag = makeFrag(0);
   // 砍掉 mdat 尾部若干字节：mdat 头中声明的 size 大于剩余缓冲
