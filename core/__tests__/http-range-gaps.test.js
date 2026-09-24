@@ -67,7 +67,7 @@ test('requestInit headers cannot override Range header', async () => {
       if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '256' } });
       const match = /bytes=(\d+)-(\d+)/.exec(init.headers.Range);
       const [start, end] = [Number(match[1]), Number(match[2])];
-      return fakeRes(206, { body: whole.slice(start, end + 1) });
+      return fakeRes(206, { headers: { 'content-range': `bytes ${start}-${end}/${whole.length}` }, body: whole.slice(start, end + 1) });
     },
   });
   await ds.open();
@@ -145,7 +145,7 @@ test('open 退路：探测响应 body.cancel 抛错 → 吞并且 open 成功', 
       }
       const m = /bytes=(\d+)-(\d+)/.exec(range);
       const [s, e] = [Number(m[1]), Number(m[2])];
-      return fakeRes(206, { body: whole.slice(s, e + 1) });
+      return fakeRes(206, { headers: { 'content-range': `bytes ${s}-${e}/${whole.length}` }, body: whole.slice(s, e + 1) });
     },
   });
   await ds.open();
@@ -180,7 +180,7 @@ test('read：offset ≥ size 或 < 0 → SOURCE_ERROR', async () => {
       }
       const m = /bytes=(\d+)-(\d+)/.exec(init.headers?.Range ?? '');
       const [s, e] = [Number(m[1]), Number(m[2])];
-      return fakeRes(206, { body: whole.slice(s, e + 1) });
+      return fakeRes(206, { headers: { 'content-range': `bytes ${s}-${e}/${whole.length}` }, body: whole.slice(s, e + 1) });
     },
   });
   await ds.open();
@@ -236,7 +236,7 @@ test('_rangeGet：206 短响应且未到文件尾 → SOURCE_ERROR（short range
     chunkSize: 256,
     fetchImpl: async (_u, init = {}) => {
       if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': String(whole.length), 'accept-ranges': 'bytes' } });
-      return fakeRes(206, { body: whole.slice(0, 100) }); // 期望 256 只给 100
+      return fakeRes(206, { headers: { 'content-range': 'bytes 0-255/1024' }, body: whole.slice(0, 100) }); // 期望 256 只给 100
     },
   });
   await ds.open();

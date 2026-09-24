@@ -217,6 +217,26 @@ test('HttpRangeDataSource（core 版）：HEAD 探长 + 跨块读 + 缓存淘汰
   assert.ok(requests > 3, `应发生多次 Range 请求，实际 ${requests}`);
 });
 
+test('HttpRangeDataSource：校验 206 Content-Range 与响应长度', async () => {
+  for (const mode of ['missing', 'wrong-start', 'wrong-end', 'wrong-total', 'short-body']) {
+    const ds = new HttpRangeDataSource('http://fixture.invalid/mismatch.mp4', {
+      chunkSize: 4,
+      fetchImpl: async (_url, init = {}) => {
+        if (init.method === 'HEAD') return new Response(null, { status: 200, headers: { 'content-length': '8' } });
+        const body = mode === 'short-body' ? Uint8Array.from([1, 2, 3]) : Uint8Array.from([1, 2, 3, 4]);
+        const contentRange = mode === 'missing' ? undefined
+          : mode === 'wrong-start' ? 'bytes 1-4/8'
+            : mode === 'wrong-end' ? 'bytes 0-4/8'
+              : mode === 'wrong-total' ? 'bytes 0-3/9'
+                : 'bytes 0-3/8';
+        return new Response(body, { status: 206, headers: contentRange ? { 'content-range': contentRange } : {} });
+      },
+    });
+    await ds.open();
+    await assert.rejects(() => ds.read(0, 4), (error) => error.code === 'SOURCE_ERROR');
+  }
+});
+
 test('HttpRangeDataSource：拒绝非安全文件长度声明', async () => {
   for (const raw of ['1.5', '-1', '9007199254740992', '']) {
     const ds = new HttpRangeDataSource('http://fixture.invalid/invalid-head.mp4', {

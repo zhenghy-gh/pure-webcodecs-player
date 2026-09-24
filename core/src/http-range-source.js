@@ -186,12 +186,20 @@ export class HttpRangeDataSource {
     }
     const buf = await res.arrayBuffer();
     if (res.status === 206) {
-      const got = buf.byteLength;
-      const expected = endInclusive - start + 1;
-      if (got < expected && start + got < this.size) {
-        throw sourceError(`short range response: got ${got}, want ${expected}`);
+      const contentRange = res.headers.get('content-range') ?? '';
+      const match = /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(contentRange.trim());
+      if (!match) throw sourceError(`invalid Content-Range for ${this.url}: ${contentRange}`);
+      const rangeStart = parseSafeSize(match[1], 'Content-Range start');
+      const rangeEnd = parseSafeSize(match[2], 'Content-Range end');
+      const rangeTotal = match[3] === '*' ? null : parseSafeSize(match[3], 'Content-Range total');
+      if (rangeStart !== start || rangeEnd !== endInclusive || rangeEnd < rangeStart || (rangeTotal !== null && rangeTotal !== this.size)) {
+        throw sourceError(`mismatched Content-Range: ${contentRange}, expected bytes ${start}-${endInclusive}/${this.size}`);
       }
-      return new Uint8Array(buf).subarray(0, Math.min(got, expected));
+      const expected = endInclusive - start + 1;
+      if (buf.byteLength !== expected) {
+        throw sourceError(`short range response: got ${buf.byteLength}, want ${expected}`);
+      }
+      return new Uint8Array(buf);
     }
     // 200 整文件响应且 start=0：直接可用
     return new Uint8Array(buf).subarray(start, Math.min(endInclusive + 1, buf.byteLength));
