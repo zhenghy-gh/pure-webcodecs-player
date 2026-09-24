@@ -127,6 +127,9 @@ test('Emitter：on 非函数拒绝、emit 无监听返回 false、off 未注册 
   const bus = new Emitter();
   assert.throws(() => bus.on('x', 'not-a-fn'), TypeError);
   assert.throws(() => bus.on('x', null), TypeError);
+  assert.throws(() => bus.once('x', 'not-a-fn'), TypeError);
+  assert.throws(() => bus.once('x', null), TypeError);
+  assert.equal(bus.listenerCount('x'), 0, '非法 once callback 不注册 wrapper');
   assert.equal(bus.emit('nobody', 1), false, '无监听器 emit 返回 false');
   assert.doesNotThrow(() => bus.off('nobody', () => {}), 'off 未注册事件 no-op');
   const fn = () => {};

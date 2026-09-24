@@ -28,6 +28,7 @@ export class Emitter {
   }
 
   once(event, fn) {
+    if (typeof fn !== 'function') throw new TypeError('listener must be a function');
     const off = this.on(event, (...args) => {
       off();
       fn(...args);
