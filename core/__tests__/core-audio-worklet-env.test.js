@@ -211,6 +211,21 @@ test('init/push/play 未按序调用抛 STATE_ERROR；push 空数据早退；pus
     assert.deepEqual(sent.msg, { type: 'push', channels: [ch], frames: 3 });
     assert.deepEqual(sent.transfer, [ch.buffer]);
     assert.equal(player.bufferedSec, 3 / player.sampleRate);
+
+    assert.throws(
+      () => player.push([new Float32Array(2), new Float32Array(3)]),
+      (error) => error.code === ErrorCode.STATE_ERROR,
+    );
+    const view = ch.subarray(1);
+    player.push([view]);
+    const partial = node.port.sent[1];
+    assert.deepEqual([...partial.msg.channels[0]], [...view]);
+    assert.equal(partial.msg.channels[0].byteOffset, 0);
+    assert.equal(partial.msg.channels[0].buffer.byteLength, 8);
+    assert.notEqual(partial.msg.channels[0].buffer, ch.buffer);
+
+    player.push([ch, ch]);
+    assert.equal(node.port.sent[2].transfer.length, 1, '重复 channel buffer 只 transfer 一次');
   });
 });
 

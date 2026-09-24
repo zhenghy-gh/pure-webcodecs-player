@@ -212,11 +212,24 @@ export class AudioWorkletPlayer extends Emitter {
    */
   push(channels) {
     if (!this.node) throw stateError('call init() before push()');
-    if (!channels.length || !channels[0].length) return;
+    if (!Array.isArray(channels)) throw stateError('push() expects an array of Float32Array channels');
+    if (channels.length === 0) return;
+    if (!channels.every((channel) => channel instanceof Float32Array)) {
+      throw stateError('push() channels must be Float32Array instances');
+    }
     const frames = channels[0].length;
-    const buffers = channels.map((c) => c.buffer);
+    if (channels.some((channel) => channel.length !== frames)) {
+      throw stateError('push() channels must have equal frame counts');
+    }
+    if (frames === 0) return;
+    const packed = channels.map((channel) => (
+      channel.byteOffset === 0 && channel.byteLength === channel.buffer.byteLength
+        ? channel
+        : new Float32Array(channel)
+    ));
+    const buffers = [...new Set(packed.map((channel) => channel.buffer))];
     this.node.port.postMessage(
-      { type: 'push', channels, frames },
+      { type: 'push', channels: packed, frames },
       buffers,
     );
     this._bufferedFrames += frames;
