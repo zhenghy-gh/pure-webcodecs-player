@@ -388,6 +388,23 @@ test('audioDataToPlanar 无 copyTo 且无 planes 时退化为零填充', () => {
   assert.deepEqual([...out[1]], [0, 0, 0, 0]);
 });
 
+test('audioDataToPlanar：copyTo 失败时回退 planes', () => {
+  const out = audioDataToPlanar({
+    numberOfChannels: 1,
+    numberOfFrames: 3,
+    copyTo() { throw new Error('unsupported format'); },
+    planes: [new Float32Array([7, 8, 9])],
+  });
+  assert.deepEqual([...out[0]], [7, 8, 9]);
+});
+
+test('audioDataToPlanar：拒绝非法计数与过大分配', () => {
+  assert.throws(() => audioDataToPlanar({ numberOfChannels: 0, numberOfFrames: 1 }), /channel\/frame count/);
+  assert.throws(() => audioDataToPlanar({ numberOfChannels: 1.5, numberOfFrames: 1 }), /channel\/frame count/);
+  assert.throws(() => audioDataToPlanar({ numberOfChannels: 1, numberOfFrames: -1 }), /channel\/frame count/);
+  assert.throws(() => audioDataToPlanar({ numberOfChannels: 2, numberOfFrames: 1 << 24 }), /channel\/frame count/);
+});
+
 test('audioDataToPlanar 读取 channels/frames 别名与 planes 直读', () => {
   const out = audioDataToPlanar({ channels: 1, frames: 3, planes: [new Float32Array([7, 8, 9])] });
   assert.equal(out.length, 1);

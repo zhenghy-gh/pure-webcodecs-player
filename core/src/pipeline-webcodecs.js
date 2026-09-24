@@ -28,16 +28,39 @@ function defaultSchedule(fn, ms) {
  * AudioData → f32-planar（每通道一个 Float32Array，契约 §7）。
  * 复制失败或无 copyTo（假实现）时退化为 planes 直读，绝不静默丢帧。
  */
+const MAX_AUDIO_PLANAR_SAMPLES = 1 << 24;
+
 export function audioDataToPlanar(audioData) {
-  const channels = Math.max(1, audioData.numberOfChannels ?? audioData.channels ?? 1);
-  const frames = audioData.numberOfFrames ?? audioData.frames ?? 0;
+  const channels = audioData?.numberOfChannels ?? audioData?.channels ?? 1;
+  const frames = audioData?.numberOfFrames ?? audioData?.frames ?? 0;
+  if (!Number.isSafeInteger(channels) || channels < 1
+    || !Number.isSafeInteger(frames) || frames < 0
+    || (frames > 0 && channels > MAX_AUDIO_PLANAR_SAMPLES / frames)) {
+    throw decodeError('AudioData channel/frame count is invalid');
+  }
   const out = [];
   for (let i = 0; i < channels; i++) {
-    const plane = new Float32Array(frames);
-    if (typeof audioData.copyTo === 'function') {
-      audioData.copyTo(plane, { planeIndex: i, format: 'f32-planar' });
-    } else if (audioData.planes?.[i]) {
-      plane.set(audioData.planes[i].subarray(0, frames));
+    let plane;
+    try {
+      plane = new Float32Array(frames);
+    } catch (error) {
+      throw decodeError('AudioData planar buffer is too large', { cause: error });
+    }
+    let copied = false;
+    let copyError;
+    if (typeof audioData?.copyTo === 'function') {
+      try {
+        audioData.copyTo(plane, { planeIndex: i, format: 'f32-planar' });
+        copied = true;
+      } catch (error) {
+        copyError = error;
+      }
+    }
+    const sourcePlane = audioData?.planes?.[i];
+    if (!copied && sourcePlane && typeof sourcePlane.subarray === 'function') {
+      plane.set(sourcePlane.subarray(0, frames));
+    } else if (copyError) {
+      throw decodeError('AudioData copyTo failed', { cause: copyError });
     }
     out.push(plane);
   }
