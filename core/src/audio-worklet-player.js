@@ -12,6 +12,10 @@ import { notSupported, stateError } from './errors.js';
 
 /** AudioWorkletProcessor 源码（在 audio 线程运行） */
 export const PCM_WORKLET_CODE = /* js */ `
+const MAX_BUFFERED_SAMPLES = 1 << 24;
+const getTypedArrayName = Object.getOwnPropertyDescriptor(
+  Object.getPrototypeOf(Uint8Array.prototype), Symbol.toStringTag,
+).get;
 class PcmRingWorklet extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -23,17 +27,32 @@ class PcmRingWorklet extends AudioWorkletProcessor {
     this.capacity = 0;
     this.port.onmessage = (e) => {
       const msg = e.data;
+      if (!msg || typeof msg !== 'object') return;
       if (msg.type === 'push') {
         const channels = msg.channels;
         const frames = msg.frames;
+        if (!Array.isArray(channels) || channels.length < 1 || channels.length > 32
+          || !Number.isSafeInteger(frames) || frames < 1
+          || channels.some((channel) => {
+            try {
+              return !ArrayBuffer.isView(channel)
+                || getTypedArrayName.call(channel) !== 'Float32Array'
+                || channel.length !== frames;
+            } catch {
+              return true;
+            }
+          })) return;
+        const maxFrames = Math.floor(MAX_BUFFERED_SAMPLES / channels.length);
+        if (frames > maxFrames || (this.rings.length === channels.length
+          && this.bufferedFrames + frames > maxFrames)) return;
         if (this.rings.length !== channels.length) {
           // 声道布局变化时丢弃旧布局残留，避免把旧通道样本误路由到新布局。
-          this.capacity = Math.max(this.capacity, frames, currentSampleRate >> 1);
+          this.capacity = Math.max(frames, Math.min(currentSampleRate >> 1, maxFrames));
           this.rings = Array.from({ length: channels.length }, () => new Float32Array(this.capacity));
           this.writePos = 0;
           this.bufferedFrames = 0;
         } else if (this.capacity === 0) {
-          this.capacity = Math.max(frames, currentSampleRate >> 1);
+          this.capacity = Math.max(frames, Math.min(currentSampleRate >> 1, maxFrames));
           this.rings = Array.from({ length: channels.length }, () => new Float32Array(this.capacity));
         }
         const required = this.bufferedFrames + frames;

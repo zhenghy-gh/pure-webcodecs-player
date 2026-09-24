@@ -49,6 +49,11 @@ test('PCM worklet：环形缓冲扩容保留未消费样本与顺序', () => {
   };
   runInNewContext(PCM_WORKLET_CODE, context);
   const processor = new Processor();
+  processor.port.onmessage({ data: { type: 'push', channels: [new Float32Array([9])], frames: 2 } });
+  processor.port.onmessage({ data: { type: 'push', channels: [new Uint8Array([1])], frames: 1 } });
+  processor.port.onmessage({ data: { type: 'push', channels: [new Float32Array([9])], frames: 1 << 25 } });
+  assert.equal(processor.capacity, 0, '无效输入不得触发环形缓冲分配');
+  assert.equal(processor.bufferedFrames, 0);
   processor.port.onmessage({ data: { type: 'push', channels: [new Float32Array([1, 2, 3])], frames: 3 } });
   processor.port.onmessage({ data: { type: 'push', channels: [new Float32Array([4, 5, 6])], frames: 3 } });
   assert.ok(processor.capacity >= 6);
@@ -56,6 +61,25 @@ test('PCM worklet：环形缓冲扩容保留未消费样本与顺序', () => {
   processor.process([], [output]);
   assert.deepEqual([...output[0]], [1, 2, 3, 4, 5, 6]);
   assert.equal(processor.bufferedFrames, 0);
+});
+
+test('PCM worklet：队列上限阻止累计样本超额分配', () => {
+  let Processor;
+  const code = PCM_WORKLET_CODE.replace('1 << 24', '4');
+  runInNewContext(code, {
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage() {} }; } },
+    registerProcessor(_name, ctor) { Processor = ctor; },
+    currentSampleRate: 4,
+    sampleRate: 4,
+    currentTime: 0,
+  });
+  const processor = new Processor();
+  processor.port.onmessage({ data: { type: 'push', channels: [new Float32Array([1, 2, 3])], frames: 3 } });
+  processor.port.onmessage({ data: { type: 'push', channels: [new Float32Array([4, 5])], frames: 2 } });
+  assert.equal(processor.bufferedFrames, 3, '超过累计队列上限的推送被忽略');
+  const tooManyChannels = Array.from({ length: 33 }, () => new Float32Array([1]));
+  processor.port.onmessage({ data: { type: 'push', channels: tooManyChannels, frames: 1 } });
+  assert.equal(processor.bufferedFrames, 3, '超过通道上限的推送被忽略');
 });
 
 test('PCM_WORKLET_CODE：内联处理器源码，注册名与契约 §7 一致', () => {
