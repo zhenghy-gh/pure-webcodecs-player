@@ -222,7 +222,9 @@
 
 | 126 | A/V 同步控制器播放速率回归 | 扩展 `core/__tests__/core-utils-boundary.test.js`：验证 `AvSyncController.setRate()` 委托内部时钟、外部 master clock 接入后 `start()` 不重置内部锚点，且主钟读取优先外部源。全仓 2917/2917、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
-| 127 | CMAF 音频 sample entry 结构关联修复 | `cmaf/src/isobmff.js` 的 `findAudioSpecificConfig()` 从全局首个 `esds` 扫描收敛为 `moov/trak/mdia(hdlr=soun)/minf/stbl/stsd/mp4a|enca` 结构定位，避免视频轨或其他配置载荷中的同名盒误导 ASC；保留无 `moov` 的独立解析回退，并抽出共享嵌套描述符解析。新增 `cmaf/__tests__/cmaf-init.test.js` 多轨伪 `esds` 隔离回归。全仓测试、lint、check、结构/运行时契约审计 PASS。 | 本波 |
+| 129 | CMAF 音频 sample entry 结构关联修复 | `cmaf/src/isobmff.js` 的 `findAudioSpecificConfig()` 从全局首个 `esds` 扫描收敛为 `moov/trak/mdia(hdlr=soun)/minf/stbl/stsd/mp4a|enca` 结构定位，避免视频轨或其他配置载荷中的同名盒误导 ASC；保留无 `moov` 的独立解析回退，并抽出共享嵌套描述符解析。新增 `cmaf/__tests__/cmaf-init.test.js` 多轨伪 `esds` 隔离回归。全仓测试、lint、check、结构/运行时契约审计 PASS。 | 本波 |
+
+| 130 | HLS 重试退避 AbortSignal 监听器清理 | `hls/src/segment-loader.js` 的 `delay()` 在定时器正常完成和 abort 两条路径统一幂等清理监听器，避免连续重试保留闭包；新增 `hls/__tests__/segment-loader-gaps.test.js` 计数回归，固化正常退避后监听器归零，同时保留外部中止 `AbortError` 语义。全仓测试、lint、check、结构/运行时契约审计 PASS。 | 本波 |
 
 | 127 | MPEG-TS fixture 零长度自适应字段回归 | 扩展 `samples/fixtures/__tests__/ts.test.js`：使用 `auPadBytes=302` 精确构造非 PCR 包仅剩 1 字节空隙，验证 `af_control=11`、`adaptation_field_length=0` 与 183 字节载荷均符合 TS 结构。全仓 2918/2918、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 

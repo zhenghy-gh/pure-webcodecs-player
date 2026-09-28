@@ -53,6 +53,27 @@ test('readStream：maxBytes 熔断时 reader.cancel 抛错 → 吞噬，仍抛 S
   assert.equal(cancelCalled, 1);
 });
 
+test('重试退避正常完成后移除 abort 监听器', async () => {
+  const listeners = new Set();
+  const signal = {
+    aborted: false,
+    addEventListener(type, listener) {
+      if (type === 'abort') listeners.add(listener);
+    },
+    removeEventListener(type, listener) {
+      if (type === 'abort') listeners.delete(listener);
+    },
+  };
+  const loader = new SegmentLoader({
+    fetchImpl: async () => {
+      throw new TypeError('net down');
+    },
+    maxRetry: 1,
+    retryDelayMs: 1,
+  });
+  await assert.rejects(loader.load('https://cdn.example.test/seg.ts', { signal }), /网络错误/);
+  assert.equal(listeners.size, 0);
+});
 test('重试退避期间外部中止 → delay 的 abort 监听触发，透传 AbortError', async () => {
   const ctrl = new AbortController();
   const loader = new SegmentLoader({

@@ -225,14 +225,27 @@ async function readStream(body, onChunk, { maxBytes = DEFAULT_MAX_READ_BYTES, ur
 
 function delay(ms, signal) {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(resolve, ms);
+    let settled = false;
+    let timer;
+    const cleanup = () => {
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      cleanup();
+      const e = new Error('aborted');
+      e.name = 'AbortError';
+      reject(e);
+    };
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    }, ms);
     if (signal) {
-      const onAbort = () => {
-        clearTimeout(t);
-        const e = new Error('aborted');
-        e.name = 'AbortError';
-        reject(e);
-      };
       if (signal.aborted) return onAbort();
       signal.addEventListener('abort', onAbort, { once: true });
     }
