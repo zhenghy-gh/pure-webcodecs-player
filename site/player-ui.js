@@ -298,9 +298,11 @@ export function createPlayerUI(options = {}) {
   btnRate.addEventListener('click', () => rateMenu.classList.toggle('pui__rate-menu--open'));
   btnStats.addEventListener('click', () => toggleStats());
   btnFull.addEventListener('click', toggleFullscreen);
-  doc.addEventListener('click', (e) => {
+  const closeRateMenu = (e) => {
     if (!rateWrap.contains(/** @type {Node} */ (e.target))) rateMenu.classList.remove('pui__rate-menu--open');
-  });
+  };
+  doc.addEventListener('click', closeRateMenu);
+  cleanupFns.push(() => doc.removeEventListener('click', closeRateMenu));
 
   /* ---- 快捷键 ---- */
   if (options.keyboard !== false && typeof window !== 'undefined') {
