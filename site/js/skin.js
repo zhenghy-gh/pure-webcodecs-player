@@ -98,7 +98,10 @@ export function bindRange(el, h = {}) {
     }),
   ];
   el.dispatchEvent(new Event('input'));
-  return () => offs.splice(0).forEach(f => f());
+  return () => {
+    offs.splice(0).forEach(f => f());
+    tip.remove();
+  };
 }
 
 /* 全屏包装（§7.2⑦）：对 stage 请求全屏；进入前把 .controls 移入 stage 悬浮，
