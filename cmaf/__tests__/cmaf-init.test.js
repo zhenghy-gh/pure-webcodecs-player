@@ -111,6 +111,17 @@ test('init：视频+音频双轨并存时各自提取且 timescale 正确', () =
   assert.equal(info.audio.timescale, 48000, '双轨时 audio mdhd timescale 应正确解析');
 });
 
+test('init：音频 ASC 仅从音频 sample entry 提取，不误取视频轨中的 esds', () => {
+  const fakeVideoEsds = fmp4.buildEsds(new Uint8Array([0x11, 0x90])).slice(8);
+  const init = fmp4.buildInit([
+    VIDEO_TRACK({ description: { tag: 'esds', bytes: fakeVideoEsds } }),
+    AUDIO_TRACK(),
+  ]);
+  const asc = findAudioSpecificConfig(init);
+  assert.deepEqual(Array.from(asc), [0x12, 0x10]);
+  assert.deepEqual(Array.from(parseInitSegment(init).audio.asc), [0x12, 0x10]);
+});
+
 /* ---------------- 异常 / 未覆盖分支 ---------------- */
 
 test('未知 codec 配置盒（hvc1 入口 + av1C）：fourcc/description 返回 null', () => {

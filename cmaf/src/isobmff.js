@@ -346,42 +346,63 @@ export function findTagInBuf(buf, start, end, tag) {
 
 /**
  * 提取 esds 内嵌的 AudioSpecificConfig（ASC）。
- * 只从 ES_Descriptor / DecoderConfigDescriptor 的嵌套结构读取 DSI。
+ * 有完整 init segment 时按 moov/trak 的音频 sample entry 关联，避免误取
+ * 其他轨道或配置载荷中的同名字节；无 moov 时保留独立 esds 解析能力。
  */
 export function findAudioSpecificConfig(initSegment) {
-  const pos = findTagInBuf(initSegment, 0, initSegment.length, 'esds');
-  if (pos < 4) return null;
-  const boxStart = pos - 4;
-  const view = new DataView(initSegment.buffer, initSegment.byteOffset, initSegment.byteLength);
-  const boxSize = view.getUint32(boxStart);
-  if (boxSize < 8 || boxStart + boxSize > initSegment.length) return null;
-  const end = Math.min(boxStart + boxSize, pos + 512);
-  const es = readDescriptor(initSegment, pos + 8, end);
+  const moov = findBox(initSegment, 0, initSegment.length, 'moov');
+  if (moov) {
+    for (const trak of iterateBoxes(initSegment, moov.contentStart, moov.contentEnd)) {
+      if (trak.type !== 'trak') continue;
+      const mdia = findBox(initSegment, trak.contentStart, trak.contentEnd, 'mdia');
+      if (!mdia || readHandlerType(initSegment, mdia) !== 'soun') continue;
+      const minf = findBox(initSegment, mdia.contentStart, mdia.contentEnd, 'minf');
+      const stbl = minf && findBox(initSegment, minf.contentStart, minf.contentEnd, 'stbl');
+      const stsd = stbl && findBox(initSegment, stbl.contentStart, stbl.contentEnd, 'stsd');
+      if (!stsd || stsd.contentStart + 8 > stsd.contentEnd) continue;
+      for (const entry of iterateBoxes(initSegment, stsd.contentStart + 8, stsd.contentEnd)) {
+        if (entry.type !== 'mp4a' && entry.type !== 'enca') continue;
+        const esds = findBox(initSegment, entry.contentStart + 28, entry.contentEnd, 'esds');
+        const asc = esds && parseAudioSpecificConfig(initSegment, esds);
+        if (asc) return asc;
+      }
+    }
+    return null;
+  }
+
+  const esds = findBox(initSegment, 0, initSegment.length, 'esds');
+  return esds ? parseAudioSpecificConfig(initSegment, esds) : null;
+}
+
+function parseAudioSpecificConfig(bytes, esds) {
+  const descriptorStart = esds.contentStart + 4; // esds full-box version/flags
+  if (descriptorStart > esds.contentEnd) return null;
+  const es = readDescriptor(bytes, descriptorStart, esds.contentEnd);
   if (!es || es.tag !== 0x03) return null;
   let childStart = es.payloadStart;
   if (childStart + 3 > es.end) return null;
-  const flags = initSegment[childStart + 2];
+  const flags = bytes[childStart + 2];
   childStart += 3; // ES_ID and flags
   if (flags & 0x80) childStart += 2;
   if (flags & 0x40) {
     if (childStart >= es.end) return null;
-    childStart += 1 + initSegment[childStart];
+    childStart += 1 + bytes[childStart];
   }
   if (flags & 0x20) childStart += 2;
   if (childStart > es.end) return null;
 
   while (childStart < es.end) {
-    const child = readDescriptor(initSegment, childStart, es.end);
+    const child = readDescriptor(bytes, childStart, es.end);
     if (!child || child.end <= childStart) return null;
     if (child.tag === 0x04) {
       const decoderDataStart = child.payloadStart + 13;
       if (decoderDataStart > child.end) return null;
       let descriptorStart = decoderDataStart;
       while (descriptorStart < child.end) {
-        const descriptor = readDescriptor(initSegment, descriptorStart, child.end);
+        const descriptor = readDescriptor(bytes, descriptorStart, child.end);
         if (!descriptor || descriptor.end <= descriptorStart) return null;
         if (descriptor.tag === 0x05 && descriptor.end > descriptor.payloadStart) {
-          return initSegment.slice(descriptor.payloadStart, descriptor.end);
+          return bytes.slice(descriptor.payloadStart, descriptor.end);
         }
         descriptorStart = descriptor.end;
       }
@@ -389,6 +410,17 @@ export function findAudioSpecificConfig(initSegment) {
     childStart = child.end;
   }
   return null;
+}
+
+function readHandlerType(buf, mdia) {
+  const hdlr = findBox(buf, mdia.contentStart, mdia.contentEnd, 'hdlr');
+  if (!hdlr || hdlr.contentStart + 12 > hdlr.contentEnd) return null;
+  return String.fromCharCode(
+    buf[hdlr.contentStart + 8],
+    buf[hdlr.contentStart + 9],
+    buf[hdlr.contentStart + 10],
+    buf[hdlr.contentStart + 11],
+  );
 }
 
 function readDescriptor(bytes, start, limit) {
