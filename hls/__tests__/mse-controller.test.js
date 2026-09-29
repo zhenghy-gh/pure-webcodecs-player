@@ -62,6 +62,7 @@ class FakeMediaSource {
     if (FakeMediaSource.AUTO_OPEN) queueMicrotask(() => this.__fire('sourceopen'));
   }
   addEventListener(t, fn) { if (!this._listeners.has(t)) this._listeners.set(t, []); this._listeners.get(t).push(fn); }
+  removeEventListener(t, fn) { this._listeners.set(t, (this._listeners.get(t) ?? []).filter(listener => listener !== fn)); }
   __fire(t) { for (const fn of [...(this._listeners.get(t) ?? [])]) fn({ type: t }); }
   addSourceBuffer(mime) {
     const sb = new FakeSourceBuffer();
@@ -79,7 +80,7 @@ function makeVideo() {
     src: null,
     setAttribute(k, v) { attrs.set(k, v); },
     getAttribute(k) { return attrs.get(k); },
-    removeAttribute(k) { attrs.delete(k); },
+    removeAttribute(k) { attrs.delete(k); if (k === 'src') this.src = null; },
   };
 }
 
@@ -125,6 +126,59 @@ test('attach：sourceopen resolve、video.src 接 ObjectURL；sourceerror 以 DE
     FakeMediaSource.AUTO_OPEN = true;
     queueMicrotask(() => c2.mediaSource.__fire('sourceerror'));
     await p;
+  });
+});
+
+test('attach：重复挂载先释放旧 MediaSource 与 ObjectURL', async () => {
+  const revoked = [];
+  let nextUrl = 0;
+  await withGlobals({
+    MediaSource: FakeMediaSource,
+    URL: {
+      createObjectURL: () => `blob:${++nextUrl}`,
+      revokeObjectURL: url => revoked.push(url),
+    },
+  }, async () => {
+    const c = new MseController();
+    const firstVideo = makeVideo();
+    const first = await c.attach(firstVideo);
+    const firstMediaSource = first.mediaSource;
+    const secondVideo = makeVideo();
+
+    const second = await c.attach(secondVideo);
+
+    assert.equal(firstMediaSource.endedCalls, 1);
+    assert.deepEqual(revoked, ['blob:1']);
+    assert.equal(firstVideo.getAttribute('src'), undefined);
+    assert.equal(c.mediaSource, second.mediaSource);
+    assert.equal(c._objectUrl, 'blob:2');
+  });
+});
+
+test('attach：重挂期间拒绝未完成的旧 attach 并移除旧事件监听', async () => {
+  const revoked = [];
+  let nextUrl = 0;
+  await withGlobals({
+    MediaSource: FakeMediaSource,
+    URL: {
+      createObjectURL: () => `blob:${++nextUrl}`,
+      revokeObjectURL: url => revoked.push(url),
+    },
+  }, async () => {
+    FakeMediaSource.AUTO_OPEN = false;
+    const c = new MseController();
+    const firstVideo = makeVideo();
+    const firstPromise = c.attach(firstVideo);
+    const firstMediaSource = c.mediaSource;
+    const firstRejected = assert.rejects(firstPromise, e => e.code === 'STATE_ERROR');
+
+    FakeMediaSource.AUTO_OPEN = true;
+    await c.attach(makeVideo());
+    await firstRejected;
+
+    assert.equal(firstMediaSource._listeners.get('sourceopen').length, 0);
+    assert.equal(firstMediaSource._listeners.get('sourceerror').length, 0);
+    assert.deepEqual(revoked, ['blob:1']);
   });
 });
 

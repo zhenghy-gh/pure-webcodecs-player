@@ -26,6 +26,8 @@ export class MseController {
     this.sourceBuffers = {};
     this._queues = {}; // type -> Promise 队列尾部
     this._objectUrl = null;
+    this._attachCleanup = null;
+    this._attachReject = null;
     this._onQuotaEvict = null; // (type, start, end) => void
   }
 
@@ -34,6 +36,7 @@ export class MseController {
    * @returns {Promise<{mediaSource: MediaSource}>}
    */
   attach(video) {
+    if (this.mediaSource || this._objectUrl || this.video) this.destroy();
     // 双环境红线（契约 §0.3）：不裸引用 window；Node 下给出可诊断错误而非 ReferenceError
     const MSE = typeof globalThis.MediaSource === 'function' ? globalThis.MediaSource : null;
     const MMS = typeof globalThis.ManagedMediaSource === 'function' ? globalThis.ManagedMediaSource : null;
@@ -45,10 +48,31 @@ export class MseController {
     return new Promise((resolve, reject) => {
       const ms = new Ctor();
       this.mediaSource = ms;
-      ms.addEventListener('sourceopen', () => resolve({ mediaSource: ms }), { once: true });
-      ms.addEventListener('sourceerror', () => reject(decodeError('MediaSource sourceerror')), { once: true });
-      this._objectUrl = URL.createObjectURL(ms);
-      video.src = this._objectUrl;
+      const cleanup = () => {
+        ms.removeEventListener?.('sourceopen', onOpen);
+        ms.removeEventListener?.('sourceerror', onError);
+        if (this._attachCleanup === cleanup) this._attachCleanup = null;
+        if (this._attachReject === reject) this._attachReject = null;
+      };
+      const onOpen = () => {
+        cleanup();
+        resolve({ mediaSource: ms });
+      };
+      const onError = () => {
+        cleanup();
+        reject(decodeError('MediaSource sourceerror'));
+      };
+      this._attachCleanup = cleanup;
+      this._attachReject = reject;
+      ms.addEventListener('sourceopen', onOpen);
+      ms.addEventListener('sourceerror', onError);
+      try {
+        this._objectUrl = URL.createObjectURL(ms);
+        video.src = this._objectUrl;
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
     });
   }
 
@@ -269,6 +293,10 @@ export class MseController {
   }
 
   destroy() {
+    const attachCleanup = this._attachCleanup;
+    const attachReject = this._attachReject;
+    if (attachCleanup) attachCleanup();
+    if (attachReject) attachReject(stateError('MseController destroyed'));
     for (const type of Object.keys(this.sourceBuffers)) {
       try {
         const sb = this.sourceBuffers[type];

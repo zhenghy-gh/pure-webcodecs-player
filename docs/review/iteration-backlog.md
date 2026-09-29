@@ -345,3 +345,4 @@
 | 111 | CMAF 视频配置搜索隔离 sample entry | 修复 `cmaf/src/isobmff.js`：`findVideoDecoderConfig()` 将配置盒搜索和尺寸校验限制在当前 sample entry 内，避免第一条轨缺配置时误取后续轨的 avcC/hvcC；新增双视频轨回归。全仓 3031/3031、lint 559 文件、check 16/16、双契约审计 PASS。 | 本波 |
 | 111 | CMAF esds 跨盒误识别防御 | 修复 `cmaf/src/isobmff.js`：`findAudioSpecificConfig()` 将扫描范围限制在合法 `esds` 盒内，避免从后续盒误识别 `0x05 + ASC`；新增跨盒误命中回归。全仓 3030/3030、lint 559 文件、check 16/16、双契约审计 PASS。 | 本波 |
 | 112 | CMAF ESDS 嵌套描述符结构解析 | 修复 `cmaf/src/isobmff.js`：按边界解析 ES_Descriptor、ES 可选字段、DecoderConfigDescriptor 与 DSI，避免在 ES_ID/bitrate 等字节中误判伪 `0x05` ASC；新增伪标签与可选字段回归。全仓 3033/3033、lint 559 文件、check 16/16、双契约审计 PASS。 | 本波 |
+| 303 | HLS MSE 重复挂载会话回收 | 修复 `hls/src/mse-controller.js`：再次 attach 前回收旧 SourceBuffer、MediaSource、ObjectURL 与旧 video src；重挂/销毁时解绑 pending sourceopen/sourceerror 并拒绝旧 attach Promise，避免资源泄漏和 Promise 永久 pending。新增完成态与等待态重复挂载回归。`npm run check`（全仓测试、lint、coverage 门槛）、独立 lint、结构/运行时 §2.4 审计均 PASS；单独 `npm test` 重跑被安全分类器拒绝，check 已完成相同全仓测试。 | 本波 |
