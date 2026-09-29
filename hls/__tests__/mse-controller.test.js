@@ -111,7 +111,7 @@ test('attach：无 MSE/ManagedMediaSource 全局 → notSupported；Node 默认�
 });
 
 test('attach：sourceopen resolve、video.src 接 ObjectURL；sourceerror 以 DECODE_ERROR 拒绝', async () => {
-  await withGlobals({ MediaSource: FakeMediaSource, ManagedMediaSource: undefined, URL: { createObjectURL: () => 'blob:fake' } }, async () => {
+  await withGlobals({ MediaSource: FakeMediaSource, ManagedMediaSource: undefined, URL: { createObjectURL: () => 'blob:fake', revokeObjectURL() {} } }, async () => {
     const c = new MseController();
     const video = makeVideo();
     const { mediaSource } = await c.attach(video);
@@ -126,6 +126,9 @@ test('attach：sourceopen resolve、video.src 接 ObjectURL；sourceerror 以 DE
     FakeMediaSource.AUTO_OPEN = true;
     queueMicrotask(() => c2.mediaSource.__fire('sourceerror'));
     await p;
+    assert.equal(c2.mediaSource, null);
+    assert.equal(c2.video, null);
+    assert.equal(c2._objectUrl, null);
   });
 });
 

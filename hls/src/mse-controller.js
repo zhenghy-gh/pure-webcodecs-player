@@ -54,14 +54,16 @@ export class MseController {
         if (this._attachCleanup === cleanup) this._attachCleanup = null;
         if (this._attachReject === reject) this._attachReject = null;
       };
+      const fail = (err) => {
+        cleanup();
+        this.destroy();
+        reject(err);
+      };
       const onOpen = () => {
         cleanup();
         resolve({ mediaSource: ms });
       };
-      const onError = () => {
-        cleanup();
-        reject(decodeError('MediaSource sourceerror'));
-      };
+      const onError = () => fail(decodeError('MediaSource sourceerror'));
       this._attachCleanup = cleanup;
       this._attachReject = reject;
       ms.addEventListener('sourceopen', onOpen);
@@ -70,8 +72,7 @@ export class MseController {
         this._objectUrl = URL.createObjectURL(ms);
         video.src = this._objectUrl;
       } catch (err) {
-        cleanup();
-        reject(err);
+        fail(err);
       }
     });
   }
