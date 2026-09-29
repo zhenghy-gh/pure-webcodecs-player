@@ -365,6 +365,9 @@ describe('SEEKTABLE', () => {
     assert.equal(first.value.timestamp, 0);
     const second = await dem.readSample(1);
     assert.equal(second.timestamp, Math.round((16 / 48000) * 1e6));
+    const eos = await iterator.next();
+    assert.equal(eos.done, true, '直接迭代结束后仍应到达 EOS');
+    assert.equal(await dem.readSample(1), null, 'EOS 后 readSample 应返回 null');
     await dem.stop();
   });
 

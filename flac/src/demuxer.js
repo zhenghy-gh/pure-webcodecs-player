@@ -256,6 +256,7 @@ export class FlacDemuxer extends Demuxer {
     const signal = options?.signal ?? null;
     throwIfAborted(signal, `readSample(${trackId}) aborted`);
     if (!this.#reader || !this.#readerActive) {
+      if (this.stateValue === 'ended') return null;
       this.#reader = this.samples(trackId, options)[Symbol.asyncIterator]();
       this.#readerActive = true;
     }
