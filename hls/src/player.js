@@ -83,6 +83,7 @@ export class HlsPlayer {
     this._destroyed = false;
     /** stall 快速降档回调（绑定引用以便 destroy 时解绑） */
     this._onVideoWaiting = () => this._maybeStallDowngrade();
+    this._attachedVideo = null;
     this._stats = {
       bytesLoaded: 0,
       segmentsLoaded: 0,
@@ -112,6 +113,8 @@ export class HlsPlayer {
    * @param {HTMLVideoElement} video
    */
   async attach(url, video) {
+    this._attachedVideo?.removeEventListener('waiting', this._onVideoWaiting);
+    this._attachedVideo = video;
     this._abortCtrl = new AbortController();
     await this.mse.attach(video);
     // stall 快速降档（评审 §18.3）：监听 waiting，缓冲近零时绕过带宽估计切最低档
@@ -562,7 +565,8 @@ export class HlsPlayer {
     clearTimeout(this._t_waitsegments);
     if (this.transmuxer) this.transmuxer.destroy();
     // 解绑 video waiting 监听（mse.destroy 会清空 video 引用，须先摘除）
-    this.mse.video?.removeEventListener('waiting', this._onVideoWaiting);
+    this._attachedVideo?.removeEventListener('waiting', this._onVideoWaiting);
+    this._attachedVideo = null;
     this.mse.destroy();
     this.events.removeAllListeners();
     this._setState(PlayerState.DESTROYED);
