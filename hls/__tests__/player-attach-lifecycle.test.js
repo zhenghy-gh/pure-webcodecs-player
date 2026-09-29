@@ -157,6 +157,33 @@ test('HlsPlayer：旧 append 失败不得清理新会话缓冲或重试旧数据
 });
 
 
+test('HlsPlayer：旧 trim 完成不得清掉新会话的重入锁', async () => {
+  const player = new HlsPlayer();
+  const pending = [];
+  player.mse = {
+    trim: () => new Promise((resolve, reject) => { pending.push({ resolve, reject }); }),
+  };
+  player.mediaPlaylist = { live: true };
+  player._abortCtrl = new AbortController();
+  player._maybeTrim();
+  assert.equal(pending.length, 1);
+
+  player._sessionId += 1;
+  player._abortCtrl.abort();
+  player._abortCtrl = new AbortController();
+  player._trimming = false;
+  player._maybeTrim();
+  assert.equal(pending.length, 2);
+
+  pending[0].resolve();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(player._trimming, true);
+  pending[1].resolve();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(player._trimming, false);
+});
+
+
 test('HlsPlayer：重复 attach 移除旧 video waiting 监听，destroy 清理最新 video', async () => {
   const player = new HlsPlayer();
   player.mse = { attach: async video => { player.mse.video = video; }, destroy() {} };

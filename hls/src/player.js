@@ -79,6 +79,7 @@ export class HlsPlayer {
     /** 最近一次成功 append 的分片媒体序号（跨清单续播锚点，null=尚未消费任何分片） */
     this._lastAppendedSn = null;
     this._appending = false;
+    this._trimming = false;
     this._loadedInitUrls = new Set();
     this._destroyed = false;
     this._sessionId = 0;
@@ -121,6 +122,7 @@ export class HlsPlayer {
     clearTimeout(this._t_bufferfull);
     clearTimeout(this._t_waitsegments);
     this._appending = false;
+    this._trimming = false;
     this._attachedVideo = video;
     this._abortCtrl = new AbortController();
     await this.mse.attach(video);
@@ -413,17 +415,21 @@ export class HlsPlayer {
    */
   _maybeTrim() {
     if (this._trimming) return;
+    const sessionId = this._sessionId;
+    const signal = this._abortCtrl?.signal;
+    if (!signal || !this._isCurrentSession(sessionId, signal)) return;
     this._trimming = true;
     this.mse
       .trim({
         behindSec: this.config.backBufferSeconds,
         aheadSec: this.config.maxBufferSeconds,
+        signal,
       })
       .catch(() => {
         /* 修剪失败不影响播放流水线 */
       })
       .finally(() => {
-        this._trimming = false;
+        if (this._isCurrentSession(sessionId, signal)) this._trimming = false;
       });
   }
 

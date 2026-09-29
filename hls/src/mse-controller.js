@@ -274,11 +274,12 @@ export class MseController {
    * @param {number} [opts.behindSec] 播放点之前保留的秒数（默认 30）
    * @param {number} [opts.aheadSec]  播放点之后保留的秒数（默认 30）
    * @param {number} [opts.currentTime] 显式播放点（默认 this.video.currentTime），便于测试/无 video 环境
+   * @param {AbortSignal} [opts.signal] 会话取消信号
    * @returns {Promise<Array<{type:string,start:number,end:number}>>} 实际发起移除的区间
    */
-  async trim({ behindSec = 30, aheadSec = 30, currentTime = null } = {}) {
+  async trim({ behindSec = 30, aheadSec = 30, currentTime = null, signal = null } = {}) {
     const t = currentTime != null ? currentTime : this.video ? this.video.currentTime : 0;
-    if (!Number.isFinite(t)) return [];
+    if (!Number.isFinite(t) || signal?.aborted) return [];
     const keepStart = t - behindSec;
     const keepEnd = t + aheadSec;
     const removed = [];
@@ -286,9 +287,11 @@ export class MseController {
       for (const [s, e] of this.getBuffered(type)) {
         // 整段落在窗口左侧（完全在 keepStart 之前）→ 移除整段
         if (e <= keepStart) {
+          if (signal?.aborted) return removed;
           removed.push({ type, start: s, end: e });
           await this.remove(type, s, e);
         } else if (s >= keepEnd) {
+          if (signal?.aborted) return removed;
           // 整段落在窗口右侧（完全在 keepEnd 之后）→ 移除整段
           removed.push({ type, start: s, end: e });
           await this.remove(type, s, e);
