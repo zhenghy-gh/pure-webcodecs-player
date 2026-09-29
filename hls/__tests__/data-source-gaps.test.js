@@ -36,9 +36,9 @@ const TS_BYTES = Uint8Array.from([0x47, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
 const STYP_BYTES = Uint8Array.from([0, 0, 0, 16, 0x73, 0x74, 0x79, 0x70, 1, 2, 3, 4, 5, 6, 7, 8]);
 const JUNK_BYTES = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
 
-function bytesRes(bytes) {
+function bytesRes(bytes, status = 200) {
   if (typeof bytes === 'string') bytes = new TextEncoder().encode(bytes);
-  return new Response(bytes.slice().buffer, { status: 200 });
+  return new Response(bytes.slice().buffer, { status });
 }
 
 test('defaultFetchImpl：无 fetch 时给出注入提示（notSupported）', async (t) => {
@@ -99,6 +99,34 @@ test('EXT-X-MAP：init 分片先于媒体分片入 pendingInit；fMP4 容器探�
   assert.equal(src.bytesWritten, STYP_BYTES.byteLength);
 });
 
+test('start：分片加载失败 → onEnd 收到同一错误且 start 保持拒绝', async () => {
+  const media = [
+    '#EXTM3U',
+    '#EXT-X-TARGETDURATION:4',
+    '#EXTINF:4.0,',
+    'seg0.ts',
+    '#EXT-X-ENDLIST',
+    '',
+  ].join('\n');
+  const source = await createHlsSource('http://fixture.internal/fail.m3u8', {
+    fetchImpl: async (url) => String(url).endsWith('.m3u8')
+      ? bytesRes(media)
+      : bytesRes(new Uint8Array(0), 404),
+  });
+  const ended = [];
+  source.onEnd = (error) => ended.push(error);
+
+  let rejected;
+  try {
+    await source.start();
+  } catch (error) {
+    rejected = error;
+  }
+
+  assert.equal(ended.length, 1, '失败也必须结束一次');
+  assert.equal(ended[0], rejected, '结束回调与 start 拒绝应共享同一错误');
+  assert.equal(rejected.code, 'SOURCE_ERROR');
+});
 test('detectContainer：既非 TS 也非 ISO-BMFF → unknown；close() 不再启动后续分片', async () => {
   const MEDIA_3SEG = [
     '#EXTM3U',

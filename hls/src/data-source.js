@@ -79,35 +79,40 @@ export class HlsChunkSource {
     const pl = this.mediaPlaylist;
     let firstSegmentChecked = false;
 
-    for (const seg of pl.segments) {
-      if (this._aborted) break;
+    try {
+      for (const seg of pl.segments) {
+        if (this._aborted) break;
 
-      // EXT-X-MAP（fMP4 init）：先于媒体分片推送
-      if (seg.map && !this.pendingInit) {
-        const res = await this._loader.load(seg.map.uri, {
-          byteRange: seg.map.byteRange || undefined,
+        // EXT-X-MAP（fMP4 init）：先于媒体分片推送
+        if (seg.map && !this.pendingInit) {
+          const res = await this._loader.load(seg.map.uri, {
+            byteRange: seg.map.byteRange || undefined,
+          });
+          this.pendingInit = { uri: seg.map.uri, bytes: res.data };
+        }
+
+        let data = await this._loader.load(seg.url, {
+          byteRange: seg.byteRange || undefined,
         });
-        this.pendingInit = { uri: seg.map.uri, bytes: res.data };
+
+        // 解密层（§2.6）
+        if (seg.key && seg.key.method !== 'NONE') {
+          data = { ...data, data: await this._decrypter.decryptSegment(data.data, seg.key, { sn: seg.sn }) };
+        }
+
+        // 首个分片探测容器形态
+        if (!firstSegmentChecked) {
+          firstSegmentChecked = true;
+          this.container = detectContainer(data.data);
+        }
+
+        this.write(data.data);
       }
-
-      let data = await this._loader.load(seg.url, {
-        byteRange: seg.byteRange || undefined,
-      });
-
-      // 解密层（§2.6）
-      if (seg.key && seg.key.method !== 'NONE') {
-        data = { ...data, data: await this._decrypter.decryptSegment(data.data, seg.key, { sn: seg.sn }) };
-      }
-
-      // 首个分片探测容器形态
-      if (!firstSegmentChecked) {
-        firstSegmentChecked = true;
-        this.container = detectContainer(data.data);
-      }
-
-      this.write(data.data);
+      this.end();
+    } catch (error) {
+      this.end(error);
+      throw error;
     }
-    this.end();
   }
 
   /** 中止拉取 */
