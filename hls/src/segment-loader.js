@@ -164,7 +164,14 @@ export class SegmentLoader {
         if (lastErr instanceof LoadError && lastErr.fatal) break;
         if (attempt < this.maxRetry) {
           log.warn(`加载失败(${attempt + 1}/${this.maxRetry})，${this.retryDelayMs}ms 后重试:`, lastErr.message);
-          await delay(this.retryDelayMs * Math.pow(2, attempt), signal);
+          try {
+            await delay(this.retryDelayMs * Math.pow(2, attempt), signal);
+          } catch (delayErr) {
+            if (signal?.aborted) {
+              throw new LoadError(ErrorCode.ABORTED, '请求已被外部取消', { url, fatal: true });
+            }
+            throw delayErr;
+          }
         }
       } finally {
         bounded?.done();

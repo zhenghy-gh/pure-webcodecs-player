@@ -74,7 +74,7 @@ test('重试退避正常完成后移除 abort 监听器', async () => {
   await assert.rejects(loader.load('https://cdn.example.test/seg.ts', { signal }), /网络错误/);
   assert.equal(listeners.size, 0);
 });
-test('重试退避期间外部中止 → delay 的 abort 监听触发，透传 AbortError', async () => {
+test('重试退避期间外部中止 → 统一返回 ABORTED LoadError', async () => {
   const ctrl = new AbortController();
   const loader = new SegmentLoader({
     fetchImpl: async () => {
@@ -86,11 +86,11 @@ test('重试退避期间外部中止 → delay 的 abort 监听触发，透传 A
   setTimeout(() => ctrl.abort(), 15);
   await assert.rejects(
     loader.load('https://cdn.example.test/seg.ts', { signal: ctrl.signal }),
-    (e) => e.name === 'AbortError',
+    (e) => e instanceof LoadError && e.code === 'ABORTED' && e.fatal,
   );
 });
 
-test('delay：进入退避前 signal 已中止 → 立即 reject AbortError', async () => {
+test('delay：进入退避前 signal 已中止 → 统一返回 ABORTED LoadError', async () => {
   const ctrl = new AbortController();
   const loader = new SegmentLoader({
     fetchImpl: async () => {
@@ -102,6 +102,6 @@ test('delay：进入退避前 signal 已中止 → 立即 reject AbortError', as
   });
   await assert.rejects(
     loader.load('https://cdn.example.test/seg.ts', { signal: ctrl.signal }),
-    (e) => e.name === 'AbortError',
+    (e) => e instanceof LoadError && e.code === 'ABORTED' && e.fatal,
   );
 });
