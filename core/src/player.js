@@ -499,6 +499,7 @@ export class Player extends Emitter {
         if (count >= this.options.prebufferMaxSamples) break;
       }
     } catch (error) {
+      if (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING) return;
       const e = asPlayerError(error, '起播缓冲失败');
       this._transitionSafe(PLAYER_STATES.ERROR);
       this.emit('error', e);
@@ -602,6 +603,7 @@ export class Player extends Emitter {
           if (!await this._deliver(sample, id, token)) return;
           await this._backpressure(token);
         } catch (error) {
+          if (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING) return;
           const e = asPlayerError(error, '读取样本失败');
           this._transitionSafe(PLAYER_STATES.ERROR);
           this.emit('error', e);

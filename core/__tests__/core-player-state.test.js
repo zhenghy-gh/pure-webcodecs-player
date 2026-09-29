@@ -187,6 +187,37 @@ const delayedReadSettle = async () => {
 
 /* ------------------------------ 生命周期竞态 ------------------------------ */
 
+test('起播缓冲：pause 后迟到的 readSample 拒绝不得进入 error 态', async () => {
+  let rejectRead;
+  const player = new Player({
+    capabilities: caps,
+    demuxerFactory: async () => ({
+      open: async () => ({
+        container: 'mkv',
+        tracks: [{ id: 1, type: 'video', codec: 'avc1.42E01E' }],
+        durationUs: 800000,
+        seekable: true,
+        live: false,
+      }),
+      readSample: async () => new Promise((_, reject) => { rejectRead = reject; }),
+      destroy: async () => {},
+    }),
+    pipelineFactory: async () => ({ destroy: async () => {} }),
+  });
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  await player.load(new Uint8Array([1]));
+  const playing = player.play();
+  await new Promise((resolve) => setImmediate(resolve));
+  player.pause();
+  rejectRead(new Error('stale prebuffer read failed'));
+  await assert.doesNotReject(() => playing);
+  assert.equal(player.state, PLAYER_STATES.PAUSED);
+  assert.equal(errors.length, 0);
+  await player.destroy();
+});
+
+
 test('样本泵：pause 后迟到的 readSample 不进入管线、统计或事件', async () => {
   const { player, input, pushes } = makeDelayedSamplePlayer();
   const samples = [];
@@ -202,6 +233,38 @@ test('样本泵：pause 后迟到的 readSample 不进入管线、统计或事�
   assert.equal(pushes.length, 0);
   assert.equal(samples.length, 0);
   assert.equal(player.stats.samplesDecoded, 0);
+  await player.destroy();
+});
+
+test('样本泵：pause 后迟到的 readSample 拒绝不得进入 error 态', async () => {
+  let rejectRead;
+  const player = new Player({
+    capabilities: caps,
+    bufferTargetUs: 0,
+    demuxerFactory: async () => ({
+      open: async () => ({
+        container: 'mkv',
+        tracks: [{ id: 1, type: 'video', codec: 'avc1.42E01E' }],
+        durationUs: 800000,
+        seekable: true,
+        live: false,
+      }),
+      readSample: async () => new Promise((_, reject) => { rejectRead = reject; }),
+      destroy: async () => {},
+    }),
+    pipelineFactory: async () => ({ destroy: async () => {} }),
+  });
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  await player.load(new Uint8Array([1]));
+  void player.play();
+  await new Promise((resolve) => setImmediate(resolve));
+  player.pause();
+  rejectRead(new Error('stale read failed'));
+  await delayedReadSettle();
+
+  assert.equal(player.state, PLAYER_STATES.PAUSED);
+  assert.equal(errors.length, 0);
   await player.destroy();
 });
 
