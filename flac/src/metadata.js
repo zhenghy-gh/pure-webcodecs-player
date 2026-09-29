@@ -159,21 +159,31 @@ function parseVorbisComment(b) {
 function parsePicture(b) {
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
   let p = 0;
+  const readU32 = (label) => {
+    if (p + 4 > b.length) throw parseError(`PICTURE ${label}字段截断`);
+    const value = dv.getUint32(p);
+    p += 4;
+    return value;
+  };
+  const readBytes = (length, label) => {
+    if (length > b.length - p) throw parseError(`PICTURE ${label}数据截断`);
+    const value = b.subarray(p, p + length);
+    p += length;
+    return value;
+  };
+
   // pictureType u32、mimeLen u32、descLen u32、宽/高/深度/色数 u32×4、dataLen u32
-  p += 4; // picture type（front cover 等，暂不入模型）
-  const mimeLen = dv.getUint32(p); p += 4;
-  const mime = textDecoder.decode(b.subarray(p, p + mimeLen)); p += mimeLen;
-  const descLen = dv.getUint32(p); p += 4;
-  const description = textDecoder.decode(b.subarray(p, p + descLen)); p += descLen;
+  readU32('类型');
+  const mime = textDecoder.decode(readBytes(readU32('MIME 长度'), 'MIME'));
+  const description = textDecoder.decode(readBytes(readU32('描述长度'), '描述'));
   // 规范 §7.15：width/height 位于变长 mime/description 之后的固定 16 字节段
-  // （width(4) height(4) depth(4) colors(4)）。旧实现从固定偏移 8/12 读取——
-  // 那里通常是 mime 内容本身（如 'imag' 的 ASCII），非空 mime 时得到乱值；
-  // 新用例（PICTURE 类型矩阵）暴露该缺陷，此处改为按当前游标读取后一并跳过 16 字节。
-  const width = dv.getUint32(p);
-  const height = dv.getUint32(p + 4);
-  p += 16;
-  const dataLen = dv.getUint32(p); p += 4;
-  return { mime, description, width, height, data: b.slice(p, p + dataLen) };
+  // （width(4) height(4) depth(4) colors(4)）。
+  const width = readU32('宽度');
+  const height = readU32('高度');
+  readU32('深度');
+  readU32('颜色数');
+  const data = readBytes(readU32('图片长度'), '图片');
+  return { mime, description, width, height, data: data.slice() };
 }
 
 function hex(arr) {

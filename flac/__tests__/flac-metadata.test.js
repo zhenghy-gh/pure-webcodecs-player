@@ -244,6 +244,28 @@ describe('PICTURE 块', () => {
     assert.equal(m.picture.data.length, 0);
   });
 
+  test('声明图片数据超出块体 → 抛 PARSE_ERROR 而非静默截短', () => {
+    const body = pictureBody({
+      mime: '', description: '', width: 100, height: 80,
+      data: new Uint8Array([1, 2, 3]),
+    });
+    body[body.length - 7] = 0;
+    body[body.length - 6] = 0;
+    body[body.length - 5] = 0;
+    body[body.length - 4] = 10;
+    assert.throws(
+      () => parseMetadata(buildFlac({ streamInfo: {}, extraBlocks: [{ type: 6, body }] })),
+      (error) => error.code === 'PARSE_ERROR' && /图片数据截断/.test(error.message),
+    );
+  });
+
+  test('PICTURE 定长字段截断 → 抛 PARSE_ERROR 而非原生 RangeError', () => {
+    assert.throws(
+      () => parseMetadata(buildFlac({ streamInfo: {}, extraBlocks: [{ type: 6, body: new Uint8Array(0) }] })),
+      (error) => error.code === 'PARSE_ERROR' && /PICTURE 类型字段截断/.test(error.message),
+    );
+  });
+
   test('非零宽高与含 0x00/0xff 的二进制数据往返', () => {
     const data = new Uint8Array([0x00, 0xff, 0x10, 0x00, 0xab, 0xff]);
     const body = pictureBody({ mime: 'image/jpeg', width: 640, height: 480, depth: 32, colors: 256, data });
