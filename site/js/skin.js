@@ -37,7 +37,7 @@ let stack;
 /** 非阻塞提示（§8.3）：info/success 3s、warn 5s、error 不自动关且 role=alert */
 export function toast({ type = 'info', title, detail = '', timeout } = {}) {
   if (typeof document === 'undefined') return () => {};
-  if (!stack) {
+  if (!stack || !stack.isConnected) {
     stack = Object.assign(document.createElement('div'), { className: 'toast-stack' });
     stack.setAttribute('aria-live', 'polite');
     document.body.appendChild(stack);
