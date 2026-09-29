@@ -631,8 +631,8 @@ export class HlsPlayer {
     this._attachedVideo?.removeEventListener('waiting', this._onVideoWaiting);
     this._attachedVideo = null;
     this.mse.destroy();
-    this.events.removeAllListeners();
     this._setState(PlayerState.DESTROYED);
+    this.events.removeAllListeners();
   }
 }
 

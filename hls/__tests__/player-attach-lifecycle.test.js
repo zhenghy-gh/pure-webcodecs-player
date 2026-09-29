@@ -194,6 +194,18 @@ test('HlsPlayer：destroy 后拒绝 attach 与 loadSource，保持 DESTROYED 状
 });
 
 
+test('HlsPlayer：destroy 后发布 DESTROYED 状态变更再清理监听', () => {
+  const player = new HlsPlayer();
+  const states = [];
+  player.on('statechange', ({ state }) => states.push(state));
+
+  player.destroy();
+
+  assert.deepEqual(states, ['destroyed']);
+  assert.equal(player.state, 'destroyed');
+});
+
+
 test('HlsPlayer：未挂载 video 直接 loadSource 返回 STATE_ERROR', async () => {
   const player = new HlsPlayer();
 
