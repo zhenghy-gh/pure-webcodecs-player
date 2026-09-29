@@ -217,6 +217,30 @@ test('HlsPlayer：未挂载 video 直接 loadSource 返回 STATE_ERROR', async (
 });
 
 
+test('HlsPlayer：同一挂载会话内旧 loadSource 响应不得覆盖新源', async () => {
+  const player = new HlsPlayer();
+  player._abortCtrl = new AbortController();
+  player._startPipeline = () => {};
+  const pending = [];
+  player.loader = {
+    loadText: url => new Promise((resolve, reject) => pending.push({ url, resolve, reject })),
+  };
+  const errors = [];
+  player.on('error', error => errors.push(error));
+  const oldLoad = player.loadSource('http://x/old.m3u8');
+  const newLoad = player.loadSource('http://x/new.m3u8');
+
+  pending[1].resolve('#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nnew.m4s\n#EXT-X-ENDLIST');
+  await newLoad;
+  pending[0].reject(new Error('old source failed'));
+  await oldLoad;
+
+  assert.equal(player.playlistUrl, 'http://x/new.m3u8');
+  assert.equal(player.mediaPlaylist.segments[0].url, 'http://x/new.m4s');
+  assert.equal(errors.length, 0);
+});
+
+
 test('HlsPlayer：destroy 期间完成的 attach 不得重新绑定 video 监听', async () => {
   const player = new HlsPlayer();
   let resolveAttach;

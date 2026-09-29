@@ -83,6 +83,7 @@ export class HlsPlayer {
     this._loadedInitUrls = new Set();
     this._destroyed = false;
     this._sessionId = 0;
+    this._sourceId = 0;
     /** stall 快速降档回调（绑定引用以便 destroy 时解绑） */
     this._onVideoWaiting = () => this._maybeStallDowngrade();
     this._attachedVideo = null;
@@ -140,12 +141,13 @@ export class HlsPlayer {
     if (this._destroyed) throw stateError('播放器已销毁');
     if (!this._abortCtrl) throw stateError('播放器尚未挂载 video');
     const sessionId = this._sessionId;
+    const sourceId = ++this._sourceId;
     const signal = this._abortCtrl.signal;
     try {
       this._setState(PlayerState.LOADING);
       this.manifestUrl = url;
       const text = await this.loader.loadText(url, signal);
-      if (!this._isCurrentSession(sessionId, signal)) return;
+      if (!this._isCurrentSource(sessionId, sourceId, signal)) return;
       let parsed;
       try {
         parsed =
@@ -159,10 +161,10 @@ export class HlsPlayer {
         this._emit('manifest', { levels: parsed.levels, audioTracks: parsed.audioTracks });
         const lvl = this.levels.current;
         this.playlistUrl = lvl.url;
-        return this._loadMediaPlaylist(this.playlistUrl, {}, sessionId);
+        return this._loadMediaPlaylist(this.playlistUrl, {}, sessionId, sourceId);
       }
       // 直接是 media playlist（单码率）
-      if (!this._isCurrentSession(sessionId, signal)) return;
+      if (!this._isCurrentSource(sessionId, sourceId, signal)) return;
       this.mediaPlaylist = parsed;
       this._checkTdViolation(parsed);
       this.playlistUrl = url;
@@ -170,17 +172,17 @@ export class HlsPlayer {
       this._startPipeline();
       return parsed;
     } catch (err) {
-      if (!this._isCurrentSession(sessionId, signal)) return;
+      if (!this._isCurrentSource(sessionId, sourceId, signal)) return;
       this._fail(err);
       throw err;
     }
   }
 
-  async _loadMediaPlaylist(url, opts = {}, sessionId = this._sessionId) {
+  async _loadMediaPlaylist(url, opts = {}, sessionId = this._sessionId, sourceId = null) {
     const signal = this._abortCtrl.signal;
     try {
       const text = await this.loader.loadText(url, signal);
-      if (!this._isCurrentSession(sessionId, signal)) return;
+      if (!this._isCurrentSource(sessionId, sourceId, signal)) return;
       const parsed = parseMedia(text, url);
       this.playlistUrl = url; // 切档/续播后轮询目标必须跟随当前档位（直播 ABR 切换后 reload 旧档是错的）
       // 续播放位置：优先按"最后装载 sn+1"衔接（直播/切档），VOD 按播放时刻映射，
@@ -204,7 +206,7 @@ export class HlsPlayer {
       });
       this._startPipeline(resumeIdx);
     } catch (err) {
-      if (!this._isCurrentSession(sessionId, signal)) return;
+      if (!this._isCurrentSource(sessionId, sourceId, signal)) return;
       this._fail(err);
       throw err;
     }
@@ -212,6 +214,10 @@ export class HlsPlayer {
 
   _isCurrentSession(sessionId, signal) {
     return !this._destroyed && sessionId === this._sessionId && !signal.aborted;
+  }
+
+  _isCurrentSource(sessionId, sourceId, signal) {
+    return this._isCurrentSession(sessionId, signal) && (sourceId == null || sourceId === this._sourceId);
   }
 
   /* ------------------------------------------------------------------ */
