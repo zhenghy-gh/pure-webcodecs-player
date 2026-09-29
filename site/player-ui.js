@@ -247,9 +247,9 @@ export function createPlayerUI(options = {}) {
   }
   function toggleFullscreen() {
     const target = resolveEl(options.fullscreenEl) || root.parentElement || root;
-    if (doc.fullscreenElement) { void doc.exitFullscreen(); return; }
+    if (doc.fullscreenElement) { void Promise.resolve(doc.exitFullscreen()).catch(() => {}); return; }
     const anyTarget = /** @type {any} */ (target);
-    if (anyTarget.requestFullscreen) void anyTarget.requestFullscreen();
+    if (anyTarget.requestFullscreen) void Promise.resolve(anyTarget.requestFullscreen()).catch(() => {});
   }
 
   /* ---- 进度条与音量条的指针交互（Pointer Events，兼容触屏） ---- */
