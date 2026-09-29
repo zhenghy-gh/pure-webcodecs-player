@@ -246,7 +246,13 @@ export function createPlayerUI(options = {}) {
       statsBox.innerHTML = '<span class="pui__stats-empty">当前播放器未提供统计信息（适配器未实现 getStats）。</span>';
       return;
     }
-    const rows = adapter.getStats() || [];
+    let rows;
+    try {
+      rows = adapter.getStats() || [];
+    } catch (err) {
+      statsBox.innerHTML = `<span class="pui__stats-empty">统计信息暂不可用：${esc(err?.message || String(err))}</span>`;
+      return;
+    }
     if (!rows.length) { statsBox.innerHTML = '<span class="pui__stats-empty">暂无统计数据。</span>'; return; }
     statsBox.innerHTML =
       '<div class="pui__stats-grid">' +

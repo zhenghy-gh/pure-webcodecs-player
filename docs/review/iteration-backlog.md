@@ -257,6 +257,7 @@
 | 292 | Player UI 全屏拒绝 Promise 收敛 | `site/player-ui.js` 的进入/退出全屏调用改用 `Promise.resolve(...).catch(() => {})` 消费拒绝，兼容浏览器权限/手势限制以及同步返回的测试桩，避免产生未处理 Promise rejection。全仓测试、lint、check、双契约审计 PASS；MP4/HLS 真实 Chrome smoke 2/2 PASS。 | 本波 |
 | 293 | Player UI 播放拒绝 Promise 收敛 | `site/player-ui.js` 的 `togglePlay()` 保持同步调用 `adapter.play()`，同时捕获同步异常并消费异步拒绝，避免浏览器自动播放策略或适配器失败造成未处理 Promise rejection。全仓测试、lint、check、双契约审计 PASS；MP4/HLS 真实 Chrome smoke 2/2 PASS。 | 本波 |
 | 294 | 皮肤全屏会话清理 | `site/js/skin.js` 为每个全屏 stage 建立可收尾会话：全屏请求同步抛错或 Promise 拒绝时恢复 controls、移除 `fullscreenchange` 监听器；正常退出同样清理监听器与自动隐藏定时器，避免动态页面重复全屏后残留闭包和 DOM 状态。全仓测试、lint、check、双契约审计 PASS；MP4/HLS 真实 Chrome smoke 2/2 PASS。 | 本波 |
+| 295 | Player UI 统计异常隔离 | `site/player-ui.js` 的统计面板刷新捕获适配器 `getStats()` 同步异常，将经过转义的错误显示在面板内并保持定时刷新，避免第三方统计实现抛错打断按钮事件或定时器回调。全仓测试、lint、check、双契约审计 PASS；MP4/HLS 真实 Chrome smoke 2/2 PASS。 | 本波 |
 
 | 140 | MKV 无限长度源尾部半截元素头回归 | 扩展 `mkv/__tests__/demuxer.test.js`：使用 size=Infinity 的流式数据源，在合法 WebM 后追加截断的 Void 元素头，验证 `open()` 将尾部残缺按流尾处理并保持媒体信息可用。全仓 2931/2931、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
