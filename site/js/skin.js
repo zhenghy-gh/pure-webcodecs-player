@@ -107,7 +107,7 @@ export function bindRange(el, h = {}) {
 /* 全屏包装（§7.2⑦）：对 stage 请求全屏；进入前把 .controls 移入 stage 悬浮，
    退出还原 DOM 位；3s 无操作自动隐藏；fullscreenchange 同步按钮图标。 */
 let fsKeep = null;
-const fsH = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+const fsH = new WeakMap();
 
 function syncFsIcons() {
   const fs = typeof document !== 'undefined' && document.fullscreenElement;
@@ -127,31 +127,57 @@ function armHide(stageEl) {
 export function toggleFullscreen(stageEl) {
   const doc = typeof document !== 'undefined' ? document : undefined;
   if (!stageEl || !doc) return;
-  if (doc.fullscreenElement) { doc.exitFullscreen?.(); return; }
+  if (doc.fullscreenElement) { void Promise.resolve(doc.exitFullscreen?.()).catch(() => {}); return; }
   const req = stageEl.requestFullscreen || stageEl.webkitRequestFullscreen;
   if (!req) return;
   const c = $('.controls', stageEl) || $('.demo__controls');
-  let hideDisposer = null;                             // 本 stage 当前的自动隐藏控制器
+  let hideDisposer = null;
   if (c && c.parentElement !== stageEl && !fsKeep) {
     fsKeep = { parent: c.parentElement, next: c.nextSibling, controls: c };
     stageEl.appendChild(c);
   }
-  if (fsH && !fsH.has(stageEl)) {
-    fsH.set(stageEl, () => {
+  const restore = () => {
+    if (fsKeep && fsKeep.controls.parentElement === stageEl) {
+      fsKeep.parent.insertBefore(fsKeep.controls, fsKeep.next);
+      stageEl.classList.remove('is-controls-hidden');
+      fsKeep = null;
+    }
+    hideDisposer?.();
+    hideDisposer = null;
+  };
+  let handler = fsH.get(stageEl);
+  if (!handler) {
+    handler = () => {
       const active = doc.fullscreenElement === stageEl;
       stageEl.classList.toggle('is-fullscreen', active);
-      if (active) { hideDisposer?.(); hideDisposer = armHide(stageEl); }
-      else if (fsKeep && fsKeep.controls.parentElement === stageEl) {
-        fsKeep.parent.insertBefore(fsKeep.controls, fsKeep.next);
-        stageEl.classList.remove('is-controls-hidden');
-        fsKeep = null;
-        hideDisposer?.(); hideDisposer = null;
+      if (active) {
+        hideDisposer?.();
+        hideDisposer = armHide(stageEl);
+      } else {
+        restore();
+        doc.removeEventListener('fullscreenchange', handler);
+        fsH.delete(stageEl);
       }
       syncFsIcons();
-    });
-    doc.addEventListener('fullscreenchange', fsH.get(stageEl));
+    };
+    fsH.set(stageEl, handler);
+    doc.addEventListener('fullscreenchange', handler);
   }
-  Promise.resolve(req.call(stageEl)).catch(() => {});
+  const fail = () => {
+    if (fsH.get(stageEl) !== handler) return;
+    restore();
+    doc.removeEventListener('fullscreenchange', handler);
+    fsH.delete(stageEl);
+    syncFsIcons();
+  };
+  let result;
+  try {
+    result = req.call(stageEl);
+  } catch {
+    fail();
+    return;
+  }
+  void Promise.resolve(result).catch(fail);
 }
 
 /** 快捷键注册器 Skin.bindKeys(map)：key/code → fn；可编辑元素内不触发 */
