@@ -185,6 +185,20 @@ test('attach：重挂期间拒绝未完成的旧 attach 并移除旧事件监听
   });
 });
 
+test('attach：MediaSource 构造失败不留下半初始化 video 引用', async () => {
+  class BrokenMediaSource {
+    constructor() { throw new Error('constructor failed'); }
+  }
+  await withGlobals({ MediaSource: BrokenMediaSource, URL: { createObjectURL() { assert.fail('不应创建 ObjectURL'); } } }, async () => {
+    const c = new MseController();
+    const video = makeVideo();
+    await assert.rejects(c.attach(video), /constructor failed/);
+    assert.equal(c.video, null);
+    assert.equal(c.mediaSource, null);
+    assert.equal(c._objectUrl, null);
+  });
+});
+
 test('attach：ManagedMediaSource 优先于 MediaSource（iOS Safari 路线）', async () => {
   class FakeMMS extends FakeMediaSource {}
   await withGlobals({

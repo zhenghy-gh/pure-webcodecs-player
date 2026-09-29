@@ -44,9 +44,15 @@ export class MseController {
       throw notSupported('当前环境不支持 MSE（MediaSource），请改用 WebCodecs 渲染路线');
     }
     const Ctor = MMS || MSE;
-    this.video = video;
     return new Promise((resolve, reject) => {
-      const ms = new Ctor();
+      let ms;
+      try {
+        ms = new Ctor();
+      } catch (err) {
+        reject(err);
+        return;
+      }
+      this.video = video;
       this.mediaSource = ms;
       const cleanup = () => {
         ms.removeEventListener?.('sourceopen', onOpen);
