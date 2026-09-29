@@ -32,7 +32,7 @@ import {
   aacCodecStringFromAsc,
   fallbackCodecString,
 } from '../../core/src/index.js';
-import { parseError, probeFailed, stateError, seekUnsupported } from '../../core/src/errors.js';
+import { parseError, probeFailed, sourceError, stateError, seekUnsupported } from '../../core/src/errors.js';
 import { TsStreamEngine } from './ts-stream-engine.js';
 
 /** 顺序泵的读取块大小 */
@@ -93,6 +93,8 @@ export class TsDemuxer extends Demuxer {
     this._pos = 0;
     /** @type {boolean} 泵是否已读到 EOF */
     this._sourceEof = false;
+    /** @type {Error|null} DataSource 读取失败；EOF 与 I/O 错误严格区分 */
+    this._sourceError = null;
     /** @type {Promise<void>|null} 单飞泵互斥 */
     this._pumping = null;
     /* ---- 直播推送模式（start()+'sample'，§2.2 可选入口） ---- */
@@ -301,6 +303,7 @@ export class TsDemuxer extends Demuxer {
       const progressed = await this._pumpOnce();
       if (!progressed) break;
     }
+    if (this._sourceError && this._psiSeen()) throw this._sourceError;
     if (this.engine.tracks.length === 0 && !this._psiSeen()) {
       if (this._sourceEof) {
         throw parseError('TS：数据先于任何 PAT/PMT 结束，未能识别出轨道');
@@ -355,7 +358,10 @@ export class TsDemuxer extends Demuxer {
     let data;
     try {
       data = await src.read(this._pos, want);
-    } catch {
+    } catch (error) {
+      this._sourceError = error?.code === 'SOURCE_ERROR'
+        ? error
+        : sourceError(`TS 数据源读取失败（offset=${this._pos}）`, { cause: error });
       this._finishSource();
       return false;
     }
@@ -396,7 +402,10 @@ export class TsDemuxer extends Demuxer {
       // 本轨已空且源已尽 → 该轨 EOS（按轨独立，互不阻塞）
       if (this._eos) {
         const remain = this._queues.get(trackId);
-        if (!remain || remain.length === 0) return;
+        if (!remain || remain.length === 0) {
+          if (this._sourceError) throw this._sourceError;
+          return;
+        }
       }
       if (this._mode === 'datasource' && !this._sourceEof) {
         await this._pumpOnce();

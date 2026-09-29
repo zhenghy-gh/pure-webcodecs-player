@@ -180,7 +180,43 @@ test('泵：源返回空数据 → 视为 EOF 收尾 → 同一 PARSE_ERROR 面'
   );
 });
 
-/* ------------------------------ start() 直播推送 ------------------------------ */
+
+test('泵：已有 PSI 后源 read 抛错 → readSample 暴露 SOURCE_ERROR 而非正常 EOS', async () => {
+  const bytes = stdFile();
+  const first = new Uint8Array(64 * 1024);
+  first.set(bytes);
+  let reads = 0;
+  const src = {
+    size: Infinity,
+    read: async () => {
+      reads++;
+      if (reads === 1) return first;
+      throw new Error('io down after tracks');
+    },
+  };
+  const d = new TsDemuxer(src);
+  const errors = [];
+  d.on('error', (error) => errors.push(error));
+  await d.open();
+
+  let rejected;
+  for (;;) {
+    try {
+      const sample = await d.readSample(VIDEO_PID);
+      if (sample === null) assert.fail('读取失败不应伪装成 EOS');
+    } catch (error) {
+      rejected = error;
+      break;
+    }
+  }
+  assert.equal(rejected.code, 'SOURCE_ERROR');
+  assert.match(rejected.message, /数据源读取失败/);
+  assert.equal(rejected.detail?.cause?.message, 'io down after tracks');
+  assert.equal(errors.at(-1), rejected);
+  await d.destroy();
+});
+
+
 
 test('start()：pause 期间不吐样本，resume 后恢复', async () => {
   const d = await createTsDemuxer(stdFile());
