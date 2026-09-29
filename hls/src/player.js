@@ -138,6 +138,7 @@ export class HlsPlayer {
   /** 加载（或重定向到新的）m3u8 源 */
   async loadSource(url) {
     if (this._destroyed) throw stateError('播放器已销毁');
+    if (!this._abortCtrl) throw stateError('播放器尚未挂载 video');
     const sessionId = this._sessionId;
     const signal = this._abortCtrl.signal;
     try {

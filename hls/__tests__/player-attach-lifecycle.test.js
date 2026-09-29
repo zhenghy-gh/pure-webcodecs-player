@@ -194,6 +194,17 @@ test('HlsPlayer：destroy 后拒绝 attach 与 loadSource，保持 DESTROYED 状
 });
 
 
+test('HlsPlayer：未挂载 video 直接 loadSource 返回 STATE_ERROR', async () => {
+  const player = new HlsPlayer();
+
+  await assert.rejects(
+    player.loadSource('http://x/unattached.m3u8'),
+    error => error.code === 'STATE_ERROR'
+  );
+  assert.equal(player.state, 'idle');
+});
+
+
 test('HlsPlayer：destroy 期间完成的 attach 不得重新绑定 video 监听', async () => {
   const player = new HlsPlayer();
   let resolveAttach;
