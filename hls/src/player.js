@@ -81,6 +81,7 @@ export class HlsPlayer {
     this._appending = false;
     this._loadedInitUrls = new Set();
     this._destroyed = false;
+    this._sessionId = 0;
     /** stall 快速降档回调（绑定引用以便 destroy 时解绑） */
     this._onVideoWaiting = () => this._maybeStallDowngrade();
     this._attachedVideo = null;
@@ -114,6 +115,7 @@ export class HlsPlayer {
    */
   async attach(url, video) {
     this._attachedVideo?.removeEventListener('waiting', this._onVideoWaiting);
+    this._sessionId += 1;
     this._abortCtrl?.abort();
     clearTimeout(this._pollTimer);
     clearTimeout(this._t_bufferfull);
@@ -128,11 +130,13 @@ export class HlsPlayer {
 
   /** 加载（或重定向到新的）m3u8 源 */
   async loadSource(url) {
+    const sessionId = this._sessionId;
+    const signal = this._abortCtrl.signal;
     try {
       this._setState(PlayerState.LOADING);
       this.manifestUrl = url;
-      const signal = this._abortCtrl.signal;
       const text = await this.loader.loadText(url, signal);
+      if (!this._isCurrentSession(sessionId, signal)) return;
       let parsed;
       try {
         parsed =
@@ -146,9 +150,10 @@ export class HlsPlayer {
         this._emit('manifest', { levels: parsed.levels, audioTracks: parsed.audioTracks });
         const lvl = this.levels.current;
         this.playlistUrl = lvl.url;
-        return this._loadMediaPlaylist(this.playlistUrl);
+        return this._loadMediaPlaylist(this.playlistUrl, {}, sessionId);
       }
       // 直接是 media playlist（单码率）
+      if (!this._isCurrentSession(sessionId, signal)) return;
       this.mediaPlaylist = parsed;
       this._checkTdViolation(parsed);
       this.playlistUrl = url;
@@ -156,14 +161,17 @@ export class HlsPlayer {
       this._startPipeline();
       return parsed;
     } catch (err) {
+      if (!this._isCurrentSession(sessionId, signal)) return;
       this._fail(err);
       throw err;
     }
   }
 
-  async _loadMediaPlaylist(url, opts = {}) {
+  async _loadMediaPlaylist(url, opts = {}, sessionId = this._sessionId) {
+    const signal = this._abortCtrl.signal;
     try {
-      const text = await this.loader.loadText(url, this._abortCtrl.signal);
+      const text = await this.loader.loadText(url, signal);
+      if (!this._isCurrentSession(sessionId, signal)) return;
       const parsed = parseMedia(text, url);
       this.playlistUrl = url; // 切档/续播后轮询目标必须跟随当前档位（直播 ABR 切换后 reload 旧档是错的）
       // 续播放位置：优先按"最后装载 sn+1"衔接（直播/切档），VOD 按播放时刻映射，
@@ -187,9 +195,14 @@ export class HlsPlayer {
       });
       this._startPipeline(resumeIdx);
     } catch (err) {
+      if (!this._isCurrentSession(sessionId, signal)) return;
       this._fail(err);
       throw err;
     }
+  }
+
+  _isCurrentSession(sessionId, signal) {
+    return !this._destroyed && sessionId === this._sessionId && !signal.aborted;
   }
 
   /* ------------------------------------------------------------------ */
@@ -462,12 +475,15 @@ export class HlsPlayer {
     if (sc && sc.partHoldBack > 0 && this.config.lowLatencyMode) intervalSec = sc.partHoldBack;
     else if (sc && sc.holdBack > 0) intervalSec = sc.holdBack;
     const delayMs = Math.max(400, intervalSec * 1000);
+    const sessionId = this._sessionId;
+    const signal = this._abortCtrl.signal;
 
     this._pollTimer = setTimeout(async () => {
-      if (this._destroyed) return;
+      if (!this._isCurrentSession(sessionId, signal)) return;
       try {
         const url = this._buildReloadUrl();
-        const text = await this.loader.loadText(url, this._abortCtrl.signal);
+        const text = await this.loader.loadText(url, signal);
+        if (!this._isCurrentSession(sessionId, signal)) return;
         const prev = this.mediaPlaylist;
         const next = parseMedia(text, this.playlistUrl);
         // 滑动窗口推进：以最近成功消费的 sn 为锚点衔接
@@ -478,10 +494,11 @@ export class HlsPlayer {
         this._emit('liverefresh', { msn: next.mediaSequence, pending: next.segments.length - this.nextSegmentIdx });
         this._pump();
       } catch (err) {
+        if (!this._isCurrentSession(sessionId, signal)) return;
         log.warn('直播刷新失败:', err.message);
         this._emit('error', { type: 'network', fatal: false, detail: err.message });
       } finally {
-        this._scheduleLivePoll();
+        if (this._isCurrentSession(sessionId, signal)) this._scheduleLivePoll();
       }
     }, delayMs);
   }

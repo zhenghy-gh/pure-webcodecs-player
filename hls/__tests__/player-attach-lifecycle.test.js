@@ -41,6 +41,60 @@ test('HlsPlayer：重复 attach 取消旧请求与定时器', async () => {
   assert.equal(bufferCleared, true);
 });
 
+test('HlsPlayer：旧直播轮询成功响应不得覆盖新会话清单', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = new HlsPlayer();
+  let resolveText;
+  player.loader = {
+    loadText: () => new Promise(resolve => { resolveText = resolve; }),
+  };
+  player.playlistUrl = 'http://x/old.m3u8';
+  player.mediaPlaylist = { type: 'media', live: true, targetDuration: 4, segments: [{ sn: 1 }], serverControl: {} };
+  player._abortCtrl = new AbortController();
+  player._scheduleLivePoll();
+  t.mock.timers.tick(2000);
+
+  const oldPlaylist = player.mediaPlaylist;
+  player._sessionId += 1;
+  player._abortCtrl.abort();
+  player._abortCtrl = new AbortController();
+  const currentPlaylist = { type: 'media', live: false, segments: [] };
+  player.mediaPlaylist = currentPlaylist;
+  resolveText(`#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nold.m4s`);
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(player.mediaPlaylist, currentPlaylist);
+  assert.notEqual(player.mediaPlaylist, oldPlaylist);
+});
+
+test('HlsPlayer：旧直播轮询失败不得向新会话派发错误或续挂定时器', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = new HlsPlayer();
+  let rejectText;
+  player.loader = {
+    loadText: () => new Promise((resolve, reject) => { rejectText = reject; }),
+  };
+  player.playlistUrl = 'http://x/old.m3u8';
+  player.mediaPlaylist = { type: 'media', live: true, targetDuration: 4, segments: [{ sn: 1 }], serverControl: {} };
+  player._abortCtrl = new AbortController();
+  const errors = [];
+  player.on('error', error => errors.push(error));
+  player._scheduleLivePoll();
+  t.mock.timers.tick(2000);
+
+  player._sessionId += 1;
+  player._abortCtrl.abort();
+  player._abortCtrl = new AbortController();
+  const oldTimer = player._pollTimer;
+  player.mediaPlaylist = { type: 'media', live: false, segments: [] };
+  rejectText(new Error('old request failed'));
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(errors.length, 0);
+  assert.equal(player._pollTimer, oldTimer);
+});
+
+
 test('HlsPlayer：重复 attach 移除旧 video waiting 监听，destroy 清理最新 video', async () => {
   const player = new HlsPlayer();
   player.mse = { attach: async video => { player.mse.video = video; }, destroy() {} };

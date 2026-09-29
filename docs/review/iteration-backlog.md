@@ -350,3 +350,4 @@
 | 305 | HLS MSE attach 失败回滚 | `MseController.attach()` 在 `sourceerror`、ObjectURL 创建或设置 video src 失败时未一致清理监听、ObjectURL、MediaSource 与 video 引用。统一失败路径执行 destroy 并拒绝原错误，补充 sourceerror 后状态清空回归。聚焦 MSE 16/16、全仓 `npm run check`、lint、结构/运行时 §2.4 审计 PASS。 | 本波 |
 | 306 | HLS MSE 构造器失败状态隔离 | `MseController.attach()` 在执行 `new MediaSource()` 前写入 `video`，构造器同步抛错时留下半初始化引用；现仅在构造成功后登记会话引用，并新增构造失败回归。聚焦 MSE 17/17、全仓 `npm run check`、lint、结构/运行时 §2.4 审计 PASS。 | 本波 |
 | 307 | HLS Player 重挂取消旧异步会话 | `HlsPlayer.attach()` 重复调用时原先覆盖 `_abortCtrl`，旧请求、直播轮询及 bufferfull/waitsegments 定时器仍可在新会话中运行。现在重挂前 abort 旧控制器并清理相关定时器，新增重复 attach 回归。聚焦 2/2、全仓 `npm run check`、lint、结构/运行时 §2.4 审计 PASS。 | 本波 |
+| 308 | HLS 直播轮询会话代数隔离 | 旧直播轮询请求在重挂后迟到时，原逻辑仍可覆盖当前 `mediaPlaylist`、触发 `_pump()`，或在旧请求失败时向新会话派发网络错误并续挂轮询。新增 `_sessionId` 与 signal 双重守卫，隔离 `loadSource()`、media playlist、直播轮询的迟到成功/失败；新增 2 条回归。聚焦 4/4、全仓 `npm run check`、lint、结构/运行时 §2.4 审计 PASS。 | 本波 |
