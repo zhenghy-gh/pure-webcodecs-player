@@ -276,7 +276,7 @@ export class HlsPlayer {
         if (!this.mse.sourceBuffers.video && !this.mse.sourceBuffers.audio) {
           this.mse.addSourceBuffer('audio', 'audio/mp4; codecs="mp4a.40.2"');
         }
-        await this._append(initData.data, 'video');
+        await this._append(initData.data, 'video', sessionId, signal);
         assertCurrent();
         this._loadedInitUrls.add(seg.map.uri);
       }
@@ -346,14 +346,14 @@ export class HlsPlayer {
           const t = out[key];
           if (!t) continue;
           if (t.initSegment && this.mse.sourceBuffers[key]) {
-            await this._append(t.initSegment, key);
+            await this._append(t.initSegment, key, sessionId, signal);
           }
           if (this.mse.sourceBuffers[key]) {
-            await this._append(t.mediaSegment, key);
+            await this._append(t.mediaSegment, key, sessionId, signal);
           }
         }
       } else {
-        await this._append(out.mediaSegment, 'video');
+        await this._append(out.mediaSegment, 'video', sessionId, signal);
       }
 
       assertCurrent();
@@ -427,16 +427,25 @@ export class HlsPlayer {
       });
   }
 
-  async _append(data, type) {
+  async _append(data, type, sessionId = this._sessionId, signal = this._abortCtrl?.signal) {
+    const assertCurrent = () => {
+      if (!signal || !this._isCurrentSession(sessionId, signal)) throw new DOMException('Session superseded', 'AbortError');
+    };
     try {
+      assertCurrent();
       await this.mse.append(type, data);
+      assertCurrent();
     } catch (err) {
+      if (err?.name === 'AbortError') throw err;
+      assertCurrent();
       // 缓冲重叠等异常：移除全部旧缓冲重试一次
       log.warn(`append 失败(${err.message})，尝试清空旧缓冲重试`);
       const ranges = this.mse.getBuffered(type);
       if (ranges.length) {
         await this.mse.remove(type, ranges[0][0], ranges[ranges.length - 1][1]);
+        assertCurrent();
         await this.mse.append(type, data);
+        assertCurrent();
       } else {
         throw err;
       }

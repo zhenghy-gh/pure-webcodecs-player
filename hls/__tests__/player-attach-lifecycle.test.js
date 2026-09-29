@@ -134,6 +134,29 @@ test('HlsPlayer：旧分片响应不得追加到新会话 MSE', async () => {
 });
 
 
+test('HlsPlayer：旧 append 失败不得清理新会话缓冲或重试旧数据', async () => {
+  const player = new HlsPlayer();
+  let rejectAppend;
+  let bufferedReads = 0;
+  player.mse = {
+    append: () => new Promise((resolve, reject) => { rejectAppend = reject; }),
+    getBuffered: () => { bufferedReads += 1; return [[0, 4]]; },
+    remove: async () => {},
+  };
+  player._abortCtrl = new AbortController();
+  const pending = player._append(new Uint8Array([1]), 'video');
+  await new Promise(resolve => setImmediate(resolve));
+
+  player._sessionId += 1;
+  player._abortCtrl.abort();
+  player._abortCtrl = new AbortController();
+  rejectAppend(new Error('buffer overlap'));
+
+  await assert.rejects(pending, error => error.name === 'AbortError');
+  assert.equal(bufferedReads, 0);
+});
+
+
 test('HlsPlayer：重复 attach 移除旧 video waiting 监听，destroy 清理最新 video', async () => {
   const player = new HlsPlayer();
   player.mse = { attach: async video => { player.mse.video = video; }, destroy() {} };
