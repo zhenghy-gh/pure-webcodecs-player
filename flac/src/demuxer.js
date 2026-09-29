@@ -136,6 +136,7 @@ export class FlacDemuxer extends Demuxer {
               `samples(${trackId}) aborted`,
             );
             cursor += 1;
+            self.#nextFrameIdx = cursor;
             if (cursor >= self.frameIndex.length && self.stateValue === 'ready') self.stateValue = 'ended';
             return {
               done: false,

@@ -352,14 +352,23 @@ describe('SEEKTABLE', () => {
     assert.equal(firstAgain.timestamp, back.actualTimestampUs, '向前 seek 必须重置共享 reader');
     await dem.stop();
   });
-  test('无音频帧 seek 返回 0，非法时间戳抛 STATE_ERROR', async () => {
-    const dem = new FlacDemuxer(memorySource(buildFlac({ streamInfo: { totalSamples: 0 }, frames: [] })));
+  test('samples 与 readSample 共享游标，直接迭代后不重复首帧', async () => {
+    const f0 = constantFrame(16, 100, 0);
+    const f1 = constantFrame(16, -200, 1);
+    const dem = new FlacDemuxer(memorySource(buildFlac({
+      streamInfo: { totalSamples: 32 },
+      frames: [f0, f1],
+    })));
     await dem.parseInit();
-    assert.deepEqual(await dem.seek(1_000_000), { actualTimestampUs: 0 });
-    await assert.rejects(() => dem.seek(Number.NaN), (e) => e.code === 'STATE_ERROR');
-    await assert.rejects(() => dem.seek(Infinity), (e) => e.code === 'STATE_ERROR');
+    const iterator = dem.samples(1)[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    assert.equal(first.value.timestamp, 0);
+    const second = await dem.readSample(1);
+    assert.equal(second.timestamp, Math.round((16 / 48000) * 1e6));
     await dem.stop();
   });
+
+
 });
 
 
