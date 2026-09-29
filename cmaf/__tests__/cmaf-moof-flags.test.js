@@ -115,7 +115,34 @@ function traf(trackId, baseTime, tfdtVer, trunBox, defaults = {}) {
   return box('traf', tfhd(trackId, defaults), tfdt(tfdtVer, baseTime), trunBox);
 }
 
-/* ---------------- parseTrun flag 组合 ---------------- */
+test('parseTfhd：声明内容截断时不越过当前盒读取后续字段', () => {
+  const truncated = Uint8Array.from([
+    0, 0, 0, 16, 0x74, 0x66, 0x68, 0x64,
+    0, 0, 0, 8, 0, 0, 0, 1,
+    0, 0, 0, 16, 0x74, 0x66, 0x64, 0x74,
+  ]);
+  assert.throws(
+    () => parseTfhd(truncated, 8, 16),
+    (error) => error.code === 'NOT_SUPPORTED' && /tfhd 字段截断/.test(error.message),
+  );
+  assert.throws(
+    () => parseTfhd(truncated.subarray(0, 8), 8, 8),
+    (error) => error.code === 'NOT_SUPPORTED' && /tfhd 头部截断/.test(error.message),
+  );
+});
+
+test('parseMoof：嵌套截断 tfhd 返回受控错误而非裸 RangeError', () => {
+  const tfhd = Uint8Array.from([
+    0, 0, 0, 16, 0x74, 0x66, 0x68, 0x64,
+    0, 0, 0, 8, 0, 0, 0, 1,
+  ]);
+  const moof = box('moof', box('traf', tfhd));
+  assert.throws(
+    () => parseMoof(moof, 8, moof.length),
+    (error) => error.code === 'NOT_SUPPORTED' && /tfhd 字段截断/.test(error.message),
+  );
+});
+
 
 test('parseTrun：仅 data-offset 标志 → 行字段全零回落', () => {
   const b = trun(0, { dataOffset: 140, rows: [{}, {}] });
