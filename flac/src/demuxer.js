@@ -224,8 +224,11 @@ export class FlacDemuxer extends Demuxer {
       if (syncAt < 0) break;
       try {
         const frame = decoder.decodeFrame(all, syncAt);
-        index.push({ offset: syncAt, size: frame.endByte - syncAt, firstSample: samplePos, samples: frame.blockSize });
-        samplePos += frame.blockSize;
+        const firstSample = frame.blockingStrategy === 1
+          ? frame.codedNumber
+          : samplePos;
+        index.push({ offset: syncAt, size: frame.endByte - syncAt, firstSample, samples: frame.blockSize });
+        samplePos = firstSample + frame.blockSize;
         pos = frame.endByte;
       } catch {
         pos = syncAt + 2; // CRC 不符 → 从下一字节继续扫同步码（重同步）

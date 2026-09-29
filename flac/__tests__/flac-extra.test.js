@@ -351,6 +351,31 @@ describe('SEEKTABLE', () => {
  * 损坏重同步（帧头 CRC-8）
  * ============================================================ */
 
+test('variable-blocking 帧使用帧头 codedNumber 作为首采样号', async () => {
+  const makeFrame = (codedNumber, value) => {
+    const sub = new BitWriter();
+    sub.writeBits(0, 1).writeBits(0b000000, 6).writeBits(0, 1);
+    writeSigned(sub, value, 16);
+    return assembleFrame(
+      finalizeHeader(encodeFrameHeader({ blockSize: 16, codedNumber, blockingStrategy: 1 })),
+      sub,
+    );
+  };
+  const bytes = buildFlac({
+    streamInfo: { sampleRate: 48000, channels: 1, bps: 16, totalSamples: 132 },
+    frames: [makeFrame(100, 100), makeFrame(116, -200)],
+  });
+  const dem = new FlacDemuxer(memorySource(bytes));
+  await dem.parseInit();
+  const got = [];
+  for await (const sample of dem.samples(1)) got.push(sample);
+  assert.deepEqual(got.map((sample) => sample.timestamp), [
+    Math.round((100 / 48000) * 1e6),
+    Math.round((116 / 48000) * 1e6),
+  ]);
+  await dem.stop();
+});
+
 describe('损坏重同步', () => {
   test('帧头 CRC-8 损坏的帧被跳过建索引，后续帧样本位不虚增', async () => {
     const f0 = constantFrame(16, 100, 0);
