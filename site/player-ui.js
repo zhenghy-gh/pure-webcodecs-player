@@ -269,9 +269,9 @@ export function createPlayerUI(options = {}) {
   }
 
   /* ---- 进度条与音量条的指针交互（Pointer Events，兼容触屏） ---- */
-  function bindSlider(el, onRatio, { live } = {}) {
+  function bindSlider(el, onRatio, { live, enabled } = {}) {
     el.addEventListener('pointerdown', (e) => {
-      if (!adapter || (live === false && (isLive || !curDur))) return;
+      if (!adapter || enabled && !enabled() || (live === false && (isLive || !curDur))) return;
       dragging = true;
       el.setPointerCapture?.(e.pointerId);
       el.classList.add('pui__progress--dragging');
@@ -296,7 +296,7 @@ export function createPlayerUI(options = {}) {
       root.querySelector('.pui__time-current').textContent = formatTime(ratio * curDur);
       seekRatio(ratio);
     }
-  });
+  }, { live: false, enabled: canSeek });
   bindSlider(volSlider, (ratio) => {
     volume = ratio;
     muted = ratio === 0;
