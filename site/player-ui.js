@@ -201,7 +201,16 @@ export function createPlayerUI(options = {}) {
   }
 
   /* ---- 行为命令：全部转发给适配器 ---- */
-  function togglePlay() { if (!adapter) return; isPlaying() ? adapter.pause() : adapter.play(); }
+  function togglePlay() {
+    if (!adapter) return;
+    if (isPlaying()) {
+      adapter.pause();
+    } else {
+      try {
+        void Promise.resolve(adapter.play()).catch(() => {});
+      } catch {}
+    }
+  }
   function isPlaying() { return btnMain.getAttribute('data-playing') === '1'; }
   function setPlaying(v) { btnMain.setAttribute('data-playing', v ? '1' : '0'); btnMain.innerHTML = v ? ICONS.pause : ICONS.play; }
   function seekRatio(ratio) {

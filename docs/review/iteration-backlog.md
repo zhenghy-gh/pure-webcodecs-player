@@ -255,6 +255,7 @@
 | 290 | Player UI 文档点击监听器生命周期修复 | `site/player-ui.js` 将倍速菜单的 document click 回调具名化并加入 `cleanupFns`，确保 `destroy()` 移除全局监听器，避免重复创建控制条后旧闭包持有 DOM。全仓测试、lint、双契约审计 PASS；MP4/HLS 真实 Chrome smoke 2/2 PASS。 | 本波 |
 | 291 | 皮肤滑杆提示节点生命周期修复 | `site/js/skin.js` 的 `bindRange()` disposer 现同时撤销事件监听并移除其创建的 `.slider__tip`，避免重复绑定或销毁后提示节点累积在 `.slider__wrap`。全仓测试、lint、check、双契约审计 PASS；MP4/HLS 真实 Chrome smoke 2/2 PASS。 | 本波 |
 | 292 | Player UI 全屏拒绝 Promise 收敛 | `site/player-ui.js` 的进入/退出全屏调用改用 `Promise.resolve(...).catch(() => {})` 消费拒绝，兼容浏览器权限/手势限制以及同步返回的测试桩，避免产生未处理 Promise rejection。全仓测试、lint、check、双契约审计 PASS；MP4/HLS 真实 Chrome smoke 2/2 PASS。 | 本波 |
+| 293 | Player UI 播放拒绝 Promise 收敛 | `site/player-ui.js` 的 `togglePlay()` 保持同步调用 `adapter.play()`，同时捕获同步异常并消费异步拒绝，避免浏览器自动播放策略或适配器失败造成未处理 Promise rejection。全仓测试、lint、check、双契约审计 PASS；MP4/HLS 真实 Chrome smoke 2/2 PASS。 | 本波 |
 
 | 140 | MKV 无限长度源尾部半截元素头回归 | 扩展 `mkv/__tests__/demuxer.test.js`：使用 size=Infinity 的流式数据源，在合法 WebM 后追加截断的 Void 元素头，验证 `open()` 将尾部残缺按流尾处理并保持媒体信息可用。全仓 2931/2931、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 
