@@ -167,6 +167,38 @@ test('_rangeGet：206 短响应且未到文件尾 → SOURCE_ERROR（short range
   await assert.rejects(() => ds.read(0, 100), /short range response: got 100, want 256/);
 });
 
+
+test('requestInit.headers：保留自定义头并在探测与分段请求中发送 Range', async () => {
+  const whole = makeWhole(256);
+  const requests = [];
+  const ds = new HttpRangeDataSource('http://fixture.invalid/auth.mp4', {
+    chunkSize: 128,
+    requestInit: { headers: { Authorization: 'Bearer token' } },
+    fetchImpl: async (_url, init = {}) => {
+      requests.push(init);
+      if (init.method === 'HEAD') return fakeRes(405);
+      const range = init.headers?.Range;
+      if (range === 'bytes=0-0') {
+        return fakeRes(206, {
+          headers: { 'content-range': `bytes 0-0/${whole.length}` },
+          body: new ArrayBuffer(0),
+        });
+      }
+      const match = /bytes=(\d+)-(\d+)/.exec(range ?? '');
+      assert.ok(match, 'Range header must survive requestInit.headers');
+      const [start, end] = [Number(match[1]), Number(match[2])];
+      return fakeRes(206, { body: whole.slice(start, end + 1) });
+    },
+  });
+
+  const result = await ds.read(128, 8);
+
+  assert.deepEqual([...result], [...whole.slice(128, 136)]);
+  assert.equal(requests[1].headers.Authorization, 'Bearer token');
+  assert.equal(requests[1].headers.Range, 'bytes=0-0');
+  assert.equal(requests[2].headers.Authorization, 'Bearer token');
+  assert.equal(requests[2].headers.Range, 'bytes=128-255');
+});
 test('_rangeGet：200 整文件且 start=0 → 直接截取可用区间', async () => {
   const whole = makeWhole(512);
   const ds = new HttpRangeDataSource('http://fixture.invalid/full.mp4', {

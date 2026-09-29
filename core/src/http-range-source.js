@@ -43,15 +43,23 @@ export class HttpRangeDataSource {
     this._opened = false;
   }
 
+  _requestInit(headers = undefined, init = {}) {
+    const { headers: requestHeaders, ...requestInit } = this.requestInit;
+    return {
+      ...requestInit,
+      ...init,
+      headers: {
+        ...this.headers,
+        ...(requestHeaders ?? {}),
+        ...(headers ?? {}),
+      },
+    };
+  }
   async open() {
     if (this._opened) return;
     // 先试 HEAD
     try {
-      const res = await this._fetch(this.url, {
-        method: 'HEAD',
-        headers: { ...this.headers },
-        ...this.requestInit,
-      });
+      const res = await this._fetch(this.url, this._requestInit(undefined, { method: 'HEAD' }));
       if (res.ok) {
         const len = Number(res.headers.get('content-length') ?? NaN);
         if (Number.isFinite(len)) {
@@ -65,10 +73,7 @@ export class HttpRangeDataSource {
 
     if (!Number.isFinite(this.size)) {
       // 退路：GET 首字节，从 Content-Range 里拿总长
-      const res = await this._fetch(this.url, {
-        headers: { ...this.headers, Range: 'bytes=0-0' },
-        ...this.requestInit,
-      });
+      const res = await this._fetch(this.url, this._requestInit({ Range: 'bytes=0-0' }));
       const contentRange = res.headers.get('content-range');
       if (!contentRange) {
         throw sourceError(
@@ -140,10 +145,7 @@ export class HttpRangeDataSource {
   }
 
   async _rangeGet(start, endInclusive) {
-    const res = await this._fetch(this.url, {
-      headers: { ...this.headers, Range: `bytes=${start}-${endInclusive}` },
-      ...this.requestInit,
-    });
+    const res = await this._fetch(this.url, this._requestInit({ Range: `bytes=${start}-${endInclusive}` }));
     if (res.status !== 206 && res.status !== 200) {
       throw sourceError(`range request failed (${res.status}) for ${this.url}`);
     }
