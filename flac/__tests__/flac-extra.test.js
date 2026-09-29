@@ -344,13 +344,25 @@ describe('SEEKTABLE', () => {
     // 目标第 ~20 样本：真实帧起点 16 是实际落点。
     const r2 = await dem.seek(Math.round((20 / 48000) * 1e6));
     assert.deepEqual(r2, { actualTimestampUs: Math.round((16 / 48000) * 1e6) });
+    const second = await dem.readSample(1);
+    assert.equal(second.timestamp, r2.actualTimestampUs);
+    const back = await dem.seek(0);
+    assert.deepEqual(back, { actualTimestampUs: 0 });
+    const firstAgain = await dem.readSample(1);
+    assert.equal(firstAgain.timestamp, back.actualTimestampUs, '向前 seek 必须重置共享 reader');
+    await dem.stop();
+  });
+  test('无音频帧 seek 返回 0，非法时间戳抛 STATE_ERROR', async () => {
+    const dem = new FlacDemuxer(memorySource(buildFlac({ streamInfo: { totalSamples: 0 }, frames: [] })));
+    await dem.parseInit();
+    assert.deepEqual(await dem.seek(1_000_000), { actualTimestampUs: 0 });
+    await assert.rejects(() => dem.seek(Number.NaN), (e) => e.code === 'STATE_ERROR');
+    await assert.rejects(() => dem.seek(Infinity), (e) => e.code === 'STATE_ERROR');
     await dem.stop();
   });
 });
 
-/* ============================================================
- * 损坏重同步（帧头 CRC-8）
- * ============================================================ */
+
 
 test('variable-blocking 帧使用帧头 codedNumber 作为首采样号', async () => {
   const makeFrame = (codedNumber, value) => {

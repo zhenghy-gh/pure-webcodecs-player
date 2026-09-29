@@ -154,7 +154,7 @@ export class FlacDemuxer extends Demuxer {
   }
 
   /**
-   * seek（µs）：优先 SEEKTABLE 中 ≤ 目标的最近点；无表则线性回退到最近帧起点。
+   * seek（µs）：定位到不超过目标的最近已索引音频帧；无帧时落在 0。
    * @param {number} timestampUs
    * @returns {Promise<{actualTimestampUs:number}>}
    */
@@ -163,6 +163,7 @@ export class FlacDemuxer extends Demuxer {
     if (this.stateValue !== 'ready' && this.stateValue !== 'ended' && this.stateValue !== 'seeking') {
       throw stateError(`seek 需处于 ready 态，当前 ${this.stateValue}`);
     }
+    if (!Number.isFinite(timestampUs)) throw stateError('seek 入参必须是有限数值（µs）');
     this.stateValue = 'seeking';
     try {
       const si = this.flacMetadata.streamInfo;
@@ -176,9 +177,12 @@ export class FlacDemuxer extends Demuxer {
         if (this.frameIndex[i].firstSample <= targetSample) idx = i;
         else break;
       }
-      this.#nextFrameIdx = idx;
+      this.#nextFrameIdx = this.frameIndex.length === 0 ? 0 : idx;
+      this.#reader = null;
+      this.#readerActive = false;
       this.stateValue = 'ready';
-      return { actualTimestampUs: Math.round((this.frameIndex[idx].firstSample / si.sampleRate) * 1e6) };
+      const landedSample = this.frameIndex[idx]?.firstSample ?? 0;
+      return { actualTimestampUs: Math.round((landedSample / si.sampleRate) * 1e6) };
     } catch (e) {
       this.stateValue = 'error';
       throw e;
