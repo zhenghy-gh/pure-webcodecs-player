@@ -115,6 +115,7 @@ export class HlsPlayer {
    * @param {HTMLVideoElement} video
    */
   async attach(url, video) {
+    if (this._destroyed) throw stateError('播放器已销毁');
     this._attachedVideo?.removeEventListener('waiting', this._onVideoWaiting);
     this._sessionId += 1;
     this._abortCtrl?.abort();
@@ -133,6 +134,7 @@ export class HlsPlayer {
 
   /** 加载（或重定向到新的）m3u8 源 */
   async loadSource(url) {
+    if (this._destroyed) throw stateError('播放器已销毁');
     const sessionId = this._sessionId;
     const signal = this._abortCtrl.signal;
     try {

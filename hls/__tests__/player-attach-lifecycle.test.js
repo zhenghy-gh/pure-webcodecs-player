@@ -184,6 +184,16 @@ test('HlsPlayer：旧 trim 完成不得清掉新会话的重入锁', async () =>
 });
 
 
+test('HlsPlayer：destroy 后拒绝 attach 与 loadSource，保持 DESTROYED 状态', async () => {
+  const player = new HlsPlayer();
+  player.destroy();
+
+  await assert.rejects(player.attach('http://x/next.m3u8', makeVideo()), error => error.code === 'STATE_ERROR');
+  await assert.rejects(player.loadSource('http://x/next.m3u8'), error => error.code === 'STATE_ERROR');
+  assert.equal(player.state, 'destroyed');
+});
+
+
 test('HlsPlayer：重复 attach 移除旧 video waiting 监听，destroy 清理最新 video', async () => {
   const player = new HlsPlayer();
   player.mse = { attach: async video => { player.mse.video = video; }, destroy() {} };
