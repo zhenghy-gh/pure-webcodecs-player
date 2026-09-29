@@ -114,6 +114,10 @@ export class HlsPlayer {
    */
   async attach(url, video) {
     this._attachedVideo?.removeEventListener('waiting', this._onVideoWaiting);
+    this._abortCtrl?.abort();
+    clearTimeout(this._pollTimer);
+    clearTimeout(this._t_bufferfull);
+    clearTimeout(this._t_waitsegments);
     this._attachedVideo = video;
     this._abortCtrl = new AbortController();
     await this.mse.attach(video);
