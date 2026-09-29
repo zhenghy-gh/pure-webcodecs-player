@@ -95,6 +95,45 @@ test('HlsPlayer：旧直播轮询失败不得向新会话派发错误或续挂�
 });
 
 
+test('HlsPlayer：旧分片响应不得追加到新会话 MSE', async () => {
+  const player = new HlsPlayer();
+  let resolveSegment;
+  let appendCount = 0;
+  player.loader = {
+    load: () => new Promise(resolve => { resolveSegment = resolve; }),
+  };
+  player.mse = {
+    sourceBuffers: { video: null, audio: null },
+    currentBufferSeconds: () => 0,
+    addSourceBuffer(type) { this.sourceBuffers[type] = {}; },
+    append: async () => { appendCount += 1; },
+    getBuffered: () => [],
+    endOfStream: async () => {},
+  };
+  player.transmuxer = {
+    process: async data => ({ kind: 'passthrough', mediaSegment: data }),
+  };
+  player.mediaPlaylist = {
+    live: false,
+    segments: [{ sn: 7, url: 'http://x/old.m4s', duration: 4 }],
+  };
+  player._abortCtrl = new AbortController();
+  const pending = player._pump();
+  await new Promise(resolve => setImmediate(resolve));
+
+  player._sessionId += 1;
+  player._abortCtrl.abort();
+  player._abortCtrl = new AbortController();
+  resolveSegment({ data: new Uint8Array([7]), byteLength: 1 });
+  await pending;
+
+  assert.equal(appendCount, 0);
+  assert.equal(player._stats.segmentsLoaded, 0);
+  assert.equal(player._lastAppendedSn, null);
+  assert.equal(player.nextSegmentIdx, 0);
+});
+
+
 test('HlsPlayer：重复 attach 移除旧 video waiting 监听，destroy 清理最新 video', async () => {
   const player = new HlsPlayer();
   player.mse = { attach: async video => { player.mse.video = video; }, destroy() {} };

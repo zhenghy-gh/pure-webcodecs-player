@@ -120,6 +120,7 @@ export class HlsPlayer {
     clearTimeout(this._pollTimer);
     clearTimeout(this._t_bufferfull);
     clearTimeout(this._t_waitsegments);
+    this._appending = false;
     this._attachedVideo = video;
     this._abortCtrl = new AbortController();
     await this.mse.attach(video);
@@ -224,6 +225,9 @@ export class HlsPlayer {
 
   async _pump() {
     if (this._destroyed || this._appending) return;
+    const sessionId = this._sessionId;
+    const signal = this._abortCtrl?.signal;
+    if (!signal || !this._isCurrentSession(sessionId, signal)) return;
     const pl = this.mediaPlaylist;
     if (!pl) return;
 
@@ -250,12 +254,16 @@ export class HlsPlayer {
     const seg = pl.segments[this.nextSegmentIdx];
     this._appending = true;
     try {
+      const assertCurrent = () => {
+        if (!this._isCurrentSession(sessionId, signal)) throw new DOMException('Session superseded', 'AbortError');
+      };
       // 1. EXT-X-MAP（fMP4 init segment）：URL 变化时重新加载
       if (seg.map && !this._loadedInitUrls.has(seg.map.uri)) {
         const initData = await this.loader.load(seg.map.uri, {
           byteRange: seg.map.byteRange || undefined,
-          signal: this._abortCtrl.signal,
+          signal,
         });
+        assertCurrent();
         this._stats.bytesLoaded += initData.byteLength;
         const mCodecs = this.levels
           ? { video: this.levels.current.videoCodec, audio: this.levels.current.audioCodec }
@@ -269,6 +277,7 @@ export class HlsPlayer {
           this.mse.addSourceBuffer('audio', 'audio/mp4; codecs="mp4a.40.2"');
         }
         await this._append(initData.data, 'video');
+        assertCurrent();
         this._loadedInitUrls.add(seg.map.uri);
       }
 
@@ -276,9 +285,10 @@ export class HlsPlayer {
       const t0 = performanceNow();
       const res = await this.loader.load(seg.url, {
         byteRange: seg.byteRange || undefined,
-        signal: this._abortCtrl.signal,
+        signal,
         onProgress: () => {},
       });
+      assertCurrent();
       const elapsed = Math.max(1, performanceNow() - t0);
       this._stats.bytesLoaded += res.byteLength;
       this._stats.segmentsLoaded += 1;
@@ -290,9 +300,11 @@ export class HlsPlayer {
         segmentBytes = await this.decrypter.decryptSegment(res.data, seg.key, {
           sn: seg.sn,
         });
+        assertCurrent();
       }
 
       // 3. 回填带宽样本并复核 ABR
+      assertCurrent();
       if (this.levels) {
         this.levels.reportLoad(res.byteLength, elapsed, buffered, (sw) => {
           this._stats.levelsSwitched += 1;
@@ -303,13 +315,16 @@ export class HlsPlayer {
       }
 
       // 4. 识别格式并转封装（TS → fMP4；fMP4 直通）
+      assertCurrent();
       if (!this.transmuxer) this.transmuxer = new Transmuxer();
       const out = await this.transmuxer.process(segmentBytes, {
         isInit: false,
         discontinuity: !!seg.discontinuity,
       });
+      assertCurrent();
 
       // 5. 确保 SourceBuffer 就绪（拿到真实编码串后再建）
+      assertCurrent();
       const codecs =
         out.kind === 'transmuxed'
           ? out.codecs
@@ -323,6 +338,7 @@ export class HlsPlayer {
         this._audioOnlyHint = true;
       }
       await this._ensureSourceBuffers(codecs);
+      assertCurrent();
 
       // 6. append：转封装产物按轨追加；直通产物进视频轨
       if (out.kind === 'transmuxed') {
@@ -340,6 +356,7 @@ export class HlsPlayer {
         await this._append(out.mediaSegment, 'video');
       }
 
+      assertCurrent();
       this._emit('bufferappended', {
         sn: seg.sn,
         duration: seg.duration,
@@ -355,11 +372,14 @@ export class HlsPlayer {
       // 自动起播：首帧数据就位即尝试播放
       this._maybeAutoplay();
 
-      this._appending = false;
-      this._pump(); // 继续装载
+      if (this._isCurrentSession(sessionId, signal)) {
+        this._appending = false;
+        this._pump(); // 继续装载
+      }
     } catch (err) {
-      this._appending = false;
+      if (this._isCurrentSession(sessionId, signal)) this._appending = false;
       if (err && err.name === 'AbortError') return; // 主动取消
+      if (!this._isCurrentSession(sessionId, signal)) return;
       this._fail(err);
     }
   }
