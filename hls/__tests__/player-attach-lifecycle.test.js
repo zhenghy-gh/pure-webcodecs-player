@@ -194,6 +194,37 @@ test('HlsPlayer：destroy 后拒绝 attach 与 loadSource，保持 DESTROYED 状
 });
 
 
+test('HlsPlayer：destroy 期间完成的 attach 不得重新绑定 video 监听', async () => {
+  const player = new HlsPlayer();
+  let resolveAttach;
+  player.mse = {
+    attach: () => new Promise(resolve => { resolveAttach = resolve; }),
+    destroy() {},
+  };
+  const video = makeVideo();
+  const attaching = player.attach('http://x/late.m3u8', video);
+  await new Promise(resolve => setImmediate(resolve));
+  player.destroy();
+  resolveAttach();
+
+  await assert.rejects(attaching, error => error.code === 'STATE_ERROR');
+  assert.equal(video.listenerCount('waiting'), 0);
+  assert.equal(player.state, 'destroyed');
+});
+
+test('HlsPlayer：destroy 后 setLevel 不得切换清晰度', () => {
+  const player = new HlsPlayer();
+  player.levels = {
+    currentLevel: 0,
+    switchTo() { this.currentLevel = 1; return { from: 0, to: 1 }; },
+  };
+  player.destroy();
+
+  assert.throws(() => player.setLevel(1), error => error.code === 'STATE_ERROR');
+  assert.equal(player.levels.currentLevel, 0);
+});
+
+
 test('HlsPlayer：重复 attach 移除旧 video waiting 监听，destroy 清理最新 video', async () => {
   const player = new HlsPlayer();
   player.mse = { attach: async video => { player.mse.video = video; }, destroy() {} };

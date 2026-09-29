@@ -126,7 +126,10 @@ export class HlsPlayer {
     this._trimming = false;
     this._attachedVideo = video;
     this._abortCtrl = new AbortController();
+    const sessionId = this._sessionId;
+    const signal = this._abortCtrl.signal;
     await this.mse.attach(video);
+    if (!this._isCurrentSession(sessionId, signal)) throw stateError('播放器已销毁或挂载已替换');
     // stall 快速降档（评审 §18.3）：监听 waiting，缓冲近零时绕过带宽估计切最低档
     video.addEventListener('waiting', this._onVideoWaiting);
     return this.loadSource(url);
@@ -565,6 +568,7 @@ export class HlsPlayer {
 
   /** 手动切换清晰度；index=-1 恢复 auto */
   setLevel(index) {
+    if (this._destroyed) throw stateError('播放器已销毁');
     if (!this.levels) throw stateError('当前源为单码率，无清晰度可切换');
     const sw = this.levels.switchTo(index);
     if (sw) {
