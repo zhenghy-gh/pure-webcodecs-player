@@ -176,19 +176,9 @@ export class FlacDemuxer extends Demuxer {
         if (this.frameIndex[i].firstSample <= targetSample) idx = i;
         else break;
       }
-      // SEEKTABLE 存在时优先用表项校正落点（两套结果应一致或更近）
-      const tablePoint = [...this.flacMetadata.seekPoints].reverse()
-        .find((p) => p.sampleNumber <= targetSample);
-
       this.#nextFrameIdx = idx;
-      const landedSample = tablePoint && Math.abs(tablePoint.sampleNumber - targetSample)
-        < Math.abs(this.frameIndex[idx].firstSample - targetSample)
-        ? tablePoint.sampleNumber
-        : this.frameIndex[idx].firstSample;
-      // 评审（wav#2 同款修复）：从 ended seek 后必须回到 ready，
-      // 否则 samples()/readSample() 永久 STATE_ERROR，播完再 seek 无法恢复迭代
       this.stateValue = 'ready';
-      return { actualTimestampUs: Math.round((landedSample / si.sampleRate) * 1e6) };
+      return { actualTimestampUs: Math.round((this.frameIndex[idx].firstSample / si.sampleRate) * 1e6) };
     } catch (e) {
       this.stateValue = 'error';
       throw e;

@@ -317,9 +317,8 @@ describe('SEEKTABLE', () => {
     ], '按文件序原样收录（不排序），占位点与残尾不产出条目');
   });
 
-  test('seek 与 SEEKTABLE 协同：非帧边界的最近 ≤ 目标点可校正落点', async () => {
-    // 两帧 × 16 样本 @48kHz；表点 8 刻意落在帧中间（非真实帧起点），
-    // 用于验证「优先 SEEKTABLE 中 ≤ 目标的最近点」这一文档化语义。
+  test('seek 返回实际帧起点：非帧边界 SEEKTABLE 点不得伪报落点', async () => {
+    // 两帧 × 16 样本 @48kHz；表点 8 刻意落在帧中间，不能作为实际解码落点。
     const f0 = constantFrame(16, 100, 0);
     const f1 = constantFrame(16, -200, 1);
     const bytes = buildFlac({
@@ -336,11 +335,13 @@ describe('SEEKTABLE', () => {
     const dem = new FlacDemuxer(memorySource(bytes));
     await dem.parseInit();
 
-    // 目标第 ~10 样本：帧索引只能落在帧 0（firstSample 0），表点 8 更近 → 校正为 8
+    // 目标第 ~10 样本：表点 8 虽更近，但实际从帧 0 解码，返回值必须与首个样本时间戳一致。
     const r1 = await dem.seek(Math.round((10 / 48000) * 1e6));
-    assert.deepEqual(r1, { actualTimestampUs: Math.round((8 / 48000) * 1e6) });
+    assert.deepEqual(r1, { actualTimestampUs: 0 });
+    const afterSeek = await dem.readSample(1);
+    assert.equal(afterSeek.timestamp, r1.actualTimestampUs);
 
-    // 目标第 ~20 样本：帧索引与最近表点同为 16 → 一致落点
+    // 目标第 ~20 样本：真实帧起点 16 是实际落点。
     const r2 = await dem.seek(Math.round((20 / 48000) * 1e6));
     assert.deepEqual(r2, { actualTimestampUs: Math.round((16 / 48000) * 1e6) });
     await dem.stop();
