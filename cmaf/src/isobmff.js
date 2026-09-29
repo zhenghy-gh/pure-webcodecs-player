@@ -107,25 +107,45 @@ export function findBox(buf, start, end, type) {
  *                              durationTicks:number,startsWithSAP:boolean,sapType:number}>}}
  */
 export function parseSidx(buf, contentStart, contentEnd) {
+  if (contentStart < 0 || contentStart > contentEnd || contentEnd > buf.byteLength) {
+    throw notSupported(`ISO-BMFF sidx 边界非法: start=${contentStart} end=${contentEnd}`);
+  }
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  const { version } = readVersionFlags(buf, contentStart);
-  let p = contentStart + 4;
+  let p = contentStart;
+  const requireBytes = (count, label = '字段') => {
+    if (p + count > contentEnd) {
+      throw notSupported(`ISO-BMFF sidx ${label}截断: need=${count} at=${p} end=${contentEnd}`);
+    }
+  };
+  requireBytes(4, '头部');
+  const { version } = readVersionFlags(buf, p);
+  p += 4;
+  requireBytes(8);
   const referenceId = dv.getUint32(p); p += 4;
   const timescale = dv.getUint32(p); p += 4;
   let ept;
   let firstOffset;
   if (version === 1) {
+    requireBytes(16);
     ept = Number(dv.getBigUint64(p)); p += 8;
     firstOffset = Number(dv.getBigUint64(p)); p += 8;
   } else {
+    requireBytes(8);
     ept = dv.getUint32(p); p += 4;
     firstOffset = dv.getUint32(p); p += 4;
   }
+  requireBytes(4, '引用表头');
   p += 2; // reserved
   const referenceCount = dv.getUint16(p); p += 2;
+  const referenceBytes = referenceCount * 12;
+  if (p + referenceBytes > contentEnd) {
+    throw notSupported(
+      `ISO-BMFF sidx 引用表截断: count=${referenceCount} available=${contentEnd - p}`,
+    );
+  }
   /** @type {Array<object>} */
   const references = [];
-  for (let i = 0; i < referenceCount && p + 12 <= contentEnd; i++) {
+  for (let i = 0; i < referenceCount; i++) {
     const refWord = dv.getUint32(p); p += 4;
     const duration = dv.getUint32(p); p += 4;
     const sapWord = dv.getUint32(p); p += 4;

@@ -62,6 +62,24 @@ test('sidx：version=0 引用表与 SAP 位解析', () => {
   assert.equal(r1.startsWithSAP, false);
 });
 
+test('sidx：reference_count 超出当前盒剩余引用表时抛受控错误', () => {
+  const bytes = buildSidxBytes({ refs: [{ size: 100, duration: 9000, startsWithSAP: true, sapType: 1 }] });
+  const head = readBoxHeader(bytes, 0);
+  const truncatedEnd = head.size - 1;
+  assert.throws(
+    () => parseSidx(bytes, head.headerSize, truncatedEnd),
+    (error) => error.code === 'NOT_SUPPORTED' && /引用表截断/.test(error.message),
+  );
+});
+
+test('sidx：固定头截断时抛受控错误而非裸 RangeError', () => {
+  const bytes = buildSidxBytes({ refs: [] });
+  const head = readBoxHeader(bytes, 0);
+  assert.throws(
+    () => parseSidx(bytes, head.headerSize, head.headerSize + 3),
+    (error) => error.code === 'NOT_SUPPORTED' && /sidx/.test(error.message),
+  );
+});
 test('sidx：version=1 解析 64 位 earliestPresentationTime/firstOffset', () => {
   const refs = [{ size: 0x123456, duration: 0x234567, startsWithSAP: true, sapType: 2 }];
   // vf+refId+timescale+ept(8)+firstOffset(8)+reserved+count + references
