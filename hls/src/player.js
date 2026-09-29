@@ -312,7 +312,7 @@ export class HlsPlayer {
           this._stats.levelsSwitched += 1;
           this._emit('levelswitch', sw);
           // 切档续播：以最近装载的 sn 为锚点，在新档位清单中衔接（不从片头重放）
-          this._loadMediaPlaylist(this.levels.current.url, { afterSn: this._lastAppendedSn });
+          void this._loadMediaPlaylist(this.levels.current.url, { afterSn: this._lastAppendedSn }).catch(() => {});
         });
       }
 
@@ -483,7 +483,7 @@ export class HlsPlayer {
     if (sw) {
       this._stats.levelsSwitched += 1;
       this._emit('levelswitch', sw);
-      this._loadMediaPlaylist(this.levels.current.url, { afterSn: this._lastAppendedSn });
+      void this._loadMediaPlaylist(this.levels.current.url, { afterSn: this._lastAppendedSn }).catch(() => {});
     }
   }
 
@@ -568,7 +568,7 @@ export class HlsPlayer {
     if (sw) {
       this._stats.levelsSwitched += 1;
       this._emit('levelswitch', sw);
-      this._loadMediaPlaylist(this.levels.current.url, { afterSn: this._lastAppendedSn });
+      void this._loadMediaPlaylist(this.levels.current.url, { afterSn: this._lastAppendedSn }).catch(() => {});
     }
     return sw;
   }
