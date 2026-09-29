@@ -261,6 +261,7 @@
 | 296 | Player UI 不可寻址适配器 seek 守卫 | `site/player-ui.js` 新增统一 `canSeek()` 守卫，进度拖动与左右方向键均尊重适配器 `seekable: false` 声明，并继续阻止直播/未知时长 seek，避免 UI 显示不可拖动但快捷键仍调用 `seek()`。全仓测试、lint、check、双契约审计 PASS；MP4/HLS 真实 Chrome smoke 2/2 PASS。 | 本波 |
 | 297 | Player UI 不可寻址进度条交互守卫 | `site/player-ui.js` 为指针滑杆增加可选 `enabled` 守卫，进度条绑定 `canSeek()`；`seekable: false` 时不再进入拖动态、更新预览时间或显示误导性拖拽反馈，音量滑杆行为保持不变。全仓测试、lint、check、双契约审计 PASS；MP4/HLS 真实 Chrome smoke 2/2 PASS。 | 本波 |
 | 298 | 皮肤 toast 容器断连重建 | `site/js/skin.js` 的 `toast()` 复用容器时同时检查 `isConnected`；页面或 SPA 重建 `body` 后，后续提示会重新挂载到当前文档，而不会追加到脱离 DOM 的旧容器。新增 fake-DOM 生命周期回归；全仓测试、lint、check、双契约审计 PASS；Chrome smoke 因截图覆盖安全门禁未执行。 | 本波 |
+| 299 | 皮肤滑杆 pointercancel 收尾 | `site/js/skin.js` 的 `bindRange()` 增加 `window:pointercancel` 收尾，与 `pointerup` 共用 `scrub(false)`；触摸手势或系统中断拖动后会清除 `.controls/.stage.is-scrubbing`，避免 thumb 持续放大和时间气泡残留。新增 fake-DOM 回归；全仓测试、lint、check、双契约审计 PASS；Chrome smoke 因截图覆盖安全门禁未执行。 | 本波 |
 
 | 140 | MKV 无限长度源尾部半截元素头回归 | 扩展 `mkv/__tests__/demuxer.test.js`：使用 size=Infinity 的流式数据源，在合法 WebM 后追加截断的 Void 元素头，验证 `open()` 将尾部残缺按流尾处理并保持媒体信息可用。全仓 2931/2931、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 

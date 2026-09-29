@@ -90,6 +90,7 @@ export function bindRange(el, h = {}) {
     on(el, 'change', () => { h.onCommit?.(num(el.value)); }),
     on(el, 'pointerdown', () => scrub(true)),
     on(window, 'pointerup', () => scrub(false)),
+    on(window, 'pointercancel', () => scrub(false)),
     on(el, 'pointermove', e => {
       const r = el.getBoundingClientRect();
       const ratio = r.width ? Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) : 0;
