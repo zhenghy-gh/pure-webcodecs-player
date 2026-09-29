@@ -263,6 +263,7 @@
 | 298 | 皮肤 toast 容器断连重建 | `site/js/skin.js` 的 `toast()` 复用容器时同时检查 `isConnected`；页面或 SPA 重建 `body` 后，后续提示会重新挂载到当前文档，而不会追加到脱离 DOM 的旧容器。新增 fake-DOM 生命周期回归；全仓测试、lint、check、双契约审计 PASS；Chrome smoke 因截图覆盖安全门禁未执行。 | 本波 |
 | 299 | 皮肤滑杆 pointercancel 收尾 | `site/js/skin.js` 的 `bindRange()` 增加 `window:pointercancel` 收尾，与 `pointerup` 共用 `scrub(false)`；触摸手势或系统中断拖动后会清除 `.controls/.stage.is-scrubbing`，避免 thumb 持续放大和时间气泡残留。新增 fake-DOM 回归；全仓测试、lint、check、双契约审计 PASS；Chrome smoke 因截图覆盖安全门禁未执行。 | 本波 |
 | 300 | Player UI 滑杆窗口级结束与销毁收尾 | `site/player-ui.js` 的 `bindSlider()` 记录具体活动滑杆，在 `window:pointerup/pointercancel` 迟到结束事件中统一清除拖动态并释放 pointer capture；每个滑杆的元素/窗口监听加入 `cleanupFns`，`destroy()` 时撤销监听并收尾，避免指针捕获丢失后拖动态永久残留或销毁后旧闭包继续响应。新增 `site/__tests__/player-ui-slider-lifecycle.test.js` 回归；全仓测试、lint、check、双契约审计 PASS；Chrome smoke 因截图覆盖安全门禁未执行。 | 本波 |
+| 301 | 旧版皮肤滑杆取消与销毁收尾 | `site/skin.js` 的 `bindRange()` 增加 `window:pointercancel` 监听，并在 disposer 中撤销该监听及清除 `.is-scrubbing`；旧版 subtitle/demo 在触摸手势中断或页面销毁后不再残留放大 thumb 状态。新增 `site/__tests__/skin-legacy-range-lifecycle.test.js` 回归；全仓测试、lint、check、双契约审计 PASS；Chrome smoke 因截图覆盖安全门禁未执行。 | 本波 |
 
 | 140 | MKV 无限长度源尾部半截元素头回归 | 扩展 `mkv/__tests__/demuxer.test.js`：使用 size=Infinity 的流式数据源，在合法 WebM 后追加截断的 Void 元素头，验证 `open()` 将尾部残缺按流尾处理并保持媒体信息可用。全仓 2931/2931、lint 541 文件、check 16/16、双契约审计 PASS。 | 本波 |
 

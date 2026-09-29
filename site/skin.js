@@ -110,12 +110,16 @@ export function bindRange(el, handlers = {}) {
     syncRange(el, fmt);
     if (handlers.onChange) handlers.onChange(Number(el.value));
   };
+  const onCancel = () => el.classList.remove('is-scrubbing');
   el.addEventListener('input', onInput);
   el.addEventListener('change', onChange);
+  window.addEventListener('pointercancel', onCancel);
   syncRange(el, fmt);
   return () => {
     el.removeEventListener('input', onInput);
     el.removeEventListener('change', onChange);
+    window.removeEventListener('pointercancel', onCancel);
+    onCancel();
   };
 }
 
