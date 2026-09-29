@@ -146,7 +146,8 @@ export function createPlayerUI(options = {}) {
   let volume = 1;
   let muted = false;
   let rate = 1;
-  let dragging = false;
+  let dragging = null;
+  let activePointerId = null;
   let statsTimer = 0;
 
   const ratesOf = () => (adapter && Array.isArray(adapter.rates) && adapter.rates.length ? adapter.rates : DEFAULT_RATES);
@@ -270,17 +271,39 @@ export function createPlayerUI(options = {}) {
 
   /* ---- 进度条与音量条的指针交互（Pointer Events，兼容触屏） ---- */
   function bindSlider(el, onRatio, { live, enabled } = {}) {
-    el.addEventListener('pointerdown', (e) => {
-      if (!adapter || enabled && !enabled() || (live === false && (isLive || !curDur))) return;
-      dragging = true;
+    const win = typeof window !== 'undefined' ? window : null;
+    const start = (e) => {
+      if (dragging || !adapter || enabled && !enabled() || (live === false && (isLive || !curDur))) return;
+      dragging = el;
+      activePointerId = e.pointerId;
       el.setPointerCapture?.(e.pointerId);
       el.classList.add('pui__progress--dragging');
       handle(e);
-    });
-    el.addEventListener('pointermove', (e) => { if (dragging) handle(e); });
-    const end = () => { dragging = false; el.classList.remove('pui__progress--dragging'); };
+    };
+    const move = (e) => { if (dragging === el) handle(e); };
+    const end = (e) => {
+      if (dragging !== el || e?.pointerId !== undefined && e.pointerId !== activePointerId) return;
+      dragging = null;
+      const pointerId = activePointerId;
+      activePointerId = null;
+      el.classList.remove('pui__progress--dragging');
+      if (pointerId !== null) el.releasePointerCapture?.(pointerId);
+    };
+    el.addEventListener('pointerdown', start);
+    el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
+    win?.addEventListener('pointerup', end);
+    win?.addEventListener('pointercancel', end);
+    cleanupFns.push(() => {
+      el.removeEventListener('pointerdown', start);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', end);
+      el.removeEventListener('pointercancel', end);
+      win?.removeEventListener('pointerup', end);
+      win?.removeEventListener('pointercancel', end);
+      end();
+    });
 
     function handle(e) {
       const rect = el.getBoundingClientRect();
