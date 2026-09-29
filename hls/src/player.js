@@ -140,8 +140,17 @@ export class HlsPlayer {
   async loadSource(url) {
     if (this._destroyed) throw stateError('播放器已销毁');
     if (!this._abortCtrl) throw stateError('播放器尚未挂载 video');
+    this._sourceId += 1;
+    this._abortCtrl.abort();
+    this._abortCtrl = new AbortController();
+    clearTimeout(this._pollTimer);
+    clearTimeout(this._t_bufferfull);
+    clearTimeout(this._t_waitsegments);
+    this._appending = false;
+    this._trimming = false;
+    this._loadedInitUrls.clear();
     const sessionId = this._sessionId;
-    const sourceId = ++this._sourceId;
+    const sourceId = this._sourceId;
     const signal = this._abortCtrl.signal;
     try {
       this._setState(PlayerState.LOADING);
