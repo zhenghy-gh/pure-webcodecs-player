@@ -371,6 +371,36 @@ describe('SEEKTABLE', () => {
     await dem.stop();
   });
 
+  test('seek 会使迟到的旧 samples iterator 失效', async () => {
+    const f0 = constantFrame(16, 100, 0);
+    const bytes = buildFlac({ streamInfo: { totalSamples: 16 }, frames: [f0] });
+    let reads = 0;
+    let release;
+    const pending = new Promise((resolve) => { release = resolve; });
+    const source = {
+      size: bytes.length,
+      async read(offset, length) {
+        reads += 1;
+        if (reads === 3) {
+          await pending;
+        }
+        return bytes.subarray(offset, offset + length);
+      },
+      async close() {},
+    };
+    const dem = new FlacDemuxer(source);
+    await dem.parseInit();
+    const iterator = dem.samples(1)[Symbol.asyncIterator]();
+    const staleRead = iterator.next();
+    await Promise.resolve();
+    await Promise.resolve();
+    await dem.seek(0);
+    release();
+    assert.equal((await staleRead).done, true);
+    assert.equal((await dem.readSample(1)).timestamp, 0);
+    await dem.stop();
+  });
+
 
 });
 

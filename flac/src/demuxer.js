@@ -55,6 +55,8 @@ export class FlacDemuxer extends Demuxer {
   /** readSample 单拉共享 reader（与 samples 游标一致，EOS 后自动释放重建） */
   #reader = null;
   #readerActive = false;
+  /** seek 后使旧 samples iterator 失效，避免迟到读取污染新游标 */
+  #sampleGeneration = 0;
 
 
   /** 解析元数据段 → Promise<MediaInfo> */
@@ -117,11 +119,15 @@ export class FlacDemuxer extends Demuxer {
     const signal = options?.signal ?? null;
     throwIfAborted(signal, `samples(${trackId}) aborted`);
     let cursor = this.#nextFrameIdx;
+    const generation = this.#sampleGeneration;
 
     return {
       [Symbol.asyncIterator]() {
         return {
           async next() {
+            if (generation !== self.#sampleGeneration) {
+              return { done: true, value: undefined };
+            }
             if (!self.frameIndex) await raceAbort(self.buildFrameIndex(), signal, `samples(${trackId}) aborted`);
             if (self.stateValue === 'ended' || cursor >= self.frameIndex.length) {
               self.emit('end', { reason: 'eos' });
@@ -135,6 +141,9 @@ export class FlacDemuxer extends Demuxer {
               signal,
               `samples(${trackId}) aborted`,
             );
+            if (generation !== self.#sampleGeneration) {
+              return { done: true, value: undefined };
+            }
             cursor += 1;
             self.#nextFrameIdx = cursor;
             if (cursor >= self.frameIndex.length && self.stateValue === 'ready') self.stateValue = 'ended';
@@ -178,6 +187,7 @@ export class FlacDemuxer extends Demuxer {
         if (this.frameIndex[i].firstSample <= targetSample) idx = i;
         else break;
       }
+      this.#sampleGeneration += 1;
       this.#nextFrameIdx = this.frameIndex.length === 0 ? 0 : idx;
       this.#reader = null;
       this.#readerActive = false;
