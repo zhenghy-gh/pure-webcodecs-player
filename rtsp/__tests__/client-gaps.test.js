@@ -293,6 +293,40 @@ test('keepalive：连接就绪后按 keepAliveMs 周期发送 OPTIONS（231-233�
   });
 });
 
+test('stop：未决 RTSP 握手请求立即以 ABORTED 拒绝且可重复停止', async () => {
+  const { FakeWs, instances } = makeFakeWs({ respond: () => null });
+  await withGlobals({ WebSocket: FakeWs }, async () => {
+    const c = new RtspWsClient({ url: 'ws://127.0.0.1:9/x', sdp: MIN_SDP });
+    const p = c.start().then(() => null, (e) => e);
+    await new Promise((r) => setImmediate(r));
+    assert.ok(instances[0].sent.some((text) => text.startsWith('OPTIONS ')));
+    c.stop();
+    const err = await p;
+    assert.equal(err.code, 'ABORTED');
+    assert.equal(c.state, STATES.CLOSED);
+    c.stop();
+    assert.equal(c.state, STATES.CLOSED);
+  });
+});
+
+test('WebSocket 异常关闭：未决请求以 NETWORK_ERROR 拒绝', async () => {
+  const { FakeWs, instances } = makeFakeWs({ respond: () => null });
+  await withGlobals({ WebSocket: FakeWs }, async () => {
+    const c = new RtspWsClient({
+      url: 'ws://127.0.0.1:9/x',
+      sdp: MIN_SDP,
+      reconnect: false,
+    });
+    const p = c.start().then(() => null, (e) => e);
+    await new Promise((r) => setImmediate(r));
+    instances[0].onclose?.({ code: 1006, reason: 'gone' });
+    const err = await p;
+    assert.equal(err.code, 'NETWORK_ERROR');
+    assert.match(err.message, /WebSocket 连接已关闭/);
+    assert.equal(c.state, STATES.CLOSED);
+  });
+});
+
 test('RTSP 请求响应超时：8s 无匹配 CSeq 响应以 TIMEOUT 拒绝（264-267）', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] }); // 虚拟时钟：无需真实等待 8s
   const { FakeWs } = makeFakeWs({ respond: () => null }); // 永不回应

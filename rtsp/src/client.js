@@ -134,8 +134,8 @@ export class RtspWsClient {
 
   stop() {
     this.closedByUser = true;
+    this.#rejectPendingRequest(errors.aborted('客户端已停止'));
     clearInterval(this.keepAliveTimer);
-    clearTimeout(this.#reqTimer);
     if (this.ws && this.ws.readyState <= 1) this.ws.close(1000, 'client stop');
     this.#setState(STATES.CLOSED);
   }
@@ -269,6 +269,15 @@ export class RtspWsClient {
     });
   }
 
+  #rejectPendingRequest(error) {
+    const pending = this.pendingResolve;
+    if (!pending) return;
+    this.pendingResolve = null;
+    clearTimeout(this.#reqTimer);
+    this.#reqTimer = null;
+    pending.reject(error);
+  }
+
   #reqTimer = null;
 
   #sendRawText(text) {
@@ -362,6 +371,7 @@ export class RtspWsClient {
 
   #onClose(code, reason) {
     clearInterval(this.keepAliveTimer);
+    this.#rejectPendingRequest(errors.network(`WebSocket 连接已关闭（${code}${reason ? `: ${reason}` : ''}）`));
     this.#emit('close', { code, reason });
     if (this.closedByUser || !this.opts.reconnect) {
       this.#setState(STATES.CLOSED);
