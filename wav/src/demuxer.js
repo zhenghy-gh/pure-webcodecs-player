@@ -18,6 +18,9 @@ import { parseWavHeader } from './riff-parser.js';
 import { stateError } from './errors.js';
 import { raceAbort, throwIfAborted } from '../../core/src/abort.js';
 
+const INITIAL_HEADER_BYTES = 64 * 1024;
+const MAX_HEADER_BYTES = 64 * 1024 * 1024;
+
 /** 每次迭代产出的采样块大小（帧）：粒度与内存开销的平衡点。 */
 const CHUNK_FRAMES = 4096;
 
@@ -80,10 +83,34 @@ export class WavDemuxer extends Demuxer {
   /** core Demuxer 钩子：解析 RIFF 头 + fmt + data 定位，返回 MediaInfo。
    *  状态迁移与超时（initTimeoutMs）由基类 `open()` 统一管理。 */
   async _doOpen() {
-    // 头部通常 < 100KB；读前 64KB 已足够定位 fmt 与 data 偏移
-    const headLen = Math.min(65536, this.source.size ?? 65536);
-    const head = await this.source.read(0, headLen);
-    this.#header = parseWavHeader(head);
+    let target = Math.min(INITIAL_HEADER_BYTES, this.source.size ?? INITIAL_HEADER_BYTES);
+    let head = new Uint8Array(target);
+    let bytesRead = 0;
+    let header;
+    while (true) {
+      while (bytesRead < target) {
+        const part = await this.source.read(bytesRead, target - bytesRead);
+        if (part.length === 0) break;
+        head.set(part, bytesRead);
+        bytesRead += part.length;
+      }
+      try {
+        header = parseWavHeader(head.subarray(0, bytesRead));
+        break;
+      } catch (error) {
+        const canGrow = /子块 .+ 越界/.test(error.message)
+          && bytesRead === target
+          && target < MAX_HEADER_BYTES
+          && (this.source.size == null || target < this.source.size);
+        if (!canGrow) throw error;
+        const nextTarget = Math.min(target * 2, MAX_HEADER_BYTES, this.source.size ?? MAX_HEADER_BYTES);
+        const nextHead = new Uint8Array(nextTarget);
+        nextHead.set(head);
+        head = nextHead;
+        target = nextTarget;
+      }
+    }
+    this.#header = header;
 
     const f = this.#header.format;
     this.mediaInfoValue = /** @type {MediaInfo} */ ({

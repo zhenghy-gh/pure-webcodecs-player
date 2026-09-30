@@ -142,14 +142,14 @@ function concat(list) {
 }
 
 /** 内存 ByteSource（契约 §2.1 最小实现） */
-function memorySource(bytes) {
+function memorySource(bytes, maxRead = Infinity) {
   return {
     size: bytes.length,
     async read(offset, length) {
-      if (offset < 0 || offset + length > bytes.length) {
+      if (offset < 0 || offset > bytes.length) {
         throw Object.assign(new Error('越界'), { code: 'SOURCE_ERROR' });
       }
-      return bytes.subarray(offset, offset + length);
+      return bytes.subarray(offset, Math.min(offset + length, offset + maxRead, bytes.length));
     },
     async close() {},
   };
@@ -213,6 +213,27 @@ describe('parseWavHeader', () => {
     }));
     assert.equal(h.dataChunk.offset > 12 + 8 + 16 + 8 + 5 + 1, true);
     assert.equal(h.chunks.some((c) => c.id === 'JUNK'), true);
+  });
+
+  test('data 前存在大型 JUNK 子块时扩展头读取窗口，短读也可解析', async () => {
+    const wav = buildWav({ extraChunkBeforeData: { id: 'JUNK', body: new Uint8Array(65500) } });
+    const parsed = parseWavHeader(wav);
+    assert.equal(parsed.dataChunk.offset, 65552);
+    assert.equal(parsed.dataChunk.size, 16);
+
+    const dem = new WavDemuxer(memorySource(wav, 4093));
+    const info = await dem.open();
+    assert.equal(info.durationUs, parsed.durationUs);
+    assert.deepEqual(dem.getBufferedRanges(1), [{ startUs: 0, endUs: parsed.durationUs }]);
+    await dem.stop();
+  });
+
+  test('源在非 data 子块结束前截断时仍拒绝解析', async () => {
+    const wav = buildWav({ extraChunkBeforeData: { id: 'JUNK', body: new Uint8Array(65500) } });
+    const truncated = wav.subarray(0, 65536);
+    const dem = new WavDemuxer(memorySource(truncated));
+    await assert.rejects(() => dem.open(), (error) => error.code === ErrorCode.PARSE_ERROR);
+    await dem.stop();
   });
 
   test('LIST/INFO 元数据被提取', () => {
