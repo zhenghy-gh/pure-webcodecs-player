@@ -155,6 +155,13 @@ export class SegmentLoader {
           data = new Uint8Array(buf);
           if (onProgress) onProgress(data.byteLength, totalHeader);
         }
+        if (byteRange && byteRange.length > 0 && data.byteLength !== byteRange.length) {
+          throw new LoadError(
+            ErrorCode.SOURCE_ERROR,
+            `BYTERANGE 响应长度不匹配（期望 ${byteRange.length}，实际 ${data.byteLength}） ${url}`,
+            { url, status: res.status, fatal: true }
+          );
+        }
         return { data, byteLength: data.byteLength };
       } catch (err) {
         bounded?.done();

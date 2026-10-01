@@ -84,7 +84,7 @@ test('SegmentLoader：BYTERANGE 映射为 Range 请求头', async () => {
         ok: true,
         status: 206,
         headers: { get: () => null },
-        arrayBuffer: async () => new ArrayBuffer(4),
+        arrayBuffer: async () => new ArrayBuffer(75232),
       };
     },
   });
@@ -105,6 +105,22 @@ test('SegmentLoader：BYTERANGE 服务端忽略 Range 时拒绝整资源响应',
   await assert.rejects(
     () => loader.load('https://cdn/a.mp4', { byteRange: { length: 2, offset: 1 } }),
     (e) => e instanceof LoadError && e.status === 200,
+  );
+});
+
+test('SegmentLoader：BYTERANGE 部分响应长度不足时拒绝', async () => {
+  const loader = new SegmentLoader({
+    maxRetry: 0,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 206,
+      headers: { get: () => null },
+      arrayBuffer: async () => new Uint8Array([1]).buffer,
+    }),
+  });
+  await assert.rejects(
+    () => loader.load('https://cdn/a.mp4', { byteRange: { length: 2, offset: 1 } }),
+    (e) => e instanceof LoadError && e.status === 206,
   );
 });
 
