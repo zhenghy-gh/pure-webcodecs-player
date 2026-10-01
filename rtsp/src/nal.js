@@ -45,11 +45,14 @@ export function fromAnnexb(bytes) {
 
 /** AVCC（长度前缀封装）→ NAL 数组。lengthSize 通常为 4。 */
 export function avccToNals(data, lengthSize = 4) {
+  if (!Number.isInteger(lengthSize) || lengthSize < 1 || lengthSize > 4) {
+    throw new RangeError(`invalid AVCC lengthSize: ${lengthSize}`);
+  }
   const nals = [];
   let off = 0;
   while (off + lengthSize <= data.length) {
     let len = 0;
-    for (let i = 0; i < lengthSize; i++) len = (len << 8) | data[off + i];
+    for (let i = 0; i < lengthSize; i++) len = (len * 256) + data[off + i];
     off += lengthSize;
     if (len === 0 || off + len > data.length) break; // 容错
     nals.push(data.subarray(off, off + len));
@@ -60,8 +63,15 @@ export function avccToNals(data, lengthSize = 4) {
 
 /** NAL 数组 → AVCC 封装字节 */
 export function nalsToAvcc(nals, lengthSize = 4) {
+  if (!Number.isInteger(lengthSize) || lengthSize < 1 || lengthSize > 4) {
+    throw new RangeError(`invalid AVCC lengthSize: ${lengthSize}`);
+  }
+  const maxNalLength = 2 ** (lengthSize * 8) - 1;
   let len = 0;
-  for (const n of nals) len += lengthSize + n.length;
+  for (const n of nals) {
+    if (n.length > maxNalLength) throw new RangeError(`NAL length exceeds AVCC lengthSize: ${n.length}`);
+    len += lengthSize + n.length;
+  }
   const out = new Uint8Array(len);
   let off = 0;
   for (const n of nals) {

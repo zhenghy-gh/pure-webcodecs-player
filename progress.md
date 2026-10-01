@@ -17,10 +17,12 @@
 - 风险：调用方传入非整数或负读取长度将明确报 `SOURCE_ERROR`，符合字节长度契约。
 - 下轮计划：继续检查解析器输入长度与资源上限的边界行为。
 
-## Round 3/100
-- 目标：避免 RTSP 线解析器对超出 JavaScript 安全整数范围的 Content-Length 永久等待。
-- 改动：解析 Content-Length 时检查 `Number.isSafeInteger`，超范围抛 `SOURCE_ERROR`；增加 `9007199254740992` 回归。
-- 验证：RTSP 线边界定向测试 16/16；`npm run check` 的 fixtures、全量测试、lint 均通过；`git diff --check` 通过。
-- 指标：全量测试 3089 项通过；异常长度立即拒绝，不再以不精确数字等待输入。
-- 风险：异常/不可表示的长度现在显式报错；合法安全整数范围内行为不变。
 - 下轮计划：继续检查解析器输入长度与资源上限的边界行为。
+
+## Round 4/100
+- 目标：确保 AVCC NAL 长度字段配置有效，且编码长度可由指定字段宽度表示。
+- 改动：`avccToNals` / `nalsToAvcc` 限制 lengthSize 为 1–4；编码时超宽 NAL 抛 `RangeError`；解码长度累积改用乘法，避免有符号位移对 4 字节无符号长度产生负数。
+- 验证：NAL 定向测试 12/12；`npm run check` fixtures、全量测试、lint 均通过；`git diff --check` 通过。
+- 指标：全量测试 3090 项通过；边界非法配置被拒绝，1 字节 AVCC 往返保持正确。
+- 风险：不合法长度配置从隐式错读变为抛 `RangeError`；合法长度配置行为不变。
+- 下轮计划：继续检查容器解析路径中可能的整数溢出和截断。

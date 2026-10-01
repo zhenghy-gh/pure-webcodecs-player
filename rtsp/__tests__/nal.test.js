@@ -68,6 +68,16 @@ test('avccToNals：len=0 与越界长度均容错中断，不抛异常', () => {
   assert.equal(avccToNals(bytes(0, 0)).length, 0, '不足 lengthSize 直接结束');
 });
 
+test('AVCC lengthSize 边界：仅接受 1 到 4 字节，编码长度不可溢出', () => {
+  assert.throws(() => avccToNals(bytes(1), 0), /lengthSize/);
+  assert.throws(() => nalsToAvcc([], 5), /lengthSize/);
+  assert.throws(() => nalsToAvcc([new Uint8Array(256)], 1), /exceeds AVCC lengthSize/);
+
+  const encoded = nalsToAvcc([bytes(0x65, 0xaa)], 1);
+  assert.deepEqual([...encoded], [2, 0x65, 0xaa]);
+  assert.deepEqual([...avccToNals(encoded, 1)[0]], [0x65, 0xaa]);
+});
+
 test('nalsToAvcc：写入 4 字节大端长度，与 avccToNals 往返一致', () => {
   const nals = [bytes(0x65, 0xaa, 0xbb), bytes(0x41)];
   const avcc = nalsToAvcc(nals);
