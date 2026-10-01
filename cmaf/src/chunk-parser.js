@@ -124,8 +124,7 @@ export function splitChunks(buf) {
 
 /** 由 trun 行 + mdat 数据区计算每个样本的具体位置与属性 */
 function materializeSamples(buf, moofBox, traf) {
-  const { trun, baseTime, defaults, trackId } = traf;
-  void trackId;
+  const { truns, baseTime, defaults } = traf;
   // 找紧随 moof 的 mdat
   let mdatDataStart = -1;
   let mdatDataEnd = -1;
@@ -140,37 +139,33 @@ function materializeSamples(buf, moofBox, traf) {
     throw notSupported('moof 之后未找到 mdat，无法定位样本数据');
   }
 
-  const rows = trun.rows.map((r) => ({
-    duration: r.duration || defaults.defaultSampleDuration || 0,
-    size: r.size || defaults.defaultSampleSize || 0,
-    flags: r.flags || defaults.defaultSampleFlags || 0,
-    cts: r.cts || 0,
-  }));
-
   const out = [];
-  // ISO 14496-12 §8.8.7：data_offset 以 moof 起点为基准（本项目各 muxer 均按
-  // moof.length+8 写入，即 default-base-is-moof 约定）。此前错加在 mdat 载荷
-  // 起点，dataStart 普遍偏大 moof.size+8 字节，样本数据全部读偏。
-  // trun 无 data-offset 标志时退回 mdat 载荷起点。
   const moofStart = moofBox.start;
   const dataBase = defaults.baseDataOffset ?? moofStart;
-  let cursor = trun.hasDataOffset ? dataBase + trun.dataOffset : mdatDataStart;
-  let dtsOffset = baseTime; // 所属 timescale 的 ticks
-  for (const row of rows) {
-    if (cursor < mdatDataStart || cursor + row.size > mdatDataEnd) {
-      throw notSupported('trun 样本范围超出 mdat 载荷边界');
+  let nextDataStart = mdatDataStart;
+  let dtsOffset = baseTime;
+  for (const trun of truns) {
+    let cursor = trun.hasDataOffset ? dataBase + trun.dataOffset : nextDataStart;
+    for (const row of trun.rows) {
+      const duration = row.duration || defaults.defaultSampleDuration || 0;
+      const size = row.size || defaults.defaultSampleSize || 0;
+      const flags = row.flags || defaults.defaultSampleFlags || 0;
+      if (cursor < mdatDataStart || cursor + size > mdatDataEnd) {
+        throw notSupported('trun 样本范围超出 mdat 载荷边界');
+      }
+      out.push({
+        durationUs: 0,
+        durationTicks: duration,
+        size,
+        keyframe: isKeyframeFlag(flags),
+        cts: row.cts || 0,
+        dtsOffset,
+        dataStart: cursor,
+      });
+      cursor += size;
+      dtsOffset += duration;
     }
-    out.push({
-      durationUs: 0, // 由上层按轨 timescale 换算（契约：公共边界 µs）
-      durationTicks: row.duration,
-      size: row.size,
-      keyframe: isKeyframeFlag(row.flags),
-      cts: row.cts,
-      dtsOffset,
-      dataStart: cursor,
-    });
-    cursor += row.size;
-    dtsOffset += row.duration;
+    nextDataStart = cursor;
   }
   return out;
 }

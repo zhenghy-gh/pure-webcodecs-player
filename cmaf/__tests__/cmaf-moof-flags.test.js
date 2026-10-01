@@ -354,6 +354,30 @@ test('splitChunks：largesize styp 和 moof 使用完整 16 字节头定位 chun
   assert.equal(chunks[0].tracks[0].samples[0].dataStart, styp.length + moof.length + 8);
 });
 
+test('splitChunks：同一 traf 内多个 trun 的样本均按顺序保留', () => {
+  const runs = [
+    trun(0, { dataOffset: 0, rows: [{ duration: 1000, size: 4 }] }),
+    trun(0, { dataOffset: 0, rows: [{ duration: 2000, size: 5 }] }),
+  ];
+  const build = () => box('moof', box('traf',
+    tfhd(4), tfdt(0, 500), ...runs,
+  ));
+  const moof = build();
+  const moofView = new DataView(moof.buffer, moof.byteOffset, moof.byteLength);
+  const trafBox = [...iterateBoxes(moof, 8, moof.length)].find((entry) => entry.type === 'traf');
+  const trunBoxes = [...iterateBoxes(moof, trafBox.contentStart, trafBox.contentEnd)]
+    .filter((entry) => entry.type === 'trun');
+  moofView.setInt32(trunBoxes[0].contentStart + 8, moof.length + 8);
+  moofView.setInt32(trunBoxes[1].contentStart + 8, moof.length + 8 + 4);
+  const stream = concatAll([styp(), moof, box('mdat', new Uint8Array(16).fill(0xab))]);
+  const { chunks } = splitChunks(stream);
+  const samples = chunks[0].tracks[0].samples;
+  assert.deepEqual(samples.map((sample) => sample.size), [4, 5]);
+  assert.deepEqual(samples.map((sample) => sample.durationTicks), [1000, 2000]);
+  assert.deepEqual(samples.map((sample) => sample.dataStart), [styp().length + moof.length + 8, styp().length + moof.length + 12]);
+  assert.deepEqual(samples.map((sample) => sample.dtsOffset), [500, 1500]);
+});
+
 /* ---------------- 多 traf 单 moof ---------------- */
 
 test('splitChunks：单 moof 双 traf → 单 chunk 内两条轨，各自默认与样本独立', () => {

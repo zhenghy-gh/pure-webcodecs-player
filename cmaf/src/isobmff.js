@@ -329,7 +329,7 @@ export function parseMoof(buf, contentStart, contentEnd) {
   const trafs = [];
   for (const traf of iterateBoxes(buf, contentStart, contentEnd)) {
     if (traf.type !== 'traf') continue;
-    const info = { trackId: 0, baseTime: 0, trun: null, defaults: {} };
+    const info = { trackId: 0, baseTime: 0, trun: null, truns: [], defaults: {} };
     let hasTfhd = false;
     for (const sub of iterateBoxes(buf, traf.contentStart, traf.contentEnd)) {
       if (sub.type === 'tfhd') {
@@ -340,10 +340,12 @@ export function parseMoof(buf, contentStart, contentEnd) {
       } else if (sub.type === 'tfdt') {
         info.baseTime = parseTfdt(buf, sub.contentStart, sub.contentEnd);
       } else if (sub.type === 'trun') {
-        info.trun = parseTrun(buf, sub.contentStart, sub.contentEnd);
+        const trun = parseTrun(buf, sub.contentStart, sub.contentEnd);
+        info.truns.push(trun);
+        info.trun = trun;
       }
     }
-    if (info.trun) {
+    if (info.truns.length > 0) {
       if (!hasTfhd) throw notSupported('ISO-BMFF traf 缺少必需的 tfhd box');
       trafs.push(info);
     }
