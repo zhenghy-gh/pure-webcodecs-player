@@ -115,6 +115,17 @@ function traf(trackId, baseTime, tfdtVer, trunBox, defaults = {}) {
   return box('traf', tfhd(trackId, defaults), tfdt(tfdtVer, baseTime), trunBox);
 }
 
+test('parseMoof：traf 缺少必需的 tfhd 时抛受控错误', () => {
+  const moof = box('moof', box('traf', trun(0, {
+    dataOffset: 8,
+    rows: [{ duration: 1000, size: 16 }],
+  })));
+  assert.throws(
+    () => parseMoof(moof, 8, moof.length),
+    (error) => error.code === 'NOT_SUPPORTED' && /tfhd/.test(error.message),
+  );
+});
+
 test('parseTfhd：拒绝越界的内容边界', () => {
   const buf = new Uint8Array(16);
   buf.set([0, 0, 0, 1, 0x74, 0x66, 0x68, 0x64, 0, 0, 0, 0, 0, 0, 0, 7]);
