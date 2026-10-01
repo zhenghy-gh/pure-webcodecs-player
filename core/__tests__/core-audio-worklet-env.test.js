@@ -63,21 +63,24 @@ test('PCM_WORKLET_CODE：push 增大容量后扩展现存声道环形缓冲', ()
   const send = (channels) => processor.port.onmessage({ data: { type: 'push', channels, frames: channels[0].length } });
 
   send([new Float32Array(1)]);
-  for (let i = 0; i < 188; i++) {
-    processor.process([], [[new Float32Array(128)]]);
-  }
-  assert.equal(processor.bufferedFrames, 0);
+  const queuedFrames = 20000;
+  const queued = Float32Array.from({ length: queuedFrames }, (_, i) => i / queuedFrames);
+  send([queued]);
 
   const frames = 30000;
-  const source = Float32Array.from({ length: frames }, (_, i) => i / frames);
+  const source = Float32Array.from({ length: frames }, (_, i) => 1 + i / frames);
   send([source]);
-  let sampleAt24000;
-  for (let consumed = 0; consumed < frames; consumed += 128) {
+  let firstSample;
+  let lastSample;
+  for (let consumed = 0; consumed < queuedFrames + frames; consumed += 128) {
     const output = [new Float32Array(128)];
     processor.process([], [output]);
-    if (24000 >= consumed && 24000 < consumed + 128) sampleAt24000 = output[0][24000 - consumed];
+    if (consumed === 0) firstSample = output[0][0];
+    const lastFrame = queuedFrames + frames;
+    if (lastFrame >= consumed && lastFrame < consumed + 128) lastSample = output[0][lastFrame - consumed];
   }
-  assert.equal(sampleAt24000, source[24000]);
+  assert.equal(firstSample, queued[0]);
+  assert.equal(lastSample, source[frames - 1]);
 });
 
 test('createWorkletUrl：生成 blob: URL（Node 22 原生 Blob + URL.createObjectURL）', () => {

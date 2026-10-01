@@ -26,9 +26,9 @@ class PcmRingWorklet extends AudioWorkletProcessor {
       if (msg.type === 'push') {
         const channels = msg.channels;
         const frames = msg.frames;
-        if (this.rings.length !== channels.length || this.capacity < frames) {
+        if (this.rings.length !== channels.length || this.capacity < this.bufferedFrames + frames) {
           const oldCapacity = this.capacity;
-          const nextCapacity = Math.max(this.capacity, frames, currentSampleRate >> 1);
+          const nextCapacity = Math.max(this.capacity, this.bufferedFrames + frames, currentSampleRate >> 1);
           if (oldCapacity > 0 && nextCapacity > oldCapacity) {
             const readPos = (this.writePos - this.bufferedFrames + oldCapacity) % oldCapacity;
             this.rings = this.rings.map((ring) => {
