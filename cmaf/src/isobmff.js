@@ -240,9 +240,16 @@ export function parseTrun(buf, contentStart, contentEnd) {
 }
 
 /** 解析 tfdt → baseMediaDecodeTime */
-export function parseTfdt(buf, contentStart) {
+export function parseTfdt(buf, contentStart, contentEnd = buf.length) {
+  if (contentStart < 0 || contentStart + 4 > contentEnd || contentEnd > buf.byteLength) {
+    throw notSupported(`ISO-BMFF tfdt 边界非法: start=${contentStart} end=${contentEnd}`);
+  }
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const { version } = readVersionFlags(buf, contentStart);
+  const valueSize = version === 1 ? 8 : 4;
+  if (contentStart + 4 + valueSize > contentEnd) {
+    throw notSupported(`ISO-BMFF tfdt 数据截断: end=${contentEnd}`);
+  }
   if (version === 1) return Number(dv.getBigUint64(contentStart + 4));
   return dv.getUint32(contentStart + 4);
 }
@@ -298,7 +305,7 @@ export function parseMoof(buf, contentStart, contentEnd) {
         info.trackId = tfhd.trackId;
         info.defaults = tfhd;
       } else if (sub.type === 'tfdt') {
-        info.baseTime = parseTfdt(buf, sub.contentStart);
+        info.baseTime = parseTfdt(buf, sub.contentStart, sub.contentEnd);
       } else if (sub.type === 'trun') {
         info.trun = parseTrun(buf, sub.contentStart, sub.contentEnd);
       }

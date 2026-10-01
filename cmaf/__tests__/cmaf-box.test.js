@@ -75,6 +75,24 @@ test('findAudioSpecificConfig：不跨 esds 后续盒误识别 ASC', () => {
   assert.equal(findAudioSpecificConfig(init), null);
 });
 
+test('parseTfdt：v0/v1 固定字段截断时抛受控 NOT_SUPPORTED', () => {
+  for (const [version, contentLength] of [[0, 7], [1, 11]]) {
+    const buf = new Uint8Array(contentLength);
+    buf[0] = version;
+    assert.throws(
+      () => parseTfdt(buf, 0, contentLength),
+      error => error.code === 'NOT_SUPPORTED',
+      `version=${version}, length=${contentLength}`,
+    );
+  }
+});
+
+test('parseTfdt：拒绝越界的内容边界', () => {
+  const buf = new Uint8Array(8);
+  assert.throws(() => parseTfdt(buf, -1, 8), error => error.code === 'NOT_SUPPORTED');
+  assert.throws(() => parseTfdt(buf, 0, 9), error => error.code === 'NOT_SUPPORTED');
+});
+
 test('readBoxHeader：普通盒类型/尺寸/头长', () => {
   const b = makeBox('ftyp', 8);
   const h = readBoxHeader(b, 0);
