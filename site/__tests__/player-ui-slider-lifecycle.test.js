@@ -129,6 +129,28 @@ test('createPlayerUI：unbind 与 adapter 切换时取消当前滑杆拖动', ()
   });
 });
 
+test('createPlayerUI：忽略非活动指针的滑杆移动', () => {
+  withGlobals(() => {
+    const ui = createPlayerUI({ keyboard: false });
+    const seekCalls = [];
+    ui.bind({
+      duration: () => 10,
+      currentTime: () => 2,
+      seek: value => seekCalls.push(value),
+      pause() {},
+      play() {},
+    });
+    const progress = ui.el.querySelector('.pui__progress');
+
+    progress.dispatchEvent({ type: 'pointerdown', clientX: 20, pointerId: 1 });
+    progress.dispatchEvent({ type: 'pointermove', clientX: 90, pointerId: 2 });
+    assert.deepEqual(seekCalls, [2]);
+    progress.dispatchEvent({ type: 'pointermove', clientX: 40, pointerId: 1 });
+    assert.deepEqual(seekCalls, [2, 4]);
+    ui.destroy();
+  });
+});
+
 test('createPlayerUI：窗口级 pointerup/pointercancel 结束滑杆拖动并在销毁时撤销', () => {
   withGlobals(({ window }) => {
     const ui = createPlayerUI({ keyboard: false });

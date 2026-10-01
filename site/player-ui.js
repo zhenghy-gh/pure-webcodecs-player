@@ -290,7 +290,7 @@ export function createPlayerUI(options = {}) {
       el.classList.add('pui__progress--dragging');
       handle(e);
     };
-    const move = (e) => { if (dragging === el) handle(e); };
+    const move = (e) => { if (dragging === el && e.pointerId === activePointerId) handle(e); };
     const end = (e) => {
       if (dragging !== el || e?.pointerId !== undefined && e.pointerId !== activePointerId) return;
       cancelSliderDrag();
