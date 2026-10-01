@@ -268,6 +268,9 @@ export function parseTfdt(buf, contentStart, contentEnd = buf.length) {
 
 /** 解析 tfhd → {trackId, defaultSampleDuration, defaultSampleSize, defaultSampleFlags, baseDataOffset} */
 export function parseTfhd(buf, contentStart, contentEnd) {
+  if (contentStart < 0 || contentStart > contentEnd || contentEnd > buf.byteLength) {
+    throw notSupported(`ISO-BMFF tfhd 边界非法: start=${contentStart} end=${contentEnd}`);
+  }
   if (contentStart + 4 > contentEnd) {
     throw notSupported(`ISO-BMFF tfhd 头部截断: end=${contentEnd}`);
   }

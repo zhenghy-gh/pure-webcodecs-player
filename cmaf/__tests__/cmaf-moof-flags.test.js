@@ -115,6 +115,13 @@ function traf(trackId, baseTime, tfdtVer, trunBox, defaults = {}) {
   return box('traf', tfhd(trackId, defaults), tfdt(tfdtVer, baseTime), trunBox);
 }
 
+test('parseTfhd：拒绝越界的内容边界', () => {
+  const buf = new Uint8Array(16);
+  buf.set([0, 0, 0, 1, 0x74, 0x66, 0x68, 0x64, 0, 0, 0, 0, 0, 0, 0, 7]);
+  assert.throws(() => parseTfhd(buf, -1, 16), (error) => error.code === 'NOT_SUPPORTED');
+  assert.throws(() => parseTfhd(buf, 8, 17), (error) => error.code === 'NOT_SUPPORTED');
+});
+
 test('parseTfhd：声明内容截断时不越过当前盒读取后续字段', () => {
   const truncated = Uint8Array.from([
     0, 0, 0, 16, 0x74, 0x66, 0x68, 0x64,
