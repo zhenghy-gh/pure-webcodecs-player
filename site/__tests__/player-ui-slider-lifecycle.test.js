@@ -151,6 +151,26 @@ test('createPlayerUI：忽略非活动指针的滑杆移动', () => {
   });
 });
 
+test('createPlayerUI：连续方向键 seek 基于最近的快捷键目标累计', () => {
+  withGlobals(({ window }) => {
+    const ui = createPlayerUI();
+    const seekCalls = [];
+    ui.bind({
+      duration: () => 20,
+      currentTime: () => 2,
+      seek: value => seekCalls.push(value),
+      pause() {},
+      play() {},
+    });
+
+    window.dispatchEvent({ type: 'keydown', key: 'ArrowRight', target: null, preventDefault() {} });
+    window.dispatchEvent({ type: 'keydown', key: 'ArrowRight', target: null, preventDefault() {} });
+    window.dispatchEvent({ type: 'keydown', key: 'ArrowLeft', target: null, preventDefault() {} });
+    assert.deepEqual(seekCalls, [7, 12, 7]);
+    ui.destroy();
+  });
+});
+
 test('createPlayerUI：窗口级 pointerup/pointercancel 结束滑杆拖动并在销毁时撤销', () => {
   withGlobals(({ window }) => {
     const ui = createPlayerUI({ keyboard: false });

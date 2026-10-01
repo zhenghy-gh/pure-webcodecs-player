@@ -357,8 +357,20 @@ export function createPlayerUI(options = {}) {
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       switch (e.key) {
         case ' ': case 'k': e.preventDefault(); togglePlay(); break;
-        case 'ArrowRight': e.preventDefault(); if (canSeek()) adapter.seek(Math.min(curDur, curTime + 5)); break;
-        case 'ArrowLeft': e.preventDefault(); if (canSeek()) adapter.seek(Math.max(0, curTime - 5)); break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (canSeek()) {
+            curTime = Math.min(curDur, curTime + 5);
+            adapter.seek(curTime);
+          }
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (canSeek()) {
+            curTime = Math.max(0, curTime - 5);
+            adapter.seek(curTime);
+          }
+          break;
         case 'ArrowUp': e.preventDefault(); volume = Math.min(1, volume + 0.1); muted = false; applyVolume(); break;
         case 'ArrowDown': e.preventDefault(); volume = Math.max(0, volume - 0.1); applyVolume(); break;
         case 'f': case 'F': toggleFullscreen(); break;
