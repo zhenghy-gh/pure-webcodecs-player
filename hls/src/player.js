@@ -178,7 +178,11 @@ export class HlsPlayer {
       this._checkTdViolation(parsed);
       this.playlistUrl = url;
       this._emit('manifest', { levels: [] });
-      this._startPipeline();
+      const startOffset = parsed.start?.['TIME-OFFSET'];
+      const startUs = Number.isFinite(startOffset)
+        ? (startOffset < 0 ? Math.max(0, parsed.totalDuration * 1e6 + startOffset * 1e6) : startOffset * 1e6)
+        : 0;
+      this._startPipeline(computeResumeIndexByTimeUs(parsed.segments, startUs));
       return parsed;
     } catch (err) {
       if (!this._isCurrentSource(sessionId, sourceId, signal)) return;
@@ -202,6 +206,12 @@ export class HlsPlayer {
         resumeIdx = computeResumeIndexBySn(parsed.segments, anchorSn);
       } else if (opts.resumeFromUs != null && opts.resumeFromUs > 0) {
         resumeIdx = computeResumeIndexByTimeUs(parsed.segments, opts.resumeFromUs);
+      } else if (anchorSn == null && Number.isFinite(parsed.start?.['TIME-OFFSET'])) {
+        const offset = parsed.start['TIME-OFFSET'];
+        const startUs = offset < 0
+          ? Math.max(0, parsed.totalDuration * 1e6 + offset * 1e6)
+          : offset * 1e6;
+        resumeIdx = computeResumeIndexByTimeUs(parsed.segments, startUs);
       } else {
         resumeIdx = 0;
       }

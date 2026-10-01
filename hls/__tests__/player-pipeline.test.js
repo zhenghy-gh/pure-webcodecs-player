@@ -25,6 +25,17 @@ seg0.m4s
 seg1.m4s
 #EXT-X-ENDLIST`;
 
+const START_PL = `#EXTM3U
+#EXT-X-TARGETDURATION:6
+#EXT-X-START:TIME-OFFSET=7.0,PRECISE=YES
+#EXTINF:6.0,
+start0.m4s
+#EXTINF:6.0,
+start1.m4s
+#EXTINF:6.0,
+start2.m4s
+#EXT-X-ENDLIST`;
+
 const MASTER_PL = `#EXTM3U
 #EXT-X-STREAM-INF:BANDWIDTH=1280000,CODECS="avc1.64001f,mp4a.40.2"
 hi.m3u8
@@ -180,6 +191,42 @@ async function until(cond, ms = 2000) {
 }
 
 /* ------------------------------ VOD 主链路 ------------------------------ */
+
+test('EXT-X-START：初始 VOD 装载从 TIME-OFFSET 对应的分片开始', async () => {
+  const { p, loader, mse } = setup({
+    texts: { [BASE]: START_PL },
+    bytes: {
+      'http://x/live/start0.m4s': new Uint8Array([0xf0]),
+      'http://x/live/start1.m4s': new Uint8Array([0xf1]),
+      'http://x/live/start2.m4s': new Uint8Array([0xf2]),
+    },
+    passthrough: true,
+  });
+  await p.loadSource(BASE);
+  await until(() => mse.endedCount > 0);
+
+  assert.deepEqual(loader.loadCalls, ['http://x/live/start1.m4s', 'http://x/live/start2.m4s']);
+  assert.equal(p.nextSegmentIdx, 3);
+  p.destroy();
+});
+
+test('EXT-X-START：负 TIME-OFFSET 从 VOD 末尾向前定位', async () => {
+  const playlist = START_PL.replace('TIME-OFFSET=7.0', 'TIME-OFFSET=-7.0');
+  const { p, loader, mse } = setup({
+    texts: { [BASE]: playlist },
+    bytes: {
+      'http://x/live/start0.m4s': new Uint8Array([0xf0]),
+      'http://x/live/start1.m4s': new Uint8Array([0xf1]),
+      'http://x/live/start2.m4s': new Uint8Array([0xf2]),
+    },
+    passthrough: true,
+  });
+  await p.loadSource(BASE);
+  await until(() => mse.endedCount > 0);
+
+  assert.deepEqual(loader.loadCalls, ['http://x/live/start1.m4s', 'http://x/live/start2.m4s']);
+  p.destroy();
+});
 
 test('VOD fMP4 直通：双轨 append、stats、endOfStream 与 ended 事件', async () => {
   const { p, loader, mse } = setup({
