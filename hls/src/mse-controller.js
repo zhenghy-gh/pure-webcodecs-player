@@ -118,41 +118,42 @@ export class MseController {
     const task = this._queues[type].then(
       () =>
         new Promise((resolve, reject) => {
-          try {
-            const onEnd = () => {
-              cleanup();
-              resolve();
-            };
-            const onErr = () => {
-              cleanup();
-              // I3 健壮性：appendBuffer 触发错误后 Chrome 会移除该 SourceBuffer，
-              // 此时读 sb.buffered 抛异常 —— 必须先 try 判配额，再以 DECODE_ERROR 上报。
-              let overQuota = false;
+          const onEnd = () => {
+            cleanup();
+            resolve();
+          };
+          const onErr = () => {
+            cleanup();
+            // I3 健壮性：appendBuffer 触发错误后 Chrome 会移除该 SourceBuffer，
+            // 此时读 sb.buffered 抛异常 —— 必须先 try 判配额，再以 DECODE_ERROR 上报。
+            let overQuota = false;
+            try {
+              overQuota = sb.buffered && sb.buffered.length >= 30;
+            } catch {
+              overQuota = false; // SB 已移除，读 buffered 失败 ⇒ 按普通 append 错误上报
+            }
+            if (overQuota) {
+              // 配额超限：先通知上层裁剪旧缓冲（若已注册回调）
               try {
-                overQuota = sb.buffered && sb.buffered.length >= 30;
+                this._onQuotaEvict?.(type, this.getBuffered(type));
               } catch {
-                overQuota = false; // SB 已移除，读 buffered 失败 ⇒ 按普通 append 错误上报
+                /* 回调异常不影响错误上报 */
               }
-              if (overQuota) {
-                // 配额超限：先通知上层裁剪旧缓冲（若已注册回调）
-                try {
-                  this._onQuotaEvict?.(type, this.getBuffered(type));
-                } catch {
-                  /* 回调异常不影响错误上报 */
-                }
-                reject(decodeError('SourceBuffer 配额异常（QuotaExceeded）', { type }));
-              } else {
-                reject(decodeError('appendBuffer error', { type }));
-              }
-            };
-            const cleanup = () => {
-              sb.removeEventListener('updateend', onEnd);
-              sb.removeEventListener('error', onErr);
-            };
-            sb.addEventListener('updateend', onEnd);
-            sb.addEventListener('error', onErr);
+              reject(decodeError('SourceBuffer 配额异常（QuotaExceeded）', { type }));
+            } else {
+              reject(decodeError('appendBuffer error', { type }));
+            }
+          };
+          const cleanup = () => {
+            sb.removeEventListener('updateend', onEnd);
+            sb.removeEventListener('error', onErr);
+          };
+          sb.addEventListener('updateend', onEnd);
+          sb.addEventListener('error', onErr);
+          try {
             sb.appendBuffer(data instanceof Uint8Array ? data : new Uint8Array(data));
           } catch (err) {
+            cleanup();
             // 同步抛出（如 QuotaExceededError）
             reject(err);
           }

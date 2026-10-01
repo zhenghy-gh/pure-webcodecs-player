@@ -253,7 +253,10 @@ test('append：未初始化拒绝；appendBuffer 同步抛原样上抛；updatee
     const quota = new Error('quota');
     quota.name = 'QuotaExceededError';
     sb.appendBufferThrows = quota;
+    const listenerCounts = Object.fromEntries(['updateend', 'error'].map((type) => [type, sb._listeners.get(type).length]));
     await assert.rejects(c.append('video', new Uint8Array([3])), (e) => e === quota);
+    assert.equal(sb._listeners.get('updateend').length, listenerCounts.updateend, '同步失败必须移除 updateend 监听');
+    assert.equal(sb._listeners.get('error').length, listenerCounts.error, '同步失败必须移除 append error 监听');
     sb.appendBufferThrows = null;
   });
 });
