@@ -299,10 +299,12 @@ test('currentTimeSec：Worklet 欠载期间冻结音频主钟，恢复消费后�
     ctx.currentTime = 1.5;
     assert.equal(player.currentTimeSec(), 0.6);
 
-    node.port.dispatch({ type: 'underrun', at: 1.5 });
-    assert.equal(player.currentTimeSec(), 0.1, '主钟回到最后实际消费的 PCM 时间');
+    node.port.dispatch({ type: 'underrun', at: 1.5, playedFrames: 6960 });
+    assert.equal(player.currentTimeSec(), 0.145, '主钟回到欠载时精确消费的 PCM 帧');
     ctx.currentTime = 2.5;
-    assert.equal(player.currentTimeSec(), 0.1, 'AudioContext 前进但输出静音时主钟冻结');
+    assert.equal(player.currentTimeSec(), 0.145, 'AudioContext 前进但输出静音时主钟冻结');
+    node.port.dispatch({ type: 'stats', bufferedFrames: 2000, playedFrames: 6960, sampleRate: 48000 });
+    assert.equal(player.currentTimeSec(), 0.145, '仅重新入队但尚未消费时仍保持冻结');
 
     node.port.dispatch({ type: 'stats', bufferedFrames: 0, playedFrames: 9600, sampleRate: 48000 });
     assert.equal(player.currentTimeSec(), 0.2, '恢复消费后从实际 PCM 时刻继续');

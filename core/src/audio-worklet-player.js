@@ -94,7 +94,7 @@ class PcmRingWorklet extends AudioWorkletProcessor {
         for (let ch = 0; ch < chCount; ch++) output[ch][i] = 0;
         if (i === 0 && this.playedFrames > 0) {
           this.underruns += 1;
-          this.port.postMessage({ type: 'underrun', at: currentTime });
+          this.port.postMessage({ type: 'underrun', at: currentTime, playedFrames: this.playedFrames });
         }
       }
     }
@@ -182,9 +182,10 @@ export class AudioWorkletPlayer extends Emitter {
     switch (msg.type) {
       case 'stats': {
         const wasUnderrun = this._clockUnderrun;
+        const previousPlayedFrames = this._playedFrames;
         this._bufferedFrames = msg.bufferedFrames;
         this._onPlayedFrames(msg.playedFrames);
-        if (wasUnderrun && this._bufferedFrames > 0) {
+        if (wasUnderrun && this._playedFrames > previousPlayedFrames) {
           this._startedAt = this._playedFrames / this.sampleRate;
           this._anchorCtxTime = this.context?.currentTime ?? 0;
           this._clockUnderrun = false;
@@ -194,6 +195,7 @@ export class AudioWorkletPlayer extends Emitter {
       case 'underrun':
         this._underruns += 1;
         this._clockUnderrun = true;
+        if (Number.isFinite(msg.playedFrames)) this._onPlayedFrames(msg.playedFrames);
         this.emit('underrun', { contextTime: msg.at });
         break;
       default:
