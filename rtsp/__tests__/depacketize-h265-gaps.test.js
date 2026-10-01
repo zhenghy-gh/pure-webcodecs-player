@@ -45,12 +45,24 @@ test('乱序/过期包：seq 回退 → 静默丢弃，不污染当前访问单�
   assert.equal(out.nals.length, 2, '后续新包正常入帧');
 });
 
+test('AP：截断条目或缺失 DONL 时不输出部分聚合内容', () => {
+  const d = new H265Depacketizer();
+  const truncated = Uint8Array.from([96, 1, 0, 2, 0x42, 1, 0, 4, 0x44]);
+  const out = d.push(truncated, true, 1, 3000);
+  assert.deepEqual(out.nals, []);
+
+  const withDonl = new H265Depacketizer({ donl: true });
+  const missingDonl = Uint8Array.from([96, 1, 0]);
+  const donlOut = withDonl.push(missingDonl, true, 1, 3000);
+  assert.deepEqual(donlOut.nals, []);
+});
+
 test('丢包计数：序号跳空 → lost = 跳空数 - 1', () => {
   const d = new H265Depacketizer();
   d.push(singleNal(), false, 1, 3000);
-  d.push(singleNal(), true, 5, 3000); // 跳过 2/3/4
+  d.push(singleNal(), true, 5, 3000);
   assert.equal(d.stats.lost, 3);
-  d.push(singleNal(), true, 6, 3000); // 连续不再累计
+  d.push(singleNal(), true, 6, 3000);
   assert.equal(d.stats.lost, 3);
 });
 

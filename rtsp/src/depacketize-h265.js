@@ -59,15 +59,19 @@ export class H265Depacketizer {
     if (nalType === H265_AP) {
       this.#abortFu();
       let off = 2; // AP 自身的 PayloadHdr
-      // RFC 7798：配置 DONL 时，首个条目前置 2 字节 DONL（仅一次）
-      if (this.donl && payload.length >= off + 2) off += 2;
+      if (this.donl) {
+        if (payload.length < off + 2) off = payload.length + 1;
+        else off += 2;
+      }
+      const nals = [];
       while (off + 2 <= payload.length) {
         const len = (payload[off] << 8) | payload[off + 1];
         off += 2;
         if (len === 0 || off + len > payload.length) break;
-        this.auNals.push(payload.subarray(off, off + len));
+        nals.push(payload.subarray(off, off + len));
         off += len;
       }
+      if (off === payload.length) this.auNals.push(...nals);
       this.stats.ap++;
     } else if (nalType === H265_FU) {
       if (payload.length < 3) {
