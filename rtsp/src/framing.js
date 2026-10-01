@@ -111,7 +111,10 @@ function latinize(bytes) {
 
 function parseContentLength(headerText) {
   const m = /content-length:\s*(\d+)/i.exec(headerText);
-  return m ? Number(m[1]) : 0;
+  if (!m) return 0;
+  const length = Number(m[1]);
+  if (!Number.isSafeInteger(length)) throw errors.source('RTSP Content-Length exceeds safe integer range');
+  return length;
 }
 
 /** 解析 RTSP 响应头文本 */

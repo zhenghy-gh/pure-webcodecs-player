@@ -100,14 +100,20 @@ test('响应头不完整（缺尾随 \\r\\n\\r\\n）：不提前触发，补全�
   assert.equal(got[0].code, 200);
 });
 
+test('响应 Content-Length 超出安全整数范围时拒绝', () => {
+  const p = new InterleavedWireParser();
+  const head = 'RTSP/1.0 200 OK\r\nContent-Length: 9007199254740992\r\n\r\n';
+  assert.throws(() => p.push(new TextEncoder().encode(head)), /Content-Length exceeds safe integer range/);
+});
+
 test('响应 Content-Length 声明 > 已到 body：等待补齐后才收束', () => {
   const p = new InterleavedWireParser();
   const got = [];
   p.onResponse = (r) => got.push(r);
   const head = 'RTSP/1.0 200 OK\r\nCSeq: 7\r\nContent-Length: 5\r\n\r\n';
-  p.push(new TextEncoder().encode(head + 'abc')); // body 只到 3/5
+  p.push(new TextEncoder().encode(head + 'abc'));
   assert.equal(got.length, 0, 'body 未满足不应触发');
-  p.push(new TextEncoder().encode('de'));         // 补齐到 5
+  p.push(new TextEncoder().encode('de'));
   assert.equal(got.length, 1);
   assert.equal(got[0].body, 'abcde');
 });

@@ -13,6 +13,14 @@
 - 目标：防止 ByteStream 的负长度读取返回错误切片并倒退游标。
 - 改动：`ByteStream._need()` 要求读取长度为非负整数；`byte-stream-gaps.test.js` 覆盖 `readSlice(-1)`、`peekSlice(-1)` 抛 `SOURCE_ERROR` 且游标不变。
 - 验证：定向测试 9/9；`npm run check` fixtures、全量测试、lint 均通过；`git diff --check` 通过。
-- 指标：全量测试 3088 项预计通过（Round 1 后 3087 项，本轮新增 1 个测试）；错误输入不会修改位置。
+- 指标：全量测试 3088 项通过；错误输入不会修改位置。
 - 风险：调用方传入非整数或负读取长度将明确报 `SOURCE_ERROR`，符合字节长度契约。
-- 下轮计划：扫描 RTP/传输解析器的邻近边界，优先修复可稳定复现的输入校验缺口。
+- 下轮计划：继续检查解析器输入长度与资源上限的边界行为。
+
+## Round 3/100
+- 目标：避免 RTSP 线解析器对超出 JavaScript 安全整数范围的 Content-Length 永久等待。
+- 改动：解析 Content-Length 时检查 `Number.isSafeInteger`，超范围抛 `SOURCE_ERROR`；增加 `9007199254740992` 回归。
+- 验证：RTSP 线边界定向测试 16/16；`npm run check` 的 fixtures、全量测试、lint 均通过；`git diff --check` 通过。
+- 指标：全量测试 3089 项通过；异常长度立即拒绝，不再以不精确数字等待输入。
+- 风险：异常/不可表示的长度现在显式报错；合法安全整数范围内行为不变。
+- 下轮计划：继续检查解析器输入长度与资源上限的边界行为。
