@@ -123,6 +123,14 @@ export class SegmentLoader {
           headers['Range'] = `bytes=${byteRange.offset}-${byteRange.offset + byteRange.length - 1}`;
         }
         const res = await this._fetch(url, { headers: { ...headers }, signal: bounded.signal, mode: 'cors', credentials: this.credentials });
+        if (byteRange && byteRange.length > 0 && res.status !== 206) {
+          const fatal = res.status >= 200 && res.status < 400;
+          throw new LoadError(
+            fatal ? ErrorCode.SOURCE_ERROR : ErrorCode.NETWORK_ERROR,
+            `BYTERANGE 请求未返回部分内容（HTTP ${res.status}） ${url}`,
+            { url, status: res.status, fatal }
+          );
+        }
         if (!res.ok && res.status !== 206) {
           // 4xx 视为不可恢复资源错误，5xx 允许重试
           const fatal = res.status >= 400 && res.status < 500;

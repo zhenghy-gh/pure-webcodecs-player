@@ -92,6 +92,22 @@ test('SegmentLoader：BYTERANGE 映射为 Range 请求头', async () => {
   assert.equal(seen[0], 'bytes=1000-76231');
 });
 
+test('SegmentLoader：BYTERANGE 服务端忽略 Range 时拒绝整资源响应', async () => {
+  const loader = new SegmentLoader({
+    maxRetry: 0,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+    }),
+  });
+  await assert.rejects(
+    () => loader.load('https://cdn/a.mp4', { byteRange: { length: 2, offset: 1 } }),
+    (e) => e instanceof LoadError && e.status === 200,
+  );
+});
+
 test('SegmentLoader：超时产出 TIMEOUT 码并按网络类重试', async () => {
   let attempts = 0;
   const loader = new SegmentLoader({
