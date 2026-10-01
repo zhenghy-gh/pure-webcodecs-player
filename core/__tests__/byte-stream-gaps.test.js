@@ -40,6 +40,15 @@ test('position setter 委托 seek；rewind 回退游标', () => {
   assert.equal(s.readU16(), 0x0304);
 });
 
+test('readSlice 与 peekSlice 拒绝负长度且保持游标', () => {
+  const s = new ByteStream(new Uint8Array([1, 2, 3]));
+  s.seek(1);
+  assert.throws(() => s.readSlice(-1), (e) => e.code === 'SOURCE_ERROR');
+  assert.equal(s.position, 1);
+  assert.throws(() => s.peekSlice(-1), (e) => e.code === 'SOURCE_ERROR');
+  assert.equal(s.position, 1);
+});
+
 test('readSlice 越界 → read overflow sourceError', () => {
   const s = new ByteStream(new Uint8Array(4));
   assert.throws(

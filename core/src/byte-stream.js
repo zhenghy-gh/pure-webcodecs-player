@@ -88,6 +88,9 @@ export class ByteStream {
   }
 
   _need(n) {
+    if (!Number.isInteger(n) || n < 0) {
+      throw sourceError(`invalid read length: ${n}`);
+    }
     if (this.remaining < n) {
       throw sourceError(`read overflow: need ${n} bytes at ${this._pos}, remaining=${this.remaining}`);
     }
