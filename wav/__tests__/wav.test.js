@@ -348,6 +348,50 @@ describe('WavDemuxer.parseInit/samples/seek', () => {
     await dem.stop();
   });
 
+  test('seek 后旧 samples iterator 不再交付 seek 前的位置', async () => {
+    const dem = new WavDemuxer(memorySource(buildWav({ sampleRate: 8000, frames: 16000 })), { chunkFrames: 4 });
+    await dem.parseInit();
+    const old = dem.samples(1)[Symbol.asyncIterator]();
+    const first = await old.next();
+    assert.equal(first.value.timestamp, 0);
+
+    await dem.seek(0);
+    const fresh = dem.samples(1)[Symbol.asyncIterator]();
+    assert.equal((await fresh.next()).value.timestamp, 0);
+    assert.deepEqual(await old.next(), { done: true, value: undefined });
+    await dem.stop();
+  });
+
+  test('seek 使未完成的旧 iterator 读取失效', async () => {
+    const bytes = buildWav({ sampleRate: 8000, frames: 16000 });
+    let releaseRead;
+    let startedRead;
+    let holdReads = false;
+    const readStarted = new Promise((resolve) => { startedRead = resolve; });
+    const source = memorySource(bytes);
+    const read = source.read;
+    source.read = async (offset, length) => {
+      if (holdReads) {
+        await new Promise((resolve) => { releaseRead = resolve; startedRead(); });
+      }
+      return read(offset, length);
+    };
+    const dem = new WavDemuxer(source, { chunkFrames: 4 });
+    await dem.parseInit();
+    holdReads = true;
+    const old = dem.samples(1)[Symbol.asyncIterator]();
+    const pending = old.next();
+    await readStarted;
+
+    await dem.seek(0);
+    holdReads = false;
+    releaseRead();
+    assert.deepEqual(await pending, { done: true, value: undefined });
+    const fresh = dem.samples(1)[Symbol.asyncIterator]();
+    assert.equal((await fresh.next()).value.timestamp, 0);
+    await dem.stop();
+  });
+
   test('seek 后迭代从落点开始', async () => {
     const dem = new WavDemuxer(memorySource(buildWav({ sampleRate: 8000, frames: 16000 })));
     await dem.parseInit();

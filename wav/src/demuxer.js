@@ -79,6 +79,7 @@ export class WavDemuxer extends Demuxer {
   #reader = null;
   #readerActive = false;
   #endEmitted = false;
+  #iteratorGeneration = 0;
 
   /** core Demuxer 钩子：解析 RIFF 头 + fmt + data 定位，返回 MediaInfo。
    *  状态迁移与超时（initTimeoutMs）由基类 `open()` 统一管理。 */
@@ -154,12 +155,16 @@ export class WavDemuxer extends Demuxer {
     const dataOff = header.dataChunk.offset;
     const totalFrames = Math.floor(header.dataChunk.size / Math.max(1, fmt.blockAlign));
     const usPerFrame = 1e6 / fmt.sampleRate;
+    const generation = this.#iteratorGeneration;
     let nextFrame = this.#startFrame; // 消费游标
 
     return {
       [Symbol.asyncIterator]() {
         return {
           async next() {
+            if (generation !== self.#iteratorGeneration || self.state === 'destroyed') {
+              return { done: true, value: undefined };
+            }
             if (self.state === 'error') throw stateError('demuxer 已进入 error 态，禁止继续取样本');
             if (self.state === 'ended' || nextFrame >= totalFrames) {
               if (!self.#endEmitted) { self.emit('end', { reason: 'eos' }); self.#endEmitted = true; }
@@ -184,6 +189,9 @@ export class WavDemuxer extends Demuxer {
                 self.emit('error', e);
               }
               throw e;
+            }
+            if (generation !== self.#iteratorGeneration || self.state === 'destroyed') {
+              return { done: true, value: undefined };
             }
             nextFrame += count;
             if (nextFrame >= totalFrames && self.state === 'ready') self.stateValue = 'ended';
@@ -215,6 +223,7 @@ export class WavDemuxer extends Demuxer {
     }
     if (!Number.isFinite(timestampUs)) throw stateError('seek 入参必须是有限数值（µs）');
     this.stateValue = 'seeking';
+    this.#iteratorGeneration += 1;
     try {
       const fmt = this.#header.format;
       const totalFrames = Math.floor(this.#header.dataChunk.size / Math.max(1, fmt.blockAlign));
