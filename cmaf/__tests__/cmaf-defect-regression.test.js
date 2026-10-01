@@ -86,6 +86,16 @@ function traf(trackId, baseTime, trunBox, defs = {}) {
 }
 function moofStream(trafBoxes, { mdatBytes = 64 } = {}) {
   const moof = box('moof', ...trafBoxes);
+  const dv = new DataView(moof.buffer, moof.byteOffset, moof.byteLength);
+  for (const trafBox of iterateBoxes(moof, 8, moof.length)) {
+    if (trafBox.type !== 'traf') continue;
+    for (const sub of iterateBoxes(moof, trafBox.contentStart, trafBox.contentEnd)) {
+      if (sub.type !== 'trun') continue;
+      const flags = (moof[sub.contentStart + 1] << 16) |
+        (moof[sub.contentStart + 2] << 8) | moof[sub.contentStart + 3];
+      if (flags & 0x000001) dv.setInt32(sub.contentStart + 8, moof.length + 8);
+    }
+  }
   const mdat = box('mdat', new Uint8Array(mdatBytes).fill(0xab));
   return { stream: (() => { const out = new Uint8Array(styp().length + moof.length + mdat.length); out.set(styp(), 0); out.set(moof, styp().length); out.set(mdat, styp().length + moof.length); return out; })(), moofLen: moof.length };
 }

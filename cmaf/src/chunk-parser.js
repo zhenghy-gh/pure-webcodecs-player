@@ -128,9 +128,11 @@ function materializeSamples(buf, moofBox, traf) {
   void trackId;
   // 找紧随 moof 的 mdat
   let mdatDataStart = -1;
+  let mdatDataEnd = -1;
   for (const b of iterateBoxes(buf, moofBox.contentEnd)) {
     if (b.type === 'mdat') {
       mdatDataStart = b.contentStart;
+      mdatDataEnd = b.contentEnd;
       break;
     }
   }
@@ -154,6 +156,9 @@ function materializeSamples(buf, moofBox, traf) {
   let cursor = trun.hasDataOffset ? moofStart + trun.dataOffset : mdatDataStart;
   let dtsOffset = baseTime; // 所属 timescale 的 ticks
   for (const row of rows) {
+    if (cursor < mdatDataStart || cursor + row.size > mdatDataEnd) {
+      throw notSupported('trun 样本范围超出 mdat 载荷边界');
+    }
     out.push({
       durationUs: 0, // 由上层按轨 timescale 换算（契约：公共边界 µs）
       durationTicks: row.duration,

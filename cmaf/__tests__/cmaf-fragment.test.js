@@ -139,3 +139,19 @@ test('fragment：moof 后无 mdat 抛 NOT_SUPPORTED（无法定位样本数据�
     '缺 mdat 应抛 NOT_SUPPORTED'
   );
 });
+
+test('fragment：trun 样本范围越过 mdat 载荷时抛 NOT_SUPPORTED', () => {
+  const frag = fmp4.buildFragment({ trackId: 1, samples: makeFrames(0, 1) });
+  const moof = findBox(frag, 'moof');
+  const trun = [...iterateBoxes(frag, moof.contentStart, moof.contentEnd)]
+    .flatMap((traf) => traf.type === 'traf' ? [...iterateBoxes(frag, traf.contentStart, traf.contentEnd)] : [])
+    .find((box) => box.type === 'trun');
+  const malformed = frag.slice();
+  const dv = new DataView(malformed.buffer, malformed.byteOffset, malformed.byteLength);
+  dv.setInt32(trun.contentStart + 8, moof.size + 9);
+
+  assert.throws(
+    () => splitChunks(malformed),
+    (error) => error.code === 'NOT_SUPPORTED' && /mdat/.test(error.message),
+  );
+});

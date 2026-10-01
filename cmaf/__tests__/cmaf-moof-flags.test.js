@@ -108,6 +108,16 @@ function styp() {
 /** 组装 [styp] + moof(单/多 traf) + mdat */
 function buildMoofStream(trafBoxes, { withStyp = true, mdatBytes = 64 } = {}) {
   const moof = box('moof', ...trafBoxes);
+  const dv = new DataView(moof.buffer, moof.byteOffset, moof.byteLength);
+  for (const trafBox of iterateBoxes(moof, 8, moof.length)) {
+    if (trafBox.type !== 'traf') continue;
+    for (const sub of iterateBoxes(moof, trafBox.contentStart, trafBox.contentEnd)) {
+      if (sub.type !== 'trun') continue;
+      const flags = (moof[sub.contentStart + 1] << 16) |
+        (moof[sub.contentStart + 2] << 8) | moof[sub.contentStart + 3];
+      if (flags & 0x000001) dv.setInt32(sub.contentStart + 8, moof.length + 8);
+    }
+  }
   const mdat = box('mdat', new Uint8Array(mdatBytes).fill(0xab));
   return withStyp ? concatAll([styp(), moof, mdat]) : concatAll([moof, mdat]);
 }
@@ -222,7 +232,7 @@ test('parseMoof：tfdt v0 以 u32 读取 baseMediaDecodeTime（可超过 2^31）
     if (b.type === 'moof') {
       const trafs = parseMoof(stream, b.contentStart, b.contentEnd);
       assert.equal(trafs[0].baseTime, 0xf0000001);
-      assert.equal(trafs[0].trun.dataOffset, 8);
+      assert.equal(trafs[0].trun.dataOffset, b.size + 8);
     }
   }
 });
