@@ -224,6 +224,14 @@ test('parseMfhd：sequenceNumber 解析', () => {
   assert.equal(parseMfhd(box, 8), 77);
 });
 
+test('parseMfhd：截断字段与越界内容边界抛受控 NOT_SUPPORTED', () => {
+  const truncated = buildFullBox('mfhd', 0, new Uint8Array(0));
+  assert.throws(() => parseMfhd(truncated, 8, 12), error => error.code === 'NOT_SUPPORTED');
+
+  const complete = buildFullBox('mfhd', 0, new Uint8Array(4));
+  assert.throws(() => parseMfhd(complete, 8, 13), error => error.code === 'NOT_SUPPORTED');
+});
+
 /* ---------------- isKeyframeFlag 真值表 ---------------- */
 
 test('isKeyframeFlag：sample_depends_on / non-sync 真值表', () => {

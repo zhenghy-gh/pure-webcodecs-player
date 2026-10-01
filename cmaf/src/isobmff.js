@@ -300,7 +300,10 @@ export function parseTfhd(buf, contentStart, contentEnd) {
 }
 
 /** 解析 mfhd → sequenceNumber */
-export function parseMfhd(buf, contentStart) {
+export function parseMfhd(buf, contentStart, contentEnd = buf.byteLength) {
+  if (contentStart < 0 || contentStart + 8 > contentEnd || contentEnd > buf.byteLength) {
+    throw notSupported(`ISO-BMFF mfhd 边界非法: start=${contentStart} end=${contentEnd}`);
+  }
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   return dv.getUint32(contentStart + 4);
 }
