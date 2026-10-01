@@ -59,6 +59,16 @@ test('padding 解析', () => {
   assert.deepEqual(Array.from(p.payload), [7]);
 });
 
+test('畸形 RTP padding 拒绝缺失或为零的计数字节', () => {
+  const empty = serializeRtp({ payloadType: 96, sequence: 1, timestamp: 1, ssrc: 1, payload: new Uint8Array(0) });
+  empty[0] |= 0x20;
+  assert.throws(() => parseRtp(empty), /padding/);
+
+  const zeroCount = serializeRtp({ payloadType: 96, sequence: 1, timestamp: 1, ssrc: 1, payload: Uint8Array.from([7, 0]) });
+  zeroCount[0] |= 0x20;
+  assert.throws(() => parseRtp(zeroCount), /padding/);
+});
+
 test('畸形包抛错', () => {
   assert.throws(() => parseRtp(new Uint8Array(11)), /过短|short/i);
   const bad = serializeRtp({ payloadType: 96, sequence: 1, timestamp: 1, ssrc: 1, payload: new Uint8Array(4) });

@@ -71,9 +71,10 @@ export function parseRtp(data) {
   let payload = data.subarray(offset);
   const hasPadding = (b0 & 0x20) !== 0;
   let paddingLength = 0;
-  if (hasPadding && payload.length > 0) {
+  if (hasPadding) {
+    if (payload.length === 0) throw errors.parse('padding 计数字节缺失');
     paddingLength = payload[payload.length - 1];
-    if (paddingLength > payload.length) throw errors.parse('padding 长度非法');
+    if (paddingLength === 0 || paddingLength > payload.length) throw errors.parse('padding 长度非法');
     payload = payload.subarray(0, payload.length - paddingLength);
   }
 
