@@ -62,6 +62,18 @@ test('FU-A：保留位、S/E 同时置位及非法 NAL 类型均拒绝', () => {
   }
 });
 
+test('STAP-A/B：截断的聚合条目不输出前序部分 NAL', () => {
+  for (const stap of [
+    Uint8Array.from([24, 0, 1, 0x65, 0, 2, 0x41]),
+    Uint8Array.from([25, 0, 1, 0, 1, 0x65, 0, 2, 0x41]),
+    Uint8Array.from([24, 0, 1, 0x65, 0]),
+  ]) {
+    const d = new H264Depacketizer();
+    const out = d.push(stap, true, 1, 1000);
+    assert.deepEqual(out.nals, []);
+  }
+});
+
 test('type 0（未定义）静默忽略，不产生 NAL', () => {
   const d = new H264Depacketizer();
   const out = d.push(new Uint8Array([0x00, 0xaa]), true, 1, 1000);

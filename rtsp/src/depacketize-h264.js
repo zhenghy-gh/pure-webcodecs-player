@@ -74,14 +74,24 @@ export class H264Depacketizer {
       this.auNals.push(payload);
     } else if (type === NAL_STAP_A || type === NAL_STAP_B) {
       this.#abortFu();
-      const skip = type === NAL_STAP_B ? 3 : 1; // STAP-B 有 2 字节 DON
+      const skip = type === NAL_STAP_B ? 3 : 1;
       let off = skip;
-      while (off + 2 <= payload.length) {
+      const nals = [];
+      let valid = off <= payload.length;
+      while (valid && off < payload.length) {
+        if (off + 2 > payload.length) {
+          valid = false;
+          break;
+        }
         const len = (payload[off] << 8) | payload[off + 1];
-        if (len === 0 || off + 2 + len > payload.length) break; // 损坏条目容错
-        this.auNals.push(payload.subarray(off + 2, off + 2 + len));
+        if (len === 0 || off + 2 + len > payload.length) {
+          valid = false;
+          break;
+        }
+        nals.push(payload.subarray(off + 2, off + 2 + len));
         off += 2 + len;
       }
+      if (valid && nals.length) this.auNals.push(...nals);
       this.stats.stap++;
     } else if (type === NAL_FU_A) {
       // RFC 6184：首字节为 FU indicator（F|NRI|28），第二字节才是 FU header（S|E|R|Type）
