@@ -90,8 +90,9 @@ export class H264Depacketizer {
       const sBit = (fuHeaderByte & 0x80) !== 0;
       const eBit = (fuHeaderByte & 0x40) !== 0;
       const fuType = fuHeaderByte & 0x1f;
-
-      if (sBit) {
+      if ((fuHeaderByte & 0x20) !== 0 || (sBit && eBit) || fuType === 0 || fuType > 23) {
+        this.#abortFu();
+      } else if (sBit) {
         this.#abortFu();
         // 还原原始 NAL header：NRI 来自 indicator 高位，类型来自 FU header
         this.fuType = fuType;

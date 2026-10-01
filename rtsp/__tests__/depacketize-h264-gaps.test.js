@@ -53,9 +53,18 @@ test('未完成 FU 遇到新单 NAL → 作废（#abortFu body）且 AU 照常�
   assert.equal((out.nals[0][0] & 0x1f), 5);
 });
 
+test('FU-A：保留位、S/E 同时置位及非法 NAL 类型均拒绝', () => {
+  for (const fuHeader of [0xa5, 0xc5, 0x80]) {
+    const d = new H264Depacketizer();
+    const out = d.push(Uint8Array.from([0x7c, fuHeader, 1, 2]), true, 1, 1000);
+    assert.deepEqual(out.nals, []);
+    assert.equal(d.fuPayload, null);
+  }
+});
+
 test('type 0（未定义）静默忽略，不产生 NAL', () => {
   const d = new H264Depacketizer();
   const out = d.push(new Uint8Array([0x00, 0xaa]), true, 1, 1000);
-  assert.deepEqual(out, { nals: [], keyframe: false }); // marker 收束空 AU
+  assert.deepEqual(out, { nals: [], keyframe: false });
   assert.equal(d.stats.packets, 1);
 });
