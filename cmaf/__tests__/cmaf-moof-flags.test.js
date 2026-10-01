@@ -44,6 +44,21 @@ function box(type, ...payloads) {
   }
   return out;
 }
+function largeBox(type, ...payloads) {
+  let len = 0;
+  for (const p of payloads) len += p.length;
+  const out = new Uint8Array(16 + len);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, 1);
+  for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i);
+  dv.setBigUint64(8, BigInt(out.length));
+  let o = 16;
+  for (const p of payloads) {
+    out.set(p, o);
+    o += p.length;
+  }
+  return out;
+}
 function fullBox(type, version, flags, ...payloads) {
   return box(type, new Uint8Array([version, (flags >> 16) & 0xff, (flags >> 8) & 0xff, flags & 0xff]), ...payloads);
 }
@@ -319,6 +334,24 @@ test('splitChunks：trun 显式 flags 覆盖 tfhd 默认 flags', () => {
   ]);
   const { chunks } = splitChunks(stream);
   assert.equal(chunks[0].tracks[0].samples[0].keyframe, true, '行内显式 I 帧标志优先于默认 inter 标志');
+});
+
+test('splitChunks：largesize styp 和 moof 使用完整 16 字节头定位 chunk 与样本', () => {
+  const moofProbe = largeBox('moof', box('mfhd', u32(0)), box('traf',
+    tfhd(1, { duration: 1000, size: 4 }), tfdt(0, 0),
+    trun(0, { dataOffset: 0, rows: [{ duration: 1000, size: 4 }] }),
+  ));
+  const moof = largeBox('moof', box('mfhd', u32(0)), box('traf',
+    tfhd(1, { duration: 1000, size: 4 }), tfdt(0, 0),
+    trun(0, { dataOffset: moofProbe.length + 8, rows: [{ duration: 1000, size: 4 }] }),
+  ));
+  const styp = largeBox('styp', u32(0x200), u32(0x6d736468));
+  const mdat = box('mdat', new Uint8Array([1, 2, 3, 4]));
+  const stream = concatAll([styp, moof, mdat]);
+  const { chunks } = splitChunks(stream);
+  assert.equal(chunks[0].startOffset, 0);
+  assert.equal(chunks[0].byteLength, stream.length);
+  assert.equal(chunks[0].tracks[0].samples[0].dataStart, styp.length + moof.length + 8);
 });
 
 /* ---------------- 多 traf 单 moof ---------------- */

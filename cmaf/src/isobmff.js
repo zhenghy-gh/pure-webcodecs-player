@@ -61,6 +61,8 @@ export function* iterateBoxes(buf, start = 0, end = buf.length) {
     yield {
       type: head.type,
       size: head.size,
+      start: off,
+      headerSize: head.headerSize,
       contentStart: off + head.headerSize,
       contentEnd: off + head.size,
     };

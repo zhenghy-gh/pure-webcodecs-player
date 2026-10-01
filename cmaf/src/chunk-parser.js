@@ -86,7 +86,7 @@ export function splitChunks(buf) {
       current = {
         index: -1,
         styp: b.type === 'styp',
-        startOffset: b.contentStart - 8,
+        startOffset: b.start,
         byteLength: 0,
         tracks: [],
       };
@@ -95,7 +95,7 @@ export function splitChunks(buf) {
       current = {
         index: -1,
         styp: false,
-        startOffset: b.contentStart - 8,
+        startOffset: b.start,
         byteLength: 0,
         tracks: [],
       };
@@ -152,7 +152,7 @@ function materializeSamples(buf, moofBox, traf) {
   // moof.length+8 写入，即 default-base-is-moof 约定）。此前错加在 mdat 载荷
   // 起点，dataStart 普遍偏大 moof.size+8 字节，样本数据全部读偏。
   // trun 无 data-offset 标志时退回 mdat 载荷起点。
-  const moofStart = moofBox.contentStart - 8;
+  const moofStart = moofBox.start;
   const dataBase = defaults.baseDataOffset ?? moofStart;
   let cursor = trun.hasDataOffset ? dataBase + trun.dataOffset : mdatDataStart;
   let dtsOffset = baseTime; // 所属 timescale 的 ticks
