@@ -144,6 +144,26 @@ test('parseMoof：嵌套截断 tfhd 返回受控错误而非裸 RangeError', () 
 });
 
 
+test('parseTrun：可选头字段截断时不读取当前 box 之外的数据', () => {
+  const dataOffset = new Uint8Array(24);
+  dataOffset.set([0, 0, 0, 24, 0x74, 0x72, 0x75, 0x6e, 0, 0, 0, 1]);
+  dataOffset.set(u32(1), 12);
+  dataOffset.set(u32(0xdeadbeef), 16);
+  assert.throws(
+    () => parseTrun(dataOffset, 8, 16),
+    (error) => error.code === 'NOT_SUPPORTED' && /trun 字段截断/.test(error.message),
+  );
+
+  const firstSampleFlags = new Uint8Array(24);
+  firstSampleFlags.set([0, 0, 0, 24, 0x74, 0x72, 0x75, 0x6e, 0, 0, 0, 4]);
+  firstSampleFlags.set(u32(1), 12);
+  firstSampleFlags.set(u32(0xdeadbeef), 16);
+  assert.throws(
+    () => parseTrun(firstSampleFlags, 8, 16),
+    (error) => error.code === 'NOT_SUPPORTED' && /trun 字段截断/.test(error.message),
+  );
+});
+
 test('parseTrun：仅 data-offset 标志 → 行字段全零回落', () => {
   const b = trun(0, { dataOffset: 140, rows: [{}, {}] });
   const r = parseTrun(b, 8, b.length);

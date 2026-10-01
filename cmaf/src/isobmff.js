@@ -187,9 +187,19 @@ function readVersionFlags(buf, contentStart) {
  *            rows:Array<{duration:number,size:number,flags:number,cts:number}>}}
  */
 export function parseTrun(buf, contentStart, contentEnd) {
+  if (contentStart < 0 || contentStart > contentEnd || contentEnd > buf.byteLength) {
+    throw notSupported(`ISO-BMFF trun 边界非法: start=${contentStart} end=${contentEnd}`);
+  }
+  let p = contentStart;
+  const requireBytes = (count) => {
+    if (p + count > contentEnd) {
+      throw notSupported(`ISO-BMFF trun 字段截断: need=${count} at=${p} end=${contentEnd}`);
+    }
+  };
+  requireBytes(8);
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const { version, flags } = readVersionFlags(buf, contentStart);
-  let p = contentStart + 4;
+  p += 4;
   const sampleCount = dv.getUint32(p); p += 4;
   const hasDataOffset = !!(flags & 0x000001);
   const hasDuration = !!(flags & 0x000100);
@@ -198,6 +208,7 @@ export function parseTrun(buf, contentStart, contentEnd) {
   const hasCts = !!(flags & 0x000800);
   let dataOffset = 0;
   if (hasDataOffset) {
+    requireBytes(4);
     dataOffset = dv.getInt32(p); p += 4;
   }
   // first-sample-flags-present（0x000004）：data_offset 之后、样本行之前还有
@@ -206,6 +217,7 @@ export function parseTrun(buf, contentStart, contentEnd) {
   const hasFirstSampleFlags = !!(flags & 0x000004);
   let firstSampleFlags = null;
   if (hasFirstSampleFlags) {
+    requireBytes(4);
     firstSampleFlags = dv.getUint32(p);
     p += 4;
   }
