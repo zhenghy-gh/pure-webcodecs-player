@@ -4,14 +4,14 @@
  * 能力：
  * - 渐进式顶层扫描：只读 box 头，mdat 载荷不读入（天然支持 HTTP Range 与"moov 在尾部"）；
  * - 普通 MP4：由 stbl 展开完整样本表；
- * - fMP4（存在 mvex）：顺序遍历 moof/mdat 片段产出样本（单遍、按文件序）；
+ * - fMP4（存在 mvex）：顺序遍历 moof/mdat 片段产出样本（每轨独立扫描）；
  * - seek(timestampUs) 返回 {actualTimestampUs}，对齐 ≤ 目标的最近视频关键帧。
  *
  * 契约边界（§0.5）：内部采样表保持原生 ticks，**产出 Sample 一律整数微秒**
  * （ticksToUs 就近取整）；Track.timescale 仅诊断保留。
  *
  * 约束：
- * - 分片模式的多轨迭代共享同一游标（按文件序单遍），交错拉取两轨请先缓存样本或另建实例；
+ * - 分片模式下各轨独立扫描顶层 box；
  * - 不解密：加密 sample entry（encv/enca）直接抛 NOT_SUPPORTED。
  */
 import {
@@ -103,7 +103,7 @@ export class Mp4Demuxer extends Demuxer {
     /** @type {Map<number, {track:object, samples:Array, keyframes:Array, trex?:object}>} 内部表（ticks）*/
     this._trackState = new Map();
     this._fragmented = false;
-    this._fragCursorIndex = 0;
+    this._fragmentCursorByTrack = new Map();
   }
 
   /* ------------------------------ 打开 ------------------------------ */
@@ -314,53 +314,45 @@ export class Mp4Demuxer extends Demuxer {
     }
   }
 
-  /** 顺序消费 moof/mdat；多轨时过滤出请求轨（共享游标，按文件序单遍） */
+  /** 顺序消费指定轨道的 moof/mdat 片段 */
   async *_iterateFragments(trackId) {
-    const wantedId = trackId !== undefined ? trackId : null;
     const ds = this.source;
     const lazy = this.options.lazySamples === true;
+    let cursorIndex = this._fragmentCursorByTrack.get(trackId) ?? 0;
 
-    // seek 续读：先重放样本表中 resumeIndex 起的已解析样本，再接续扫描。
-    // 表内样本在扫描时已完成 data 装载（或标记 lazy），直接产出即可；
-    // 重放不动共享 _fragCursorIndex，衔接处 index 由 samples.length 自然递增。
-    // resumeIndex=0 且表非空同样重放（seek 回开头时游标可能已越过早期 moof）。
-    // ⚠️ 已知限制：seek 前被 return 掉的迭代器若挂起在某 moof 中途，该 moof 内
-    // 未解析的样本会随游标越过而丢失（游标只前进；找回需重扫+查重，不值）。
-    {
-      const state = this._trackState.get(trackId);
-      if (state && state.resumeIndex < state.samples.length) {
-        for (let i = state.resumeIndex; i < state.samples.length; i++) {
-          yield state.samples[i];
-        }
+    const state = this._trackState.get(trackId);
+    if (state && state.resumeIndex < state.samples.length) {
+      for (let i = state.resumeIndex; i < state.samples.length; i++) {
+        yield state.samples[i];
       }
     }
 
-    while (this._fragCursorIndex < this._topLevelBoxes.length) {
-      const box = this._topLevelBoxes[this._fragCursorIndex++];
+    while (cursorIndex < this._topLevelBoxes.length) {
+      const box = this._topLevelBoxes[cursorIndex++];
+      this._fragmentCursorByTrack.set(trackId, cursorIndex);
       if (box.type !== 'moof') continue;
 
       const moofBytes = await readCapped(ds, box.start, box.end - box.start, {
         max: this.maxMoovBytes,
         what: 'MP4 moof',
       });
-      const mdatBox = this._findMdatAfter(this._fragCursorIndex);
+      const mdatBox = this._findMdatAfter(cursorIndex);
       if (!mdatBox) throw parseError(`moof at ${box.start}: no following mdat`);
 
-      // moofBytes 是独立切片，偏移必须用相对值（8=box 头）
       const frags = parseMoofTracks(moofBytes, 8, moofBytes.byteLength);
       for (const frag of frags) {
-        if (wantedId !== null && frag.trackId !== wantedId) continue;
+        if (frag.trackId !== trackId) continue;
         const trackState = this._trackState.get(frag.trackId);
         const track = trackState?.track ?? this.tracks.find((t) => t.id === frag.trackId);
         const trex = trackState?.trex ?? {};
         const ts = track?.timescale || 1000;
-        let dts = frag.baseMediaDecodeTime; // ticks
+        let dts = frag.baseMediaDecodeTime;
         for (let i = 0; i < frag.samples.length; i++) {
           const rec = frag.samples[i];
           const durationTicks = rec.duration ?? trex.defaultSampleDuration ?? 0;
           const size = rec.size ?? trex.defaultSampleSize ?? 0;
           const flags = rec.flags ?? trex.defaultSampleFlags ?? 0;
-          const keyframe = (flags & 0x01000000) === 0; // sample_is_non_sync_sample 未置位
+          const keyframe = (flags & 0x01000000) === 0;
           const cts = rec.cts ?? 0;
           const sample = createSample({
             trackId: frag.trackId,
@@ -373,7 +365,7 @@ export class Mp4Demuxer extends Demuxer {
             index: trackState ? trackState.samples.length : i,
             offset: box.start + frag.dataOffset + rec.offsetInRun,
             data: null,
-            dtsRaw: dts, // 内部诊断：分片表 seek 时的原生 ticks
+            dtsRaw: dts,
           });
           if (trackState) {
             sample.index = trackState.samples.length;
@@ -423,8 +415,8 @@ export class Mp4Demuxer extends Demuxer {
 
     const state = this._trackState.get(targetId);
     if (!state || state.keyframes.length === 0) {
-      // 索引未建立：resumeIndex 归 0（有表则整表重放）、共享游标不动，
-      // 后续从当前扫描位置继续（分片模式索引随消费建立，属既定限制）。
+      // 索引未建立：resumeIndex 归 0（有表则整表重放），各轨游标不动，
+      // 后续从各自扫描位置继续（分片模式索引随消费建立）。
       if (state) state.resumeIndex = 0;
       return { actualTimestampUs: 0 };
     }

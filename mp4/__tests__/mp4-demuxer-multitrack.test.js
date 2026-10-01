@@ -15,10 +15,68 @@ import {
   buildFtyp,
   buildMdat,
   buildMoov,
+  buildMvhd,
+  buildTkhd,
+  buildMdhd,
+  buildHdlr,
+  buildVmhd,
+  buildSmhd,
+  buildDinf,
+  buildStsd,
+  buildMvex,
+  buildMoofMdat,
+  box,
 } from '../src/box-builder.js';
 import { makeAvcCFixture, makeAscFixture } from './fixtures.js';
 
 const TICK_US = 1000;
+
+function buildFragmentedTwoTrackFixture() {
+  const avcC = makeAvcCFixture();
+  const asc = makeAscFixture();
+  const ftyp = buildFtyp({ majorBrand: 'msfh', compatible: ['msfh', 'isom', 'iso2'] });
+  const moov = box('moov', (w) => {
+    w.writeRaw(buildMvhd({ timescale: 1000, duration: 0, nextTrackId: 3 }));
+    for (const track of [
+      { id: 1, type: 'video', timescale: 1000, entry: { codecPrivate: avcC, sampleEntryType: 'avc1', width: 320, height: 240 } },
+      { id: 2, type: 'audio', timescale: 48000, entry: { codecPrivate: asc, sampleEntryType: 'mp4a', channelCount: 2, sampleRate: 48000 } },
+    ]) {
+      const video = track.type === 'video';
+      w.writeRaw(box('trak', (tw) => {
+        tw.writeRaw(buildTkhd({ trackId: track.id, isVideo: video, isAudio: !video, width: 320, height: 240 }));
+        tw.writeRaw(box('mdia', (mw) => {
+          mw.writeRaw(buildMdhd({ timescale: track.timescale, duration: 0 }));
+          mw.writeRaw(buildHdlr({ handlerType: video ? 'vide' : 'soun', name: 'fragment track' }));
+          mw.writeRaw(box('minf', (iw) => {
+            iw.writeRaw(video ? buildVmhd() : buildSmhd());
+            iw.writeRaw(buildDinf());
+            iw.writeRaw(box('stbl', (sw) => sw.writeRaw(buildStsd({ id: track.id, type: track.type, ...track.entry }))));
+          }));
+        }));
+      }));
+    }
+    w.writeRaw(buildMvex([1, 2], {
+      1: { defaultSampleDuration: 40 },
+      2: { defaultSampleDuration: 1024 },
+    }));
+  });
+
+  const expected = { 1: [], 2: [] };
+  const segments = [];
+  let sequenceNumber = 1;
+  for (const [trackId, duration, count] of [[1, 40, 3], [2, 1024, 4]]) {
+    for (let i = 0; i < count; i++) {
+      const data = Uint8Array.from([trackId, i, 0x5a, 0xa5]);
+      const sample = { dts: i * duration, pts: i * duration, duration, size: data.length, keyframe: trackId === 2 || i === 0, data };
+      expected[trackId].push(sample);
+      segments.push(buildMoofMdat({ sequenceNumber: sequenceNumber++, trackId, baseMediaDecodeTime: sample.dts, samples: [sample] }).data);
+    }
+  }
+  const bytes = new Uint8Array(ftyp.length + moov.length + segments.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of [ftyp, moov, ...segments]) { bytes.set(part, offset); offset += part.length; }
+  return { bytes, expected };
+}
 
 /** 双轨 fixture：视频 6 样本（3 chunk × 2）、音频 8 样本（2 chunk × 4），mda 区先视频后音频 */
 function buildTwoTrackFixture() {
@@ -203,6 +261,48 @@ test('音频轨遍历：全关键帧、44100 时间基 µs 换算、payload 精�
   // 首样本 µs 值手算锚点：round(1024e6/44100) = 23220
   assert.equal(samples[0].dts, 0);
   assert.equal(samples[1].dts, 23220);
+});
+
+test('分片双轨：先读完视频轨后音频轨仍完整可读', async () => {
+  const { bytes, expected } = buildFragmentedTwoTrackFixture();
+  const d = new Mp4Demuxer(new MemoryDataSource(bytes));
+  await d.open();
+  const video = [];
+  while (true) { const s = await d.readSample(1); if (!s) break; video.push(s); }
+  const audio = [];
+  while (true) { const s = await d.readSample(2); if (!s) break; audio.push(s); }
+  assert.equal(video.length, expected[1].length);
+  assert.equal(audio.length, expected[2].length);
+  assert.deepEqual(audio.map((s) => [...s.data]), expected[2].map((s) => [...s.data]));
+});
+
+test('分片双轨：默认 samples() 按轨串行时两轨都完整', async () => {
+  const { bytes, expected } = buildFragmentedTwoTrackFixture();
+  const d = new Mp4Demuxer(new MemoryDataSource(bytes));
+  await d.open();
+  const received = [];
+  for await (const sample of d.samples()) received.push(sample);
+  assert.deepEqual(received.map((s) => s.trackId), [1, 1, 1, 2, 2, 2, 2]);
+  assert.equal(received.filter((s) => s.trackId === 1).length, expected[1].length);
+  assert.equal(received.filter((s) => s.trackId === 2).length, expected[2].length);
+});
+
+test('分片双轨：交错拉取保留各轨样本与索引', async () => {
+  const { bytes, expected } = buildFragmentedTwoTrackFixture();
+  const d = new Mp4Demuxer(new MemoryDataSource(bytes));
+  await d.open();
+  const received = { 1: [], 2: [] };
+  for (let i = 0; i < 5; i++) {
+    for (const id of [1, 2]) {
+      const sample = await d.readSample(id);
+      if (sample) received[id].push(sample);
+    }
+  }
+  for (const id of [1, 2]) {
+    assert.equal(received[id].length, expected[id].length);
+    assert.deepEqual(received[id].map((s) => s.index), expected[id].map((_, index) => index));
+    assert.deepEqual(received[id].map((s) => [...s.data]), expected[id].map((s) => [...s.data]));
+  }
 });
 
 test('双轨交错消费：游标互不干扰、各自独立 EOS', async () => {
