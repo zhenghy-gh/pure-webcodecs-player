@@ -66,13 +66,27 @@ test('丢包计数：序号跳空 → lost = 跳空数 - 1', () => {
   assert.equal(d.stats.lost, 3);
 });
 
+test('FU：拒绝 S/E 同时置位、非法类型和截断 DONL 首片', () => {
+  for (const header of [0xd3, 0xb3, 0x80 | 48]) {
+    const d = new H265Depacketizer();
+    const out = d.push(Uint8Array.from([98, 1, header, 0x11, 0x22]), true, 1, 3000);
+    assert.deepEqual(out.nals, []);
+    assert.equal(d.fuPayload, null);
+  }
+
+  const withDonl = new H265Depacketizer({ donl: true });
+  const truncatedStart = withDonl.push(Uint8Array.from([98, 1, 0x80 | 19, 0x11]), true, 1, 3000);
+  assert.deepEqual(truncatedStart.nals, []);
+  assert.equal(withDonl.fuPayload, null);
+});
+
 test('FU 载荷不足 3 字节：中止在途 FU 并安全返回', () => {
   const d = new H265Depacketizer();
-  d.push(mkFu([0x11, 0x22], true, false), false, 1, 3000); // FU 开始
+  d.push(mkFu([0x11, 0x22], true, false), false, 1, 3000);
   assert.equal(d.stats.fuStarted, 1);
-  const out = d.push(Uint8Array.from([98, 0x01]), false, 2, 3000); // 仅 PayloadHdr
+  const out = d.push(Uint8Array.from([98, 0x01]), false, 2, 3000);
   assert.deepEqual(out, {});
-  assert.equal(d.fuPayload, null, '短包触发 #abortFu');
+  assert.equal(d.fuPayload, null);
   assert.equal(d.stats.fuDropped, 1);
 });
 

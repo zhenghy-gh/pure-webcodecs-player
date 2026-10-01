@@ -81,9 +81,11 @@ export class H265Depacketizer {
       const fuHeader = payload[2];
       const sBit = (fuHeader & 0x80) !== 0;
       const eBit = (fuHeader & 0x40) !== 0;
-      const fuType = fuHeader & 0x1f;
+      const fuType = fuHeader & 0x3f;
 
-      if (sBit) {
+      if ((sBit && eBit) || fuType >= H265_AP || (sBit && this.donl && payload.length < 5)) {
+        this.#abortFu();
+      } else if (sBit) {
         this.#abortFu();
         // FU 的首个载荷可能前置 DONL（仅 S=1 且配置了 DONL 时）
         const dataOff = this.donl ? 5 : 3;
