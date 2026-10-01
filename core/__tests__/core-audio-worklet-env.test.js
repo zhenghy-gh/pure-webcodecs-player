@@ -286,6 +286,29 @@ test('currentTimeSec 三态：无 ctx 用已消费帧；非 playing 用已消费
   });
 });
 
+test('currentTimeSec：Worklet 欠载期间冻结音频主钟，恢复消费后继续推进', async (t) => {
+  await withPlayer(t, { sampleRate: 48000 }, async (player, fakes) => {
+    await player.init();
+    const ctx = fakes.ctxInstances[0];
+    const node = fakes.nodeInstances[0];
+    node.port.dispatch({ type: 'stats', bufferedFrames: 0, playedFrames: 4800, sampleRate: 48000 });
+    ctx.currentTime = 1;
+    player.play();
+    player._startedAt = 0.1;
+    player._anchorCtxTime = 1;
+    ctx.currentTime = 1.5;
+    assert.equal(player.currentTimeSec(), 0.6);
+
+    node.port.dispatch({ type: 'underrun', at: 1.5 });
+    assert.equal(player.currentTimeSec(), 0.1, '主钟回到最后实际消费的 PCM 时间');
+    ctx.currentTime = 2.5;
+    assert.equal(player.currentTimeSec(), 0.1, 'AudioContext 前进但输出静音时主钟冻结');
+
+    node.port.dispatch({ type: 'stats', bufferedFrames: 0, playedFrames: 9600, sampleRate: 48000 });
+    assert.equal(player.currentTimeSec(), 0.2, '恢复消费后从实际 PCM 时刻继续');
+  });
+});
+
 test('worklet 上行消息：stats 驱动 progress（值不变不重发）；underrun 累计并广播', async (t) => {
   await withPlayer(t, {}, async (player, fakes) => {
     await player.init();

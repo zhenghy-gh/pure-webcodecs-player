@@ -156,6 +156,7 @@ export class AudioWorkletPlayer extends Emitter {
     this._underruns = 0;
     this._anchorCtxTime = 0; // playedFrames 对应的 context.currentTime 锚点
     this._startedAt = 0;
+    this._clockUnderrun = false;
   }
 
   /** 创建 AudioContext 并装载 worklet；必须先于 push/play 调用 */
@@ -179,12 +180,20 @@ export class AudioWorkletPlayer extends Emitter {
 
   _onWorkletMessage(msg) {
     switch (msg.type) {
-      case 'stats':
+      case 'stats': {
+        const wasUnderrun = this._clockUnderrun;
         this._bufferedFrames = msg.bufferedFrames;
         this._onPlayedFrames(msg.playedFrames);
+        if (wasUnderrun && this._bufferedFrames > 0) {
+          this._startedAt = this._playedFrames / this.sampleRate;
+          this._anchorCtxTime = this.context?.currentTime ?? 0;
+          this._clockUnderrun = false;
+        }
         break;
+      }
       case 'underrun':
         this._underruns += 1;
+        this._clockUnderrun = true;
         this.emit('underrun', { contextTime: msg.at });
         break;
       default:
@@ -255,6 +264,7 @@ export class AudioWorkletPlayer extends Emitter {
     const consumed = this._playedFrames / this.sampleRate;
     if (!this.context) return consumed;
     if (this.playing) {
+      if (this._clockUnderrun) return this._playedFrames / this.sampleRate;
       return this._startedAt + Math.max(0, this.context.currentTime - this._anchorCtxTime);
     }
     return consumed;
@@ -273,6 +283,7 @@ export class AudioWorkletPlayer extends Emitter {
     this.node?.port.postMessage({ type: 'clear' });
     this._bufferedFrames = 0;
     this._playedFrames = 0;
+    this._clockUnderrun = false;
     this._anchorCtxTime = this.context?.currentTime ?? 0;
     this._startedAt = 0;
   }
