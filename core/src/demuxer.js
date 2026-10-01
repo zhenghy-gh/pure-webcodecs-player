@@ -224,7 +224,7 @@ export class Demuxer extends Emitter {
         if (signal) {
           // 中断竞速期间已落地的样本不丢弃，缓存供下次续读（生成器 yield 一旦
           // 落地就无法回退，不缓存即永久丢帧；flac/wav 走「先读后推进游标」同理）
-          nextP.then((r) => { if (r && !r.done) entry.pendingResult = r; }, () => {});
+          nextP.then((r) => { if (signal.aborted && r && !r.done) entry.pendingResult = r; }, () => {});
         }
         result = await raceAbort(nextP, signal, `readSample(${trackId}) aborted`);
       }

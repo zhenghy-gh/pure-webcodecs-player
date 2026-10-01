@@ -108,6 +108,19 @@ test('readSample：传入 signal 且在读取挂起时 abort → reject ABORTED'
   await assert.rejects(() => p, (err) => err?.code === 'ABORTED');
 });
 
+test('readSample：未取消 signal 连续读取不重复交付样本', async () => {
+  const d = new GatedDemuxer(src());
+  await d.open();
+  d.releaseGate();
+  const signal = new AbortController().signal;
+
+  const first = await d.readSample(1, { signal });
+  const second = await d.readSample(1, { signal });
+
+  assert.deepEqual([first.timestamp, second.timestamp], [0, 1]);
+  assert.equal(d.pullCount, 2);
+});
+
 test('readSample：已 abort 的 signal 前置快速失败，不触碰数据源', async () => {
   const d = new GatedDemuxer(src());
   await d.open();
