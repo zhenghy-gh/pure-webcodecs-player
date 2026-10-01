@@ -35,6 +35,7 @@ export class H265Depacketizer {
   reset() {
     this.fuPayload = null;
     this.auNals = [];
+    this.stats = { packets: 0, lost: 0, frames: 0, fuStarted: 0, fuDropped: 0, ap: 0 };
     this.maxSeqSeen = null;
   }
 

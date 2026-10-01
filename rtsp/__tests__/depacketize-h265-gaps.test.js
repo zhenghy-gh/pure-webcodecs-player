@@ -21,16 +21,18 @@ const mkFu = (piece, s, e, fuType = 19) => {
 
 test('reset()：清空在途 FU 与缓冲 NAL、忘掉 maxSeqSeen（旧序号可重新接受）', () => {
   const d = new H265Depacketizer();
-  d.push(singleNal(32), false, 200, 3000); // VPS，seq=200
-  d.push(mkFu([0x11], true, false), false, 201, 3000); // 在途 FU
+  d.push(singleNal(32), false, 200, 3000);
+  d.push(mkFu([0x11], true, false), false, 201, 3000);
+  d.push(singleNal(), true, 204, 3000);
+  assert.equal(d.stats.lost, 2);
   d.reset();
   assert.equal(d.auNals.length, 0, 'reset 清空缓冲 NAL');
   assert.equal(d.fuPayload, null, 'reset 丢弃在途 FU');
   assert.equal(d.maxSeqSeen, null, 'reset 忘掉序号水位');
-  // reset 后旧序号也可接受；此前在途 FU 的载荷不进任何帧
+  assert.deepEqual(d.stats, { packets: 0, lost: 0, frames: 0, fuStarted: 0, fuDropped: 0, ap: 0 });
   const out = d.push(singleNal(1), true, 5, 3000);
   assert.equal(out.nals.length, 1);
-  assert.equal(d.stats.packets, 3);
+  assert.equal(d.stats.packets, 1);
 });
 
 test('乱序/过期包：seq 回退 → 静默丢弃，不污染当前访问单元', () => {
