@@ -153,7 +153,8 @@ function materializeSamples(buf, moofBox, traf) {
   // 起点，dataStart 普遍偏大 moof.size+8 字节，样本数据全部读偏。
   // trun 无 data-offset 标志时退回 mdat 载荷起点。
   const moofStart = moofBox.contentStart - 8;
-  let cursor = trun.hasDataOffset ? moofStart + trun.dataOffset : mdatDataStart;
+  const dataBase = defaults.baseDataOffset ?? moofStart;
+  let cursor = trun.hasDataOffset ? dataBase + trun.dataOffset : mdatDataStart;
   let dtsOffset = baseTime; // 所属 timescale 的 ticks
   for (const row of rows) {
     if (cursor < mdatDataStart || cursor + row.size > mdatDataEnd) {

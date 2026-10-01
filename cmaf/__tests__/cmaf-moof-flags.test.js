@@ -59,9 +59,10 @@ function concatAll(parts) {
 }
 
 /** tfhd：trackId + 可选 default duration/size/flags（按位设置 flags） */
-function tfhd(trackId, { duration = null, size = null, flags = null } = {}) {
+function tfhd(trackId, { duration = null, size = null, flags = null, baseDataOffset = null } = {}) {
   let f = 0;
   const payloads = [u32(trackId)];
+  if (baseDataOffset != null) { f |= 0x000001; payloads.push(u64(baseDataOffset)); }
   if (duration != null) { f |= 0x08; payloads.push(u32(duration)); }
   if (size != null) { f |= 0x10; payloads.push(u32(size)); }
   if (flags != null) { f |= 0x20; payloads.push(u32(flags)); }
@@ -111,8 +112,11 @@ function buildMoofStream(trafBoxes, { withStyp = true, mdatBytes = 64 } = {}) {
   const dv = new DataView(moof.buffer, moof.byteOffset, moof.byteLength);
   for (const trafBox of iterateBoxes(moof, 8, moof.length)) {
     if (trafBox.type !== 'traf') continue;
+    const tfhdBox = [...iterateBoxes(moof, trafBox.contentStart, trafBox.contentEnd)]
+      .find((sub) => sub.type === 'tfhd');
+    const hasBaseDataOffset = tfhdBox && (moof[tfhdBox.contentStart + 3] & 0x01);
     for (const sub of iterateBoxes(moof, trafBox.contentStart, trafBox.contentEnd)) {
-      if (sub.type !== 'trun') continue;
+      if (sub.type !== 'trun' || hasBaseDataOffset) continue;
       const flags = (moof[sub.contentStart + 1] << 16) |
         (moof[sub.contentStart + 2] << 8) | moof[sub.contentStart + 3];
       if (flags & 0x000001) dv.setInt32(sub.contentStart + 8, moof.length + 8);
@@ -135,6 +139,24 @@ test('parseMoof：traf 缺少必需的 tfhd 时抛受控错误', () => {
     (error) => error.code === 'NOT_SUPPORTED' && /tfhd/.test(error.message),
   );
 });
+
+test('splitChunks：显式 tfhd.base_data_offset 作为 trun data_offset 的基准', () => {
+  const placeholder = traf(7, 100, 0,
+    trun(0, { dataOffset: 0, rows: [{ duration: 10, size: 4 }] }),
+    { duration: 10, size: 4, baseDataOffset: 0 });
+  const moof = box('moof', placeholder);
+  const stypSize = styp().length;
+  const mdatPayloadStart = stypSize + moof.length + 8;
+  const explicitBase = mdatPayloadStart + 5;
+  const fragment = buildMoofStream([
+    traf(7, 100, 0,
+      trun(0, { dataOffset: 0, rows: [{ duration: 10, size: 4 }] }),
+      { duration: 10, size: 4, baseDataOffset: explicitBase }),
+  ], { mdatBytes: 32 });
+  const { chunks } = splitChunks(fragment);
+  assert.equal(chunks[0].tracks[0].samples[0].dataStart, explicitBase);
+});
+
 
 test('parseTfhd：拒绝越界的内容边界', () => {
   const buf = new Uint8Array(16);
