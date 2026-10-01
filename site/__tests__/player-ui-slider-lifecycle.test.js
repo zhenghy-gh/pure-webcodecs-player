@@ -101,6 +101,34 @@ function withGlobals(fn) {
   }
 }
 
+test('createPlayerUI：unbind 与 adapter 切换时取消当前滑杆拖动', () => {
+  withGlobals(() => {
+    const ui = createPlayerUI({ keyboard: false });
+    const adapter = {
+      duration: () => 10,
+      currentTime: () => 2,
+      seek() {},
+      pause() {},
+      play() {},
+    };
+    ui.bind(adapter);
+    const progress = ui.el.querySelector('.pui__progress');
+
+    progress.dispatchEvent({ type: 'pointerdown', clientX: 20, pointerId: 1 });
+    assert.equal(progress.classList.contains('pui__progress--dragging'), true);
+    ui.unbind();
+    assert.equal(progress.classList.contains('pui__progress--dragging'), false);
+
+    ui.bind(adapter);
+    progress.dispatchEvent({ type: 'pointerdown', clientX: 30, pointerId: 2 });
+    ui.bind({ ...adapter });
+    assert.equal(progress.classList.contains('pui__progress--dragging'), false);
+    progress.dispatchEvent({ type: 'pointerdown', clientX: 40, pointerId: 3 });
+    assert.equal(progress.classList.contains('pui__progress--dragging'), true);
+    ui.destroy();
+  });
+});
+
 test('createPlayerUI：窗口级 pointerup/pointercancel 结束滑杆拖动并在销毁时撤销', () => {
   withGlobals(({ window }) => {
     const ui = createPlayerUI({ keyboard: false });

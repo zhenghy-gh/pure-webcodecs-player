@@ -150,6 +150,16 @@ export function createPlayerUI(options = {}) {
   let activePointerId = null;
   let statsTimer = 0;
 
+  function cancelSliderDrag() {
+    if (!dragging) return;
+    const el = dragging;
+    const pointerId = activePointerId;
+    dragging = null;
+    activePointerId = null;
+    el.classList.remove('pui__progress--dragging');
+    if (pointerId !== null) el.releasePointerCapture?.(pointerId);
+  }
+
   const ratesOf = () => (adapter && Array.isArray(adapter.rates) && adapter.rates.length ? adapter.rates : DEFAULT_RATES);
 
   /** 随控制器销毁一并执行的清理函数集合 */
@@ -283,11 +293,7 @@ export function createPlayerUI(options = {}) {
     const move = (e) => { if (dragging === el) handle(e); };
     const end = (e) => {
       if (dragging !== el || e?.pointerId !== undefined && e.pointerId !== activePointerId) return;
-      dragging = null;
-      const pointerId = activePointerId;
-      activePointerId = null;
-      el.classList.remove('pui__progress--dragging');
-      if (pointerId !== null) el.releasePointerCapture?.(pointerId);
+      cancelSliderDrag();
     };
     el.addEventListener('pointerdown', start);
     el.addEventListener('pointermove', move);
@@ -414,6 +420,7 @@ export function createPlayerUI(options = {}) {
 
     /** 解除绑定并复位控制条状态 */
     unbind() {
+      cancelSliderDrag();
       for (const off of offAdapter.splice(0)) { try { off(); } catch { /* 忽略 */ } }
       adapter = null;
       setPlaying(false);
