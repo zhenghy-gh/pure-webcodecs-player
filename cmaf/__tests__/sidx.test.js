@@ -157,6 +157,17 @@ test('splitChunks：流内 sidx 被捕获为 segmentIndex', () => {
   }
 });
 
+test('prft：截断字段与越界内容边界抛受控 NOT_SUPPORTED', async () => {
+  const { parsePrft } = await import('../src/isobmff.js');
+  const bytes = new Uint8Array(40);
+  bytes[8] = 1;
+  assert.throws(() => parsePrft(bytes, 8, 20), error => error.code === 'NOT_SUPPORTED');
+  assert.throws(() => parsePrft(bytes, 8, 41), error => error.code === 'NOT_SUPPORTED');
+
+  bytes[8] = 0;
+  assert.throws(() => parsePrft(bytes, 8, 16), error => error.code === 'NOT_SUPPORTED');
+});
+
 test('prft：生产者时钟参考（v0/v1 双版本）', async () => {
   const { parsePrft } = await import('../src/isobmff.js');
   const build = (version, producer, media) => {

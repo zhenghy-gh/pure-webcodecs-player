@@ -75,9 +75,20 @@ export function* iterateBoxes(buf, start = 0, end = buf.length) {
  * @returns {{referenceTrackId:number, referenceTimescale:number,
  *            mediaTimeTicks:number, producerTimeTicks:number}}
  */
-export function parsePrft(buf, contentStart) {
+export function parsePrft(buf, contentStart, contentEnd = buf.byteLength) {
+  if (contentStart < 0 || contentStart > contentEnd || contentEnd > buf.byteLength) {
+    throw notSupported(`ISO-BMFF prft 边界非法: start=${contentStart} end=${contentEnd}`);
+  }
+  if (contentStart + 4 > contentEnd) {
+    throw notSupported(`ISO-BMFF prft 头部截断: end=${contentEnd}`);
+  }
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const { version } = readVersionFlags(buf, contentStart);
+  const fieldSize = version === 1 ? 8 : 4;
+  const requiredEnd = contentStart + 12 + fieldSize * 2;
+  if (requiredEnd > contentEnd) {
+    throw notSupported(`ISO-BMFF prft 字段截断: end=${contentEnd}`);
+  }
   let p = contentStart + 4;
   const referenceTrackId = dv.getUint32(p); p += 4;
   const referenceTimescale = dv.getUint32(p); p += 4;
