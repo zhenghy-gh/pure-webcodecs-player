@@ -15,6 +15,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import {
   PCM_WORKLET_CODE,
   AUDIO_SINK_PROCESSOR_NAME,
@@ -43,6 +44,40 @@ test('PCM_WORKLET_CODE：内联处理器源码，注册名与契约 §7 一致',
   assert.ok(PCM_WORKLET_CODE.includes('class PcmRingWorklet extends AudioWorkletProcessor'));
   assert.ok(PCM_WORKLET_CODE.includes(`registerProcessor('${AUDIO_SINK_PROCESSOR_NAME}', PcmRingWorklet)`));
   assert.equal(AUDIO_SINK_PROCESSOR_NAME, 'player-audio-sink');
+});
+
+test('PCM_WORKLET_CODE：push 增大容量后扩展现存声道环形缓冲', () => {
+  const processors = new Map();
+  class FakeAudioWorkletProcessor {
+    constructor() { this.port = { postMessage() {}, onmessage: null }; }
+  }
+  const context = {
+    AudioWorkletProcessor: FakeAudioWorkletProcessor,
+    currentSampleRate: 48000,
+    currentTime: 0,
+    sampleRate: 48000,
+    registerProcessor: (name, ctor) => processors.set(name, ctor),
+  };
+  vm.runInNewContext(PCM_WORKLET_CODE, context);
+  const processor = new (processors.get(AUDIO_SINK_PROCESSOR_NAME))();
+  const send = (channels) => processor.port.onmessage({ data: { type: 'push', channels, frames: channels[0].length } });
+
+  send([new Float32Array(1)]);
+  for (let i = 0; i < 188; i++) {
+    processor.process([], [[new Float32Array(128)]]);
+  }
+  assert.equal(processor.bufferedFrames, 0);
+
+  const frames = 30000;
+  const source = Float32Array.from({ length: frames }, (_, i) => i / frames);
+  send([source]);
+  let sampleAt24000;
+  for (let consumed = 0; consumed < frames; consumed += 128) {
+    const output = [new Float32Array(128)];
+    processor.process([], [output]);
+    if (24000 >= consumed && 24000 < consumed + 128) sampleAt24000 = output[0][24000 - consumed];
+  }
+  assert.equal(sampleAt24000, source[24000]);
 });
 
 test('createWorkletUrl：生成 blob: URL（Node 22 原生 Blob + URL.createObjectURL）', () => {

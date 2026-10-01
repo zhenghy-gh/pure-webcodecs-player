@@ -27,8 +27,20 @@ class PcmRingWorklet extends AudioWorkletProcessor {
         const channels = msg.channels;
         const frames = msg.frames;
         if (this.rings.length !== channels.length || this.capacity < frames) {
-          // 首次或容量变化：重建环形缓冲（容量取最大需求与 4 倍块长）
-          this.capacity = Math.max(this.capacity, frames, currentSampleRate >> 1);
+          const oldCapacity = this.capacity;
+          const nextCapacity = Math.max(this.capacity, frames, currentSampleRate >> 1);
+          if (oldCapacity > 0 && nextCapacity > oldCapacity) {
+            const readPos = (this.writePos - this.bufferedFrames + oldCapacity) % oldCapacity;
+            this.rings = this.rings.map((ring) => {
+              const expanded = new Float32Array(nextCapacity);
+              for (let i = 0; i < this.bufferedFrames; i++) {
+                expanded[i] = ring[(readPos + i) % oldCapacity];
+              }
+              return expanded;
+            });
+            this.writePos = this.bufferedFrames;
+          }
+          this.capacity = nextCapacity;
           while (this.rings.length < channels.length) this.rings.push(new Float32Array(this.capacity));
         }
         const chCount = Math.min(this.rings.length, channels.length);
