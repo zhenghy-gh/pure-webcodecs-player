@@ -69,6 +69,9 @@ export class WebTorrentPlayer extends Emitter {
 
     const factory = this.opts.clientFactory ?? loadWebTorrent;
     const WT = await factory();
+    if (this.state === 'destroyed') {
+      throw new PlayerError('STATE_ERROR', '播放器已销毁');
+    }
     if (!WT) {
       this.state = 'degraded';
       this.emit('status', this.state);

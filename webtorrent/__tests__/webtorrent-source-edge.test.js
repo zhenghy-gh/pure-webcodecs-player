@@ -257,6 +257,25 @@ class FakeClient extends Emitter {
   async destroy() { this.destroyed = true; }
 }
 
+test('WebTorrentPlayer：destroy 期间 clientFactory 尚未完成时禁止 attach 复活', async () => {
+  let resolveFactory;
+  let clientCreated = false;
+  class LateClient extends FakeClient {
+    constructor() { super(); clientCreated = true; }
+  }
+  const player = new WebTorrentPlayer({ clientFactory: () => new Promise((resolve) => { resolveFactory = resolve; }) });
+  const ready = [];
+  player.on('ready', () => ready.push(true));
+  const attaching = player.attach('magnet:?xt=urn:btih:' + '22'.repeat(20));
+
+  await player.destroy();
+  resolveFactory(LateClient);
+  await assert.rejects(attaching, (e) => e.code === 'STATE_ERROR');
+  assert.equal(clientCreated, false);
+  assert.equal(player.state, 'destroyed');
+  assert.deepEqual(ready, []);
+});
+
 test('WebTorrentPlayer：destroy 后 attach 报 STATE_ERROR', async () => {
   const player = new WebTorrentPlayer({ clientFactory: async () => FakeClient });
   await player.attach('magnet:?xt=urn:btih:' + '11'.repeat(20));
