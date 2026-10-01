@@ -129,6 +129,7 @@ export class H264Depacketizer {
     }
 
     if (marker) {
+      if (this.fuPayload) this.#abortFu();
       const nals = this.auNals.slice();
       const ts = this.auTimestamp;
       this.auNals = [];

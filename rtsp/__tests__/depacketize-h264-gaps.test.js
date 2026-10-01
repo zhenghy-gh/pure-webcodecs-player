@@ -74,6 +74,19 @@ test('STAP-A/B：截断的聚合条目不输出前序部分 NAL', () => {
   }
 });
 
+test('Marker：在途 FU 未收到结束片时作废，后续访问单元不继承残片', () => {
+  const d = new H264Depacketizer();
+  d.push(fuStart(5, [1, 2, 3]), false, 1, 1000);
+  const out = d.push(fuMid(5, [4, 5]), true, 2, 2000);
+  assert.deepEqual(out.nals, []);
+  assert.equal(d.fuPayload, null);
+  assert.equal(d.stats.fuDropped, 1);
+
+  const next = d.push(new Uint8Array([0x41, 9]), true, 3, 3000);
+  assert.equal(next.nals.length, 1);
+  assert.deepEqual(Array.from(next.nals[0]), [0x41, 9]);
+});
+
 test('type 0（未定义）静默忽略，不产生 NAL', () => {
   const d = new H264Depacketizer();
   const out = d.push(new Uint8Array([0x00, 0xaa]), true, 1, 1000);

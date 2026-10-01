@@ -113,6 +113,7 @@ export class H265Depacketizer {
     }
 
     if (marker) {
+      if (this.fuPayload) this.#abortFu();
       const nals = this.auNals.slice();
       this.auNals = [];
       this.stats.frames++;

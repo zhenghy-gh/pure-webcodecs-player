@@ -92,6 +92,19 @@ test('FU 载荷不足 3 字节：中止在途 FU 并安全返回', () => {
   assert.equal(d.stats.fuDropped, 1);
 });
 
+test('Marker：在途 FU 未收到结束片时作废且计入丢弃', () => {
+  const d = new H265Depacketizer();
+  d.push(mkFu([0x11], true, false), false, 1, 3000);
+  const out = d.push(mkFu([0x22], false, false), true, 2, 6000);
+  assert.deepEqual(out.nals, []);
+  assert.equal(d.fuPayload, null);
+  assert.equal(d.stats.fuDropped, 1);
+
+  const next = d.push(singleNal(), true, 3, 9000);
+  assert.equal(next.nals.length, 1);
+  assert.deepEqual(Array.from(next.nals[0]), Array.from(singleNal()));
+});
+
 test('FU 不连续：单 NAL 插入与错序续片均丢弃在途 FU', () => {
   const d = new H265Depacketizer();
   // ① 单 NAL 插入打断 FU
