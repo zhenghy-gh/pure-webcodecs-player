@@ -261,7 +261,7 @@ export function parseTrun(buf, contentStart, contentEnd) {
     }
     rows.push(row);
   }
-  return { sampleCount, dataOffset, hasDataOffset, firstSampleFlags, rows };
+  return { sampleCount, dataOffset, hasDataOffset, hasFlags, firstSampleFlags, rows };
 }
 
 /** 解析 tfdt → baseMediaDecodeTime */

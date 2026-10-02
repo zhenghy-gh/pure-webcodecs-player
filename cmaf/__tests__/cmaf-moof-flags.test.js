@@ -378,6 +378,17 @@ test('splitChunks：同一 traf 内多个 trun 的样本均按顺序保留', () 
   assert.deepEqual(samples.map((sample) => sample.dtsOffset), [500, 1500]);
 });
 
+test('splitChunks：显式零 sample_flags 覆盖 tfhd 默认非关键标志', () => {
+  const stream = buildMoofStream([
+    traf(3, 0, 0, trun(0, {
+      dataOffset: 8,
+      rows: [{ duration: 1000, size: 10, flags: 0 }],
+    }), { duration: 1000, size: 10, flags: 0x01010000 }),
+  ]);
+  const { chunks } = splitChunks(stream);
+  assert.equal(chunks[0].tracks[0].samples[0].keyframe, true);
+});
+
 /* ---------------- 多 traf 单 moof ---------------- */
 
 test('splitChunks：单 moof 双 traf → 单 chunk 内两条轨，各自默认与样本独立', () => {

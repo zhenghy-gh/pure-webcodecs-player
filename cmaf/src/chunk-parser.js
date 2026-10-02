@@ -146,10 +146,13 @@ function materializeSamples(buf, moofBox, traf) {
   let dtsOffset = baseTime;
   for (const trun of truns) {
     let cursor = trun.hasDataOffset ? dataBase + trun.dataOffset : nextDataStart;
-    for (const row of trun.rows) {
+    for (let i = 0; i < trun.rows.length; i++) {
+      const row = trun.rows[i];
       const duration = row.duration || defaults.defaultSampleDuration || 0;
       const size = row.size || defaults.defaultSampleSize || 0;
-      const flags = row.flags || defaults.defaultSampleFlags || 0;
+      const hasRowFlags = trun.hasFlags || (i === 0 && trun.firstSampleFlags !== null);
+      const flags = hasRowFlags ? row.flags : (defaults.defaultSampleFlags ?? 0);
+      const cts = row.cts || 0;
       if (cursor < mdatDataStart || cursor + size > mdatDataEnd) {
         throw notSupported('trun 样本范围超出 mdat 载荷边界');
       }
@@ -158,7 +161,7 @@ function materializeSamples(buf, moofBox, traf) {
         durationTicks: duration,
         size,
         keyframe: isKeyframeFlag(flags),
-        cts: row.cts || 0,
+        cts,
         dtsOffset,
         dataStart: cursor,
       });
