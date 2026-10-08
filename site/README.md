@@ -1,4 +1,30 @@
-# site —— 全仓共享演示皮肤与通用控制条
+# site —— 共享演示皮肤与通用控制条
+
+## 当前入口与迁移状态（2026-10-08）
+
+`skin.css` 的 `--pp-*` 是共享深色令牌事实源，`skin.js` 是 DOM 行为事实源。
+官网、总览、全部 16 个模块页以及 HLS/FLV 对照页均已切换到共享导航与 pp 深色皮肤。
+`site.css` 仍保留遗留样式，其令牌与 `css/tokens.css` 均映射到 pp；`js/skin.js` 是薄 API 兼容出口。
+下方原有冻结声明和迁移表属于历史记录，不代表当前接入状态。根首页、模块总览、16 个模块与两张对照页面现已共享全站导航与 pp 深色基础组件。
+本次不交付浅色主题；不混用多个独立色板。
+
+标准引用：`<body class="pp-scope">`、`../../site/skin.css`、`[data-site-nav][data-root="../../"]`。
+页面显式使用 `skin.js` 的 `bindRange`、`bindDrop`、`bindKeys`；销毁时调用各自返回的 disposer。
+`initSkin({ ranges: false })` 允许页面控制器独立管理滑杆，自动初始化不抢占已有绑定。
+原生 range 的 `input` 仅预览，`change` 提交；程序刷新调用 `syncRange()`，不能派发用户事件。
+`formatTime` 接收秒，`formatClockUs` 接收微秒；PlayerAdapter 的秒协议保持不变。
+
+布局：播放器用 `.pp-page > .pp-main + .pp-aside`，总览用 `.pp-page--wide`；
+音频/参考页用 `.pp-demo`，APE 用 `.pp-demo--single`，≤1024px 面板下排而非抽屉。
+全屏调用 `toggleFullscreen(stage, controls)`，退出、失败和 `disposeFullscreen(stage)` 都恢复控件原位。
+导航以规范化完整 URL 匹配当前页，支持部署子路径与目录/index.html 等价，使用 `aria-current="page"`。
+
+验证：`node --test site/__tests__/*.test.js`、`npm test`、`npm run lint`。
+这些是逻辑与静态验证，不替代浏览器布局、真实音频和播放验收。
+
+---
+
+## 历史接口与冻结记录
 
 > 归属：ui-kit-dev　|　契约基线：docs/CONTRACTS.md v0.2（E-8 口径）（§0 纯 ESM / 零依赖 / 双环境）
 > 视觉规范：docs/DESIGN.md（designer 编写中）发布前，本目录先落地一套深色默认令牌，
@@ -94,7 +120,7 @@ createPlayerUI({ mount: '#ui', fullscreenEl: '#stage-wrap' }).bind(adapter);
 | 尺寸 | `--dsk-radius-sm/md/lg / --dsk-bar-h / --dsk-nav-h` |
 | 动效 | `--dsk-ease / --dsk-fast` |
 
-浅色主题：在 `<html>` 上加 `data-theme="light"` 即整体切换。
+历史浅色接口已停止交付；当前 pp 皮肤仅提供深色主题。
 
 ## 六、BEM 命名约定
 
@@ -133,12 +159,13 @@ node --test subtitle/__tests__/*.test.js
 | pp-* 家族（视觉规范 §2 参考实现） | `skin.css` + `skin.js` | `.pp-*` + `data-pp-*` | 冻结维护（subtitle/demo 在用） |
 | 遗留三件套 | `site.css` + `player-ui.js` + `nav.js` | `--dsk-*` / `.pui` / `data-site-nav` | **冻结不扩展**（leader 裁决），合并/归档待 captain M3 |
 | ~~新结构家族~~（并入 pp 收敛） | `css/{tokens,base,layout,components}.css` + `js/skin.js` + `assets/icons.svg` | 无前缀 BEM（§10）+ `data-skin` | ref-hls/ref-flv 在用；wav/flac/ape 标记迁移排期中 |
-| **收敛目标** | `skin.css` + `skin.js`（--pp-*/.pp-*） | `.pp-*` + `data-pp-*` | **M3 目标家族**；hub 已迁移；compat 层=site.css 头部令牌别名 |
+| **收敛目标** | `skin.css` + `skin.js`（--pp-*/.pp-*） | `.pp-*` + `data-pp-*` | **现行共享家族**；全站页面均已迁移；遗留路径仅保留令牌/API 兼容 |
 
 ### 迁移进度（裁决③执行记录 · 2026-08-26）
 
 | 页面 | 原家族 | 状态 |
 |---|---|---|
+| landing / overview / 16 modules / 2 reference pages | mixed | ✅ shared pp skin + common navigation |
 | site/demo/index.html（hub） | dsk 遗留 | ✅ 已迁 pp-* |
 | wav/demo、flac/demo、ape/demo | dsk 遗留（css×4 兼容期） | ⏳ 排期：下轮按 hub 模式迁移 |
 | subtitle/demo | pp-*（原生） | ✅ 无需迁移 |
@@ -157,3 +184,16 @@ node --test subtitle/__tests__/*.test.js
 > 四项长期挂起裁决合并终答（2026-08-26，captain；此前分别裁定，此处汇总存档）：①**default export 冲突**：契约 §0.4 硬约束胜出——具名导出为正典，skin.js 尾部 `export { Skin as default }` 兼容别名允许（注释标明契约例外仅此一处），DESIGN §11 措辞由 designer 改为具名导入；②**§7.3 缓冲段==轨道色**：按字面实现接受（非阻塞），视觉区分度列入 M3 全站走查由 designer 复核；③**版本引用勘误知悉**——现行=DESIGN.md v1.1 历史锚点+视觉规范.md v1.0 现行维护版，按 v1.1 实现正确；④**M3 双皮肤收敛方向**：维持第 20 版裁决——目标=--pp-*/.pp-* 家族，9 个 demo 由 ui-kit-dev 统一迁移+compat 层过渡，旧家族出口前退役归档；根 package.json 测试脚本已是通配+force-exit 形式（sdet 早前完成），模块级以 net-dev 显式 glob 示范为准（wav/flac/ape/subtitle 已同步落盘，`npm test` = node --test --test-force-exit "__tests__/*.test.js"）。四项至此全部有终答，后续不再受理同题重申。原编号文本：④M3 收敛目标=--pp-*/.pp-* 家族，9 个 demo 由 ui-kit-dev 统一迁移 + compat 层过渡，旧家族出口前退役归档；根测试脚本已通配+force-exit（sdet），模块级脚本以 net-dev 显式 glob 示范为准（四模块已同步，`npm test` = node --test --test-force-exit "__tests__/*.test.js"）。
 - review-round1 #8 闭环（2026-08-26）：wav 全模块裸 Error 清零，统一十码 PlayerError；模块级 package.json 脚本落盘。
 - review-round1 建议级收尾（2026-08-26）：f32 NaN/±Inf 钳制补回归用例（wav review-fixes 11 例全绿，全套 39/39）；alaw/ulaw 仅存常量/GUID 映射供 EXTENSIBLE 识别后拒绝（非死代码），waveCodecString 已无死分支。
+
+
+### 内置示例与浏览器验收
+`site/demo-samples.js` 是每页唯一的快速体验入口数据源；确定性离线测试媒体保存在 `site/assets/samples/`，
+由 `node scripts/generate-demo-media.mjs` 重新生成（没有外网下载）。点击按钮触发实际播放器/解析入口，不会自动播放媒体；
+音频的“载入样例”按钮只解码，需再点播放。参考实现明确标注 CDN 网络要求，RTSP/RTMP 明确提示先运行 `npm run gateway`。
+
+```bash
+node scripts/e2e/demo-smoke.mjs --base-url http://localhost:8080 --width 1280 --out-dir .tmp/ui-smoke
+node scripts/e2e/demo-smoke.mjs --base-url http://localhost:8080 --width 390 --out-dir .tmp/ui-mobile
+```
+
+截图与 JSON 报告默认写入 `.tmp/`，不覆盖 `docs/review/i3/` 历史验收图；测试需要本机 Chrome 与已有 Playwright Core 工具副本，播放器本身没有第三方运行时依赖。

@@ -4,21 +4,16 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>@player/core 演示 —— 能力探测 / 渲染器 / AudioWorklet / 时钟同步</title>
-<style>
-  :root { color-scheme: dark; }
-  body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
-         background: #0d1117; color: #e6edf3; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px; }
-  h1 { font-size: 20px; margin: 0; }
-  .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; width: min(900px, 94vw); }
-  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 14px; flex: 1; min-width: 260px; }
-  .card h2 { font-size: 14px; margin: 0 0 8px; color: #58a6ff; }
-  canvas, video { width: 100%; aspect-ratio: 4/3; background: #000; border-radius: 8px; }
-  button { background: #238636; color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; margin-right: 6px; }
-  pre { font-size: 11px; white-space: pre-wrap; margin: 0; max-height: 180px; overflow: auto; }
-</style>
+
+<link rel="stylesheet" href="../../site/skin.css">
 </head>
-<body>
-<h1>@player/core · 公共内核能力演示</h1>
+<body class="pp-scope">
+<div data-site-nav data-root="../../"></div>
+<main class="pp-lab pp-lab--core ">
+  <header class="pp-module-heading"><p class="pp-eyebrow">PUREPLAY / MEDIA LAB</p><h1>Core 内核实验</h1><p class="pp-module-copy">浏览器原生能力实验。选择内置样例即可体验，无需手动输入。</p></header>
+  <section data-demo-samples></section>
+
+
 
 <div class="row">
   <div class="card">
@@ -46,7 +41,9 @@
   </div>
 </div>
 
+</main>
 <script type="module">
+import { initDemoSamples } from '../../site/demo-samples.js';
 import {
   detectCapabilities,
   VideoFrameRenderer,
@@ -56,6 +53,7 @@ import {
 } from '../src/index.js';
 
 /* ---------- ① 能力探测 ---------- */
+const disposeSamples = initDemoSamples('core');
 const capEl = document.getElementById('cap');
 const report = await detectCapabilities({ videoCodec: 'avc1.42E01E', audioCodec: 'mp4a.40.2' });
 capEl.textContent = JSON.stringify(report, null, 2);
@@ -142,7 +140,7 @@ document.getElementById('audioToggle').addEventListener('click', async (e) => {
 });
 
 // 模拟视频帧 pts 流，展示同步决策
-setInterval(() => {
+const syncTimer = setInterval(() => {
   if (!player || !player.playing) return;
   const info = document.getElementById('syncInfo');
   const fakePts = player.currentTimeSec() + 0.02; // 模拟视频比主钟超前 20ms
@@ -152,6 +150,8 @@ setInterval(() => {
     `drift=${(drift * 1000).toFixed(1)}ms → ${action}\n` +
     `缓冲水位=${player.bufferedSec.toFixed(2)}s underrun=${stats.snapshot().audioUnderruns}`;
 }, 200);
+window.addEventListener('pagehide', () => { cancelAnimationFrame(raf); clearInterval(toneTimer); clearInterval(syncTimer); player?.destroy(); disposeSamples(); }, { once: true });
 </script>
+<script type="module" src="../../site/nav.js"></script>
 </body>
 </html>

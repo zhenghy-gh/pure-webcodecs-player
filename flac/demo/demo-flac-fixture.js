@@ -23,9 +23,11 @@ export function buildDemoFlac() {
   const si = new Uint8Array(34);
   const dv = new DataView(si.buffer);
   dv.setUint16(0, blockSize); dv.setUint16(2, blockSize);
-  dv.setUint32(10, ((sampleRate << 12) | (0 << 9) | (15 << 4)));
-  si[13] = (si[13] & 0xf0) | 0;
-  dv.setUint32(14, totalSamples >>> 0);
+  // STREAMINFO's 64-bit audio fields share a packed 64-bit big-endian value:
+  // 20-bit sample rate, 3-bit channel count-1, 5-bit bps-1 and 36-bit sample count.
+  const packedAudioInfo = (BigInt(sampleRate) << 44n) | (0n << 41n) | (15n << 36n) | BigInt(totalSamples);
+  dv.setUint32(10, Number((packedAudioInfo >> 32n) & 0xffffffffn), false);
+  dv.setUint32(14, Number(packedAudioInfo & 0xffffffffn), false);
 
   /** 元数据块封装 */
   const block = (type, body, last) => {

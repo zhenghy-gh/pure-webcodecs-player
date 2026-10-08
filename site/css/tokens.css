@@ -1,66 +1,64 @@
-/* site/css/tokens.css — PurePlay 设计令牌（唯一定义处） …依据 docs/DESIGN.md v1.1 */
+/* Legacy token names alias the authoritative pp palette; do not add another theme. */
+@import url("../skin.css");
 :root {
   color-scheme: dark;
 
   /* 4.1 中性色阶（冷灰 hue≈220） */
-  --gray-50: #f2f5fa;
-  --gray-100: #e2e8f2;
-  --gray-200: #c9d2e0;
-  --gray-300: #a3b0c4;
-  --gray-400: #78869e;
-  --gray-500: #57637a;
-  --gray-600: #3f4a60;   /* 图标禁用 */
-  --gray-700: #2c3547;   /* 强边框 / 滑块轨道 / 缓冲段 */
-  --gray-800: #1d2433;   /* 弱边框 / tooltip 底 */
-  --gray-850: #151c28;   /* 浮层 / 输入框底 */
-  --gray-900: #10151f;   /* 卡片 / 面板底 */
-  --gray-950: #0a0e16;   /* 页面底 */
+  --gray-50: var(--pp-text);
+  --gray-100: var(--pp-text);
+  --gray-200: var(--pp-text);
+  --gray-300: var(--pp-text-dim);
+  --gray-400: var(--pp-text-faint);
+  --gray-500: var(--pp-text-faint);
+  --gray-600: var(--pp-text-disabled);   /* 图标禁用 */
+  --gray-700: var(--pp-border-strong);   /* 强边框 / 滑块轨道 / 缓冲段 */
+  --gray-800: var(--pp-border);   /* 弱边框 / tooltip 底 */
+  --gray-850: var(--pp-raised);   /* 浮层 / 输入框底 */
+  --gray-900: var(--pp-surface);   /* 卡片 / 面板底 */
+  --gray-950: var(--pp-bg);   /* 页面底 */
 
   /* 4.2 基底与边框 */
-  --bg-page: var(--gray-950);
-  --bg-deep: #06090f;                 /* 画布 letterbox 黑，比页面更黑一档 */
-  --bg-surface: var(--gray-900);
-  --bg-raised: var(--gray-850);
-  --bg-overlay: rgba(6, 9, 15, .72);
-  --bg-hover: rgba(255, 255, 255, .06);
-  --bg-active: rgba(255, 255, 255, .10);
-  --border-subtle: var(--gray-800);
-  --border-strong: var(--gray-700);
-  --border-focus: var(--accent);
+  --bg-page: var(--pp-bg);
+  --bg-deep: var(--pp-bg-deep);                 /* 画布 letterbox 黑，比页面更黑一档 */
+  --bg-surface: var(--pp-surface);
+  --bg-raised: var(--pp-raised);
+  --bg-overlay: var(--pp-overlay);
+  --bg-hover: var(--pp-hover);
+  --bg-active: var(--pp-active-bg);
+  --border-subtle: var(--pp-border);
+  --border-strong: var(--pp-border-strong);
+  --border-focus: var(--pp-accent);
 
   /* 4.3 文字 */
-  --text-primary: #e6ebf4;
-  --text-secondary: #a9b4c8;
-  --text-muted: #6f7b93;
-  --text-disabled: #49536a;
-  --text-on-accent: #071021;
+  --text-primary: var(--pp-text);
+  --text-secondary: var(--pp-text-dim);
+  --text-muted: var(--pp-text-faint);
+  --text-disabled: var(--pp-text-disabled);
+  --text-on-accent: var(--pp-on-accent);
 
   /* 4.4 品牌强调 */
-  --accent: #47a3ff;
-  --accent-hover: #6ab5ff;
-  --accent-active: #3087ee;
-  --accent-dim: rgba(71, 163, 255, .14);
-  --accent-border: rgba(71, 163, 255, .42);
-  --link: var(--accent-hover);
+  --accent: var(--pp-accent);
+  --accent-hover: var(--pp-accent-hover);
+  --accent-active: var(--pp-accent-active);
+  --accent-dim: var(--pp-accent-dim);
+  --accent-border: var(--pp-accent-bd);
+  --link: var(--pp-accent-hover);
 
   /* 4.5 状态色（主色 + dim 底 + bd 描边三件套） */
-  --status-success: #4ade80;  --success-dim: rgba(74,222,128,.13);  --success-bd: rgba(74,222,128,.38);
-  --status-warning: #fbbf24;  --warning-dim: rgba(251,191,36,.12);  --warning-bd: rgba(251,191,36,.38);
-  --status-error: #f87171;    --error-dim: rgba(248,113,113,.13);   --error-bd: rgba(248,113,113,.42);
+  --status-success: var(--pp-ok);  --success-dim: var(--pp-ok-dim);  --success-bd: var(--pp-ok-bd);
+  --status-warning: var(--pp-warn);  --warning-dim: var(--pp-warn-dim);  --warning-bd: var(--pp-warn-bd);
+  --status-error: var(--pp-danger);    --error-dim: var(--pp-danger-dim);   --error-bd: var(--pp-danger-bd);
   /* info 不单独设色：一律复用 accent 族（--accent/--accent-dim/--accent-border） */
-  --status-live: #ff5c5c;     --live-dim: rgba(255,92,92,.14);      --live-bd: rgba(255,92,92,.42);
-  --status-neutral: #8b97ad;  --neutral-dim: rgba(139,151,173,.12); --neutral-bd: rgba(139,151,173,.35);
-  --danger-solid: #e5484d;
-  --danger-solid-hover: #f2555a;
-  --text-on-danger: #ffffff;          /* 实心危险钮文字 */
-  --fade-mask: #000000;               /* 页签滚动两端渐隐遮罩用不透明色 */
+  --status-live: var(--pp-live);     --live-dim: var(--pp-danger-dim);      --live-bd: var(--pp-danger-bd);
+  --status-neutral: var(--pp-text-dim);  --neutral-dim: var(--pp-hover); --neutral-bd: var(--pp-border);
+  --danger-solid: var(--pp-danger);
+  --danger-solid-hover: var(--pp-danger);
+  --text-on-danger: var(--pp-on-accent);          /* 实心危险钮文字 */
+  --fade-mask: var(--pp-bg-deep);               /* 页签滚动两端渐隐遮罩用不透明色 */
 
   /* 4.6 字体 */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-               "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB",
-               "Microsoft YaHei", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas,
-               "Liberation Mono", monospace;
+  --font-sans: var(--pp-font);
+  --font-mono: var(--pp-font-mono);
   --fs-xs: 12px;
   --fs-sm: 13px;
   --fs-md: 14px;
@@ -92,11 +90,11 @@
   --radius-full: 999px;
 
   /* 布局尺寸 */
-  --topbar-h: 52px;
-  --controls-h: 56px;
-  --panel-w: 320px;
+  --topbar-h: var(--pp-nav-h);
+  --controls-h: var(--pp-bar-h);
+  --panel-w: var(--pp-panel-w);
   --content-max: 1440px;
-  --ctl-icon: 36px;
+  --ctl-icon: var(--pp-ctl-icon);
   --ctl-gap: 8px;
 
   /* 4.8 层级 / 动效 */

@@ -4,58 +4,25 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PurePlay · mkv —— 浏览器 MKV/WebM 解析演示</title>
-<style>
-  :root {
-    --bg: #0f1115; --panel: #171a21; --line: #262b36;
-    --text: #e6e9ef; --dim: #8a93a5; --acc: #4f8cff; --ok: #3fb96f; --warn: #e2a33c;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-  }
-  .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  .sub { color: var(--dim); margin-bottom: 20px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-  .drop {
-    border: 2px dashed var(--line); border-radius: 10px; padding: 28px; text-align: center;
-    color: var(--dim); cursor: pointer; transition: border-color .15s, color .15s;
-  }
-  .drop.on { border-color: var(--acc); color: var(--acc); }
-  input[type="text"] {
-    width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
-    background: var(--bg); color: var(--text); outline: none; margin-top: 10px;
-  }
-  button {
-    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line);
-    background: #1d2330; color: var(--text); cursor: pointer; margin-right: 8px; margin-top: 10px;
-  }
-  button:hover { border-color: var(--acc); color: var(--acc); }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
-  th { color: var(--dim); font-weight: 500; }
-  .tag { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; background: #20283a; }
-  .tag.ok { color: var(--ok); } .tag.no { color: var(--warn); }
-  tr.bad td { color: var(--warn); }
-  .stat { display: inline-block; margin: 4px 18px 4px 0; color: var(--dim); }
-  .stat b { color: var(--text); font-weight: 600; }
-  canvas { max-width: 100%; border-radius: 8px; background: #000; margin-top: 10px; }
-  .err { color: #ff7b72; white-space: pre-wrap; }
-</style>
+
+<link rel="stylesheet" href="../../site/skin.css">
 </head>
-<body>
+<body class="pp-scope">
+<div data-site-nav data-root="../../"></div>
+<main class="pp-lab pp-lab--mkv ">
+  <header class="pp-module-heading"><p class="pp-eyebrow">PUREPLAY / MEDIA LAB</p><h1>MKV / WebM 解析与预览</h1><p class="pp-module-copy">EBML 解析 → Segment/Info/Tracks/Cues → 契约 Sample 流（open / readSample / seek）。零依赖纯 ESM，数据全程本地处理。</p></header>
+  <section data-demo-samples></section>
+
 <div class="wrap">
-  <h1>PurePlay · mkv —— MKV/WebM 纯前端解析演示</h1>
-  <div class="sub">EBML 解析 → Segment/Info/Tracks/Cues → 契约 Sample 流（open / readSample / seek）。零依赖纯 ESM，数据全程本地处理。</div>
+
+
 
   <div class="panel">
     <div id="drop" class="drop">拖入 .mkv / .webm 文件到此处，或点击选择文件<br /><small>文件不会上传，仅在浏览器内解析</small></div>
     <input type="file" id="file" accept=".mkv,.webm,.mka,.mks,video/x-matroska" hidden />
     <input type="text" id="url" placeholder="或输入 http(s) 地址（需服务端支持 Range 请求）" />
     <button id="btnUrl">解析 URL</button>
-    <span id="srcMsg" style="color:var(--dim)"></span>
+    <span id="srcMsg" style="color:var(--pp-text-dim)"></span>
   </div>
 
   <div class="panel" id="infoPanel" hidden>
@@ -80,20 +47,13 @@
   <div class="panel err" id="errBox" hidden></div>
 </div>
 
+</main>
 <script type="module">
 import { createDemuxer, FetchSource, MkvDemuxer } from '../src/index.js';
 
 const $ = (id) => document.getElementById(id);
 const drop = $('drop'), fileInput = $('file');
 
-// 尝试挂共享皮肤（site/ 由 ui-kit-dev 提供；不存在时静默保持内置样式）
-fetch('../../site/site.css').then((r) => {
-  if (r.ok) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet'; link.href = '../../site/site.css';
-    document.head.appendChild(link);
-  }
-}).catch(() => {});
 
 function showErr(e) {
   const box = $('errBox');
@@ -271,6 +231,11 @@ $('btnPreview').addEventListener('click', async () => {
     await decoder.flush().catch(() => {});
   } catch (e) { showErr(e); }
 });
+</script>
+<script type="module" src="../../site/nav.js"></script>
+<script type="module">
+  import { initDemoSamples } from '../../site/demo-samples.js';
+  const dispose = initDemoSamples('mkv');
 </script>
 </body>
 </html>

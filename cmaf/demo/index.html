@@ -4,33 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CMAF 低延迟解析 · 纯前端播放器</title>
-  <link rel="stylesheet" href="../../site/site.css">
-  <style>
-    .cmaf-panel { max-width: 960px; margin: 0 auto; padding: 16px; }
-    .drop-zone { border: 2px dashed var(--pui-border, #3a3f4b); border-radius: 12px;
-                 padding: 32px; text-align: center; cursor: pointer; transition: all .15s; }
-    .drop-zone.hover { border-color: #7aa7ff; background: rgba(122,167,255,.08); }
-    .tree { font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.7;
-            background: var(--pui-surface, #16181d); color: var(--pui-text, #e8eaed);
-            border-radius: 8px; padding: 12px 16px; max-height: 420px; overflow: auto;
-            white-space: pre; }
-    .banner { border-radius: 8px; padding: 10px 14px; margin: 12px 0; display: none; }
-    .banner.warn { display: block; background: rgba(255,196,0,.12); border: 1px solid rgba(255,196,0,.4); }
-    .banner.err { display: block; background: rgba(255,82,82,.1); border: 1px solid rgba(255,82,82,.45); }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
-    .row input { flex: 1; min-width: 240px; padding: 6px 10px; }
-    h2 { margin-top: 28px; font-size: 18px; }
-  </style>
-</head>
-<body class="dsk-body">
-  <div data-site-nav data-root="../../"></div>
 
-  <main class="site-page cmaf-panel">
-    <h1>CMAF chunk 解析与 WebCodecs 直解路线</h1>
-    <p class="muted">
+<link rel="stylesheet" href="../../site/skin.css">
+</head>
+<body class="pp-scope">
+<div data-site-nav data-root="../../"></div>
+<main class="pp-lab pp-lab--cmaf ">
+  <header class="pp-module-heading"><p class="pp-eyebrow">PUREPLAY / MEDIA LAB</p><h1>CMAF / fMP4 分片解析</h1><p class="pp-module-copy">
       拖入本地 CMAF / fMP4 分片文件（.cmf1/.cmfv/.cmfa/.m4s/mp4）即可离线解析 box 结构、
       chunk 时间线与解码配置；远程拉取需要可达地址 + CORS。
-    </p>
+    </p></header>
+  <section data-demo-samples></section>
+
+
+
+  <div class="wrap">
+
+
 
     <div id="banner" class="banner"></div>
 
@@ -53,9 +43,10 @@
 
     <h2>解析结果</h2>
     <div class="tree" id="tree">等待输入…</div>
+  </div>
+
   </main>
 
-  <script type="module" src="../../site/nav.js"></script>
   <script type="module">
     import {
       probe, splitChunks, parseInitSegment,
@@ -191,5 +182,10 @@
         : '当前浏览器不支持 WebCodecs——直解路线不可用（MSE 兜底或升级浏览器）';
     };
   </script>
+<script type="module" src="../../site/nav.js"></script>
+<script type="module">
+  import { initDemoSamples } from '../../site/demo-samples.js';
+  const dispose = initDemoSamples('cmaf');
+</script>
 </body>
 </html>

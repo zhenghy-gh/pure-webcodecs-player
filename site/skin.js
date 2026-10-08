@@ -62,8 +62,9 @@ export function bindKeys(map) {
   /** @param {KeyboardEvent} ev */
   const onKey = (ev) => {
     const t = /** @type {HTMLElement|null} */ (ev.target);
-    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
-    const fn = map[ev.key];
+    if (t && (/^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(t.tagName) || t.isContentEditable)) return;
+    if (ev.defaultPrevented || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    const fn = map[ev.key] || map[ev.code];
     if (fn) { ev.preventDefault(); fn(ev); }
   };
   window.addEventListener('keydown', onKey);
@@ -84,10 +85,14 @@ export function syncRange(el, format) {
   const max = Number(el.max);
   const v = Number(el.value);
   const span = Number.isFinite(max) && max > min ? max - min : 100;
-  const pct = ((v - min) / span) * 100;
+  const pct = Math.max(0, Math.min(100, Number.isFinite(v) ? ((v - min) / span) * 100 : 0));
   el.style.setProperty('--p', String(Math.max(0, Math.min(100, pct))));
+  const buffered = Number(el.dataset?.buffered);
+  el.style.setProperty('--b', String(Math.max(pct, Number.isFinite(buffered) ? Math.min(100, buffered) : pct)));
   if (format) el.setAttribute('aria-valuetext', format(v));
 }
+
+const rangeBindings = new WeakMap();
 
 /**
  * 绑定滑杆：拖动实时刷新 --p 与 .is-scrubbing 态，change 时回调提交。
@@ -98,29 +103,69 @@ export function syncRange(el, format) {
  */
 export function bindRange(el, handlers = {}) {
   if (!hasDOM() || !el) return () => {};
-  const fmt = handlers.format;
-  /** @param {Event} ev */
-  const onInput = (ev) => {
-    el.classList.add('is-scrubbing');
+  rangeBindings.get(el)?.();
+  const fmt = handlers.format || (el.dataset?.unit === 'us' ? formatClockUs : undefined);
+  let tip = null;
+  const wrap = el.parentElement;
+  if ((wrap?.classList?.contains('pp-range-wrap') || wrap?.classList?.contains('slider__wrap')) && document.createElement) {
+    tip = document.createElement('span');
+    tip.className = 'pp-range-tip';
+    if (wrap.classList.contains('slider__wrap')) tip.classList.add('slider__tip');
+    tip.setAttribute('aria-hidden', 'true');
+    wrap.appendChild(tip);
+  }
+  const scrub = active => {
+    if (active) el.classList.add('is-scrubbing');
+    else el.classList.remove('is-scrubbing');
+    for (const selector of ['.pp-controls', '.pp-stage', '.controls', '.stage']) {
+      const parent = el.closest?.(selector);
+      if (active) parent?.classList.add('is-scrubbing');
+      else parent?.classList.remove('is-scrubbing');
+    }
+  };
+  const onInput = () => {
+    scrub(true);
     syncRange(el, fmt);
-    if (handlers.onInput) handlers.onInput(Number(/** @type {HTMLInputElement} */ (ev.target).value));
+    handlers.onInput?.(Number(el.value));
   };
   const onChange = () => {
-    el.classList.remove('is-scrubbing');
+    scrub(false);
     syncRange(el, fmt);
-    if (handlers.onChange) handlers.onChange(Number(el.value));
+    handlers.onChange?.(Number(el.value));
   };
-  const onCancel = () => el.classList.remove('is-scrubbing');
-  el.addEventListener('input', onInput);
-  el.addEventListener('change', onChange);
-  window.addEventListener('pointercancel', onCancel);
-  syncRange(el, fmt);
-  return () => {
-    el.removeEventListener('input', onInput);
-    el.removeEventListener('change', onChange);
-    window.removeEventListener('pointercancel', onCancel);
-    onCancel();
+  let pointerId = null;
+  const onDown = event => {
+    pointerId = event.pointerId ?? null;
+    scrub(true);
   };
+  const onCancel = event => {
+    if (pointerId !== null && event?.pointerId !== undefined && event.pointerId !== pointerId) return;
+    pointerId = null;
+    scrub(false);
+  };
+  const onMove = event => {
+    if (!tip || !fmt) return;
+    const rect = el.getBoundingClientRect();
+    const ratio = rect.width ? Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) : 0;
+    tip.style.setProperty('--tip-x', `${ratio * 100}%`);
+    tip.textContent = fmt(Number(el.min) + ratio * (Number(el.max) - Number(el.min)));
+  };
+  const listeners = [[el, 'input', onInput], [el, 'change', onChange], [el, 'pointerdown', onDown],
+    [el, 'pointermove', onMove], [el, 'lostpointercapture', () => onCancel()], [el, 'blur', () => onCancel()],
+    [window, 'pointerup', onCancel], [window, 'pointercancel', onCancel]];
+  for (const [target, event, fn] of listeners) target.addEventListener(event, fn);
+  syncRange(el, fmt); // Initial paint must never invoke a business callback.
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    for (const [target, event, fn] of listeners) target.removeEventListener(event, fn);
+    scrub(false);
+    tip?.remove();
+    if (rangeBindings.get(el) === dispose) rangeBindings.delete(el);
+  };
+  rangeBindings.set(el, dispose);
+  return dispose;
 }
 
 /* ---------------------------------------------------------------- *
@@ -168,8 +213,8 @@ let /** @type {HTMLElement|null} */ toastWrap = null;
 
 /**
  * 弹出轻提示（右上顶部居中，见视觉规范）。
- * @param {{type?: 'info'|'ok'|'warn'|'danger', title: string, detail?: string,
- *          timeoutMs?: number}} o type 默认 info；danger 不自动关闭
+ * @param {{type?: 'info'|'ok'|'warn'|'danger'|'success'|'error', title: string, detail?: string,
+ *          timeoutMs?: number, timeout?: number}} o type 默认 info；danger 不自动关闭
  * @returns {() => void} 手动关闭函数
  */
 export function toast(o) {
@@ -180,17 +225,18 @@ export function toast(o) {
     toastWrap.setAttribute('aria-live', 'polite');
     document.body.appendChild(toastWrap);
   }
-  const type = o.type ?? 'info';
+  const type = ({ success: 'ok', error: 'danger' })[o.type] || o.type || 'info';
   const el = document.createElement('div');
   el.className = `pp-toast pp-toast--${type}`;
   if (type === 'danger') el.setAttribute('role', 'alert');
   const main = document.createElement('div');
   const title = document.createElement('div');
-  title.textContent = o.title;
+  title.className = 'pp-toast__title';
+  title.textContent = o.title || '';
   main.appendChild(title);
   if (o.detail) {
     const d = document.createElement('div');
-    d.style.color = 'var(--pp-text-faint)';
+    d.className = 'pp-toast__detail';
     d.textContent = o.detail;
     main.appendChild(d);
   }
@@ -203,9 +249,9 @@ export function toast(o) {
   toastWrap.appendChild(el);
 
   /** 关闭当前 toast */
-  const close = () => { el.remove(); if (timer) clearTimeout(timer); };
+  const close = () => { el.remove(); if (timer) clearTimeout(timer); btn.removeEventListener?.('click', close); };
   let timer = 0;
-  const timeout = o.timeoutMs ?? (type === 'danger' ? 0 : type === 'warn' ? 5000 : 3000);
+  const timeout = o.timeoutMs ?? o.timeout ?? (type === 'danger' ? 0 : type === 'warn' ? 5000 : 3000);
   if (timeout > 0) timer = /** @type {any} */ (setTimeout(close, timeout));
   btn.addEventListener('click', close);
   return close;
@@ -216,54 +262,114 @@ export function toast(o) {
  * ---------------------------------------------------------------- */
 
 /**
- * 按 location.pathname 高亮 [data-pp-tabs] 内匹配的页签。
- * 匹配规则：页签 data-href 或 href 中包含当前路径的模块段（如 /subtitle/demo/ → subtitle）。
- * @returns {Disposer}
+ * 规范化静态页面路径：目录和 index.html 等价，部署前缀保持不变。
  */
-function highlightTabs() {
+export function normalizePagePath(pathname) {
+  return pathname.replace(/\/index\.html?$/, '').replace(/\/+$/, '') || '/';
+}
+export function isCurrentPage(href, current) {
+  try {
+    const destination = new URL(href, current);
+    const here = new URL(current);
+    return destination.origin === here.origin && normalizePagePath(destination.pathname) === normalizePagePath(here.pathname);
+  } catch { return false; }
+}
+export function initTabs(root) {
   if (!hasDOM()) return () => {};
-  /** @type {HTMLElement[]} */
-  const roots = Array.from(document.querySelectorAll('[data-pp-tabs]'));
-  /** @param {URL | Location} loc */
-  const apply = (loc) => {
-    for (const root of roots) {
-      for (const a of /** @type {HTMLElement[]} */ (Array.from(root.querySelectorAll('.pp-tabs__item')))) {
-        const href = a.dataset.href || (/** @type {HTMLAnchorElement} */ (a).getAttribute('href') || '');
-        let hit = false;
-        try {
-          const seg = new URL(href, loc.href).pathname.split('/').filter(Boolean)[0] ?? '';
-          hit = seg !== '' && loc.pathname.includes(`/${seg}/`);
-        } catch { hit = false; }
-        a.classList.toggle('is-active', hit);
-      }
-    }
-  };
-  apply(window.location);
+  for (const link of (root || document).querySelectorAll('.pp-tabs__item, .tabs__item')) {
+    const active = isCurrentPage(link.dataset?.href || link.getAttribute('href'), window.location.href);
+    link.classList.toggle('is-active', active);
+    if (active) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
   return () => {};
 }
 
 /**
  * 皮肤入口：初始化页面内全部 .pp-range 的双向绑定与页签高亮。
  * 幂等：重复调用会先清理上一次的绑定。
- * @param {{brand?: string}} [_options] 预留：品牌名覆盖等
+ * @param {{ranges?: boolean}} [options] ranges=false：由页面控制器显式绑定滑杆
  * @returns {Disposer} 总清理函数
  */
-export function initSkin(_options = {}) {
+export function initSkin(options = {}) {
   if (!hasDOM()) return () => {}; // Node 环境：不支持但不抛异常（契约 §0.3）
   const w = /** @type {any} */ (window);
   if (typeof w.__PP_SKIN_DISPOSER__ === 'function') w.__PP_SKIN_DISPOSER__();
 
   /** @type {Disposer[]} */
   const disposers = [];
-  for (const el of Array.from(document.querySelectorAll('input.pp-range'))) {
-    disposers.push(bindRange(/** @type {HTMLInputElement} */ (el)));
+  for (const el of options.ranges === false ? [] : Array.from(document.querySelectorAll('input.pp-range'))) {
+    if (!rangeBindings.has(el)) disposers.push(bindRange(/** @type {HTMLInputElement} */ (el)));
   }
-  disposers.push(highlightTabs());
+  disposers.push(initTabs());
 
   const disposeAll = () => {
     while (disposers.length) disposers.pop()?.();
-    delete w.__PP_SKIN_DISPOSER__;
+    if (w.__PP_SKIN_DISPOSER__ === disposeAll) delete w.__PP_SKIN_DISPOSER__;
   };
   w.__PP_SKIN_DISPOSER__ = disposeAll;
   return disposeAll;
+}
+
+/** 秒单位公开 UI 边界；媒体核心仍使用微秒。 */
+export function formatTime(sec) {
+  return !Number.isFinite(sec) || sec < 0 ? '-:--' : formatClockUs(sec * 1e6).replace(/^0(?=\d:)/, '');
+}
+
+const fullscreenBindings = new WeakMap();
+const fullscreenPending = new WeakSet();
+/** 清理全屏监听/隐藏计时器并恢复控制条的原位置。 */
+export function disposeFullscreen(stage) { fullscreenBindings.get(stage)?.(); }
+/** 全屏仅作用于指定舞台，绝不挪用其他播放器的控件。 */
+export function toggleFullscreen(stage, controls) {
+  if (!hasDOM() || !stage) return;
+  if (document.fullscreenElement) {
+    void Promise.resolve(document.exitFullscreen?.()).catch(() => {});
+    return;
+  }
+  const request = stage.requestFullscreen || stage.webkitRequestFullscreen;
+  if (!request) return;
+  disposeFullscreen(stage);
+  controls ||= stage.querySelector('.pp-controls') || stage.closest('.pp-demo')?.querySelector('.pp-controls');
+  const parent = controls?.parentElement;
+  const next = controls?.nextSibling;
+  let timer = 0;
+  let disposed = false;
+  const hide = () => {
+    if (controls?.contains(document.activeElement) || stage.querySelector('.is-scrubbing, .is-open')) return;
+    stage.classList.add('is-controls-hidden');
+  };
+  const wake = () => {
+    stage.classList.remove('is-controls-hidden');
+    clearTimeout(timer);
+    timer = setTimeout(hide, 3000);
+  };
+  const cleanup = () => {
+    if (disposed) return;
+    disposed = true;
+    clearTimeout(timer);
+    for (const event of ['pointermove', 'pointerdown', 'keydown', 'focusin']) stage.removeEventListener(event, wake);
+    for (const event of ['pointermove', 'pointerdown', 'keydown', 'focusin']) controls?.removeEventListener(event, wake);
+    document.removeEventListener('fullscreenchange', change);
+    if (controls && parent && controls.parentElement === stage && parent !== stage) {
+      parent.insertBefore(controls, next?.parentElement === parent ? next : null);
+    }
+    stage.classList.remove('is-fullscreen', 'is-controls-hidden');
+    fullscreenPending.delete(stage);
+    if (fullscreenBindings.get(stage) === cleanup) fullscreenBindings.delete(stage);
+  };
+  const change = () => {
+    if (document.fullscreenElement === stage) fullscreenPending.delete(stage);
+    if (document.fullscreenElement !== stage) { cleanup(); return; }
+    stage.classList.add('is-fullscreen');
+    wake();
+  };
+  fullscreenBindings.set(stage, cleanup);
+  fullscreenPending.add(stage);
+  if (controls && parent !== stage) stage.appendChild(controls);
+  document.addEventListener('fullscreenchange', change);
+  for (const event of ['pointermove', 'pointerdown', 'keydown', 'focusin']) stage.addEventListener(event, wake);
+  for (const event of ['pointermove', 'pointerdown', 'keydown', 'focusin']) controls?.addEventListener(event, wake);
+  try { void Promise.resolve(request.call(stage)).catch(cleanup); }
+  catch { cleanup(); }
 }

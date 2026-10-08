@@ -4,31 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HLS 播放器 · 纯前端播放器</title>
-  <link rel="stylesheet" href="../../site/site.css">
-  <style>
-    /* demo 局部补充样式（待 DESIGN.md 定稿后并入 site/） */
-    .hls-panel { max-width: 960px; margin: 0 auto; padding: 16px; }
-    .hls-controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
-    .hls-controls input { flex: 1; min-width: 240px; padding: 6px 10px; }
-    button { cursor: pointer; }
-    .stats { font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap;
-             background: var(--pui-surface, #16181d); color: var(--pui-text, #e8eaed);
-             border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
-    .banner { border-radius: 8px; padding: 10px 14px; margin: 12px 0; display: none; line-height: 1.6; }
-    .banner.warn { display: block; background: rgba(255, 196, 0, .12); border: 1px solid rgba(255, 196, 0, .4); }
-    .banner.err { display: block; background: rgba(255, 82, 82, .1); border: 1px solid rgba(255, 82, 82, .45); }
-    .levels button.active { outline: 2px solid #7aa7ff; }
-  </style>
-</head>
-<body class="dsk-body">
-  <div data-site-nav data-root="../../"></div>
 
-  <main class="site-page hls-panel">
-    <h1>HLS 播放器（数据源适配层 + 轻量内核）</h1>
-    <p class="muted">
+<link rel="stylesheet" href="../../site/skin.css">
+</head>
+<body class="pp-scope">
+<div data-site-nav data-root="../../"></div>
+<main class="pp-lab pp-lab--hls ">
+  <header class="pp-module-heading"><p class="pp-eyebrow">PUREPLAY / MEDIA LAB</p><h1>HLS 播放器</h1><p class="pp-module-copy">
       m3u8 解析 / 清晰度切换 / fetch 流式分片加载 / TS→fMP4 转封装（复用 ts/ 模块）/ fMP4 直通 MSE。
       本模块定位为<b>HLS 数据源适配层</b>（生产场景请用 hls.js）；真实拉流需要<b>可达地址 + 服务端开启 CORS</b>；离线或不可达时会给出友好提示，不会崩溃。
-    </p>
+    </p></header>
+  <section data-demo-samples></section>
+
+
+
+  <div class="wrap">
+
+
 
     <div id="offline-banner" class="banner"></div>
 
@@ -40,18 +32,15 @@
     </div>
 
     <div class="hls-controls levels" id="presets">
-      <!-- 内置公开测试流（需外网可达） -->
-      <button data-url="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8">Mux 多码率（外网）</button>
-      <button data-url="https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8">Apple bipbop fMP4（外网）</button>
-      <button data-url="https://test-streams.mux.dev/pts_shift/master.m3u8">Mux DTS 偏移（外网）</button>
+      <button id="btn-local-hls" type="button">装载内置 4 秒 H.264 流</button>
     </div>
 
     <div class="hls-controls">
-      <span class="muted">对照（可选增强）：</span>
+      <span class="muted">网络对照（外部公开流）：</span>
       <button id="btn-hlsjs">用 hls.js 播放当前地址（CDN 动态加载 · 生产方案对照）</button>
     </div>
 
-    <div class="stage" style="aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden">
+    <div class="stage" style="aspect-ratio:16/9;background:var(--pp-bg-deep);border-radius:12px;overflow:hidden">
       <video id="video" controls playsinline style="width:100%;height:100%"></video>
     </div>
 
@@ -61,12 +50,14 @@
     </div>
 
     <div class="stats" id="stats">等待加载…</div>
+  </div>
+
   </main>
 
-  <script type="module" src="../../site/nav.js"></script>
   <script type="module">
     import { HlsPlayer, enableLog } from '../src/index.js';
-
+    import { initDemoSamples } from '../../site/demo-samples.js';
+    const disposeSamples = initDemoSamples('hls');
     const $ = (id) => document.getElementById(id);
     const banner = $('offline-banner');
     let player = null;
@@ -90,7 +81,7 @@
         `  带宽估计=${(s.bandwidthBps / 1e6).toFixed(2)}Mbps  缓冲=${s.bufferSeconds.toFixed(1)}s` +
         `\n当前档位=${s.levelsSwitched != null ? player.currentLevel : '-'}（0=最高清，-1=自动）`;
     }
-    setInterval(renderStats, 500);
+    const statsTimer = setInterval(renderStats, 500);
 
     function renderLevelButtons() {
       const box = $('level-buttons');
@@ -149,11 +140,16 @@
         await player.attach(url, $('video'));
         renderLevelButtons();
         renderStats();
+        if (url.includes('/site/assets/samples/')) $('video').play().catch(() => {});
       } catch (err) {
         showBanner('err', `加载失败：${err.message}<br>提示：请确认地址以 http(s) 开头且服务端允许跨域。`);
       }
     }
 
+    const localHlsUrl = new URL('../../site/assets/samples/playlist.m3u8', import.meta.url).href;
+    $('url').value = localHlsUrl;
+    $('btn-local-hls').onclick = async () => { $('url').value = localHlsUrl; await load(localHlsUrl); $('video').play().catch(() => {}); };
+    for (const item of document.querySelectorAll('#presets [data-url]')) item.hidden = true;
     $('btn-load').onclick = () => {
       const url = $('url').value.trim();
       if (!url) { showBanner('warn', '请先输入 m3u8 地址'); return; }
@@ -161,7 +157,7 @@
     };
     $('btn-stop').onclick = () => {
       if (player) { player.destroy(); player = null; }
-      $('video').removeAttribute('src');
+      $('video').pause(); $('video').removeAttribute('src');
       $('stats').textContent = '已停止';
     };
     // hls.js 对照入口（可选增强：CDN 动态加载，失败优雅降级）
@@ -191,6 +187,8 @@
       const btn = ev.target.closest('button[data-url]');
       if (btn) { $('url').value = btn.dataset.url; load(btn.dataset.url); }
     });
+    window.addEventListener('pagehide', () => { clearInterval(statsTimer); if (player) player.destroy(); $('video').pause(); disposeSamples(); }, { once: true });
   </script>
+<script type="module" src="../../site/nav.js"></script>
 </body>
 </html>

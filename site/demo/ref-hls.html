@@ -4,158 +4,163 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HLS 参考实现对照 · PurePlay</title>
-  <!-- 新皮肤四件套（DESIGN.md v1.1 §11）；本页为 CDN 可选增强对照页 -->
-  <link rel="stylesheet" href="../css/tokens.css">
-  <link rel="stylesheet" href="../css/base.css">
-  <link rel="stylesheet" href="../css/layout.css">
-  <link rel="stylesheet" href="../css/components.css">
+  <!-- Shared pp skin; CDN is optional and only loaded on request. -->
+  <link rel="stylesheet" href="../skin.css">
 </head>
-<body>
-<div class="demo">
-  <header class="topbar demo__topbar" data-skin="topbar">
-    <a class="topbar__logo" href="./index.html">
-      <svg class="icon icon-20" aria-hidden="true"><use href="../assets/icons.svg#i-logo"/></svg>
-      <span class="topbar__title">PurePlay</span>
-    </a>
-    <nav class="tabs" data-skin="tabs">
-      <a class="tabs__item" href="./index.html">总览</a>
-      <a class="tabs__item is-active" href="./ref-hls.html">HLS 对照</a>
-      <a class="tabs__item" href="./ref-flv.html">FLV 对照</a>
-    </nav>
-    <div class="topbar__actions">
-      <span class="badge badge--warning" id="cdn-badge">CDN 未加载</span>
-    </div>
-  </header>
+<body class="pp-scope">
+<div data-site-nav data-root="../../"></div>
+<div class="pp-demo">
+  <header class="pp-demo__topbar"><div><p class="pp-eyebrow">LOCAL FIRST / MEDIA LAB</p><h1>HLS 参考实现</h1></div><span class="pp-badge pp-badge--warning" id="cdn-badge">CDN 未加载</span></header>
+  <section data-demo-samples></section>
 
-  <main class="stage demo__stage is-idle" id="stage">
-    <div class="stage__viewport" id="viewport">
+  <main class="pp-stage pp-demo__stage is-idle" id="stage">
+    <div class="pp-stage__viewport" id="viewport">
       <video id="video" playsinline></video>
     </div>
-    <div class="stage__overlay">
-      <div class="spinner" role="status"></div>
-      <span class="buffering-text">缓冲中…</span>
+    <div class="pp-stage__overlay">
+      <div class="pp-spinner" role="status"></div>
+      <span class="pp-buffering-text">缓冲中…</span>
     </div>
-    <div class="drop" id="drop" data-skin="drop">
-      <span class="drop__icon"><svg class="icon icon-32"><use href="../assets/icons.svg#i-upload"/></svg></span>
+    <div class="pp-drop" id="drop" data-skin="drop">
+      <span class="pp-drop__icon"><svg class="pp-icon pp-icon-32"><use href="../assets/icons.svg#i-upload"/></svg></span>
       <strong>HLS 参考实现（hls.js，生产级方案对照）</strong>
       <span>通过 CDN 加载 hls.js 播放公开测试流；与左侧自研 <code>hls/</code> 模块管线互为对照。</span>
-      <div class="field field-row">
-        <input class="field__input" id="url" type="text" readonly
+      <div class="pp-field pp-field-row">
+        <input class="pp-field__input" id="url" type="text" readonly
                value="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
                aria-label="HLS 测试流地址">
-        <button class="btn btn--solid field__btn" id="load">载入示例流</button>
-        <button class="btn btn--ghost field__btn" id="reload">重试 CDN</button>
+        <button class="pp-btn pp-btn--solid pp-field__btn" id="load">载入示例流</button>
+        <button class="pp-btn pp-btn--ghost pp-field__btn" id="reload">重试 CDN</button>
       </div>
-      <div class="drop__chips">
-        <span class="chip">CDN 可选增强</span><span class="chip">失败自动降级提示</span>
-        <span class="chip">自研路线：../../hls/demo/index.html</span>
+      <div class="pp-drop__chips">
+        <span class="pp-chip">CDN 可选增强</span><span class="pp-chip">失败自动降级提示</span>
+        <span class="pp-chip">自研路线：../../hls/demo/index.html</span>
       </div>
-      <span class="drop__hint">离线或 CDN 被拦截时将给出降级提示；不影响本仓任何零依赖模块。</span>
+      <span class="pp-drop__hint">离线或 CDN 被拦截时将给出降级提示；不影响本仓任何零依赖模块。</span>
     </div>
-    <div class="stage__errbox">
-      <div class="errbox">
-        <span class="errbox__icon"><svg class="icon icon-32"><use href="../assets/icons.svg#i-warning"/></svg></span>
-        <h2 class="errbox__title">播放失败</h2>
-        <span class="errbox__code" id="err-code">E_NET_UNKNOWN</span>
-        <p class="errbox__detail" id="err-detail">—</p>
-        <div class="errbox__actions">
-          <button class="btn btn--solid" id="err-retry">重试</button>
-          <button class="btn btn--ghost" id="err-copy">复制诊断信息</button>
+    <div class="pp-stage__errbox">
+      <div class="pp-errbox">
+        <span class="pp-errbox__icon"><svg class="pp-icon pp-icon-32"><use href="../assets/icons.svg#i-warning"/></svg></span>
+        <h2 class="pp-errbox__title">播放失败</h2>
+        <span class="pp-errbox__code" id="err-code">E_NET_UNKNOWN</span>
+        <p class="pp-errbox__detail" id="err-detail">—</p>
+        <div class="pp-errbox__actions">
+          <button class="pp-btn pp-btn--solid" id="err-retry">重试</button>
+          <button class="pp-btn pp-btn--ghost" id="err-copy">复制诊断信息</button>
         </div>
       </div>
     </div>
   </main>
 
-  <footer class="controls demo__controls is-idle" id="controls">
-    <div class="controls__group">
-      <button class="btn-icon" data-skin="play" aria-label="播放">
-        <svg class="icon"><use href="../assets/icons.svg#i-play"/></svg></button>
-      <span class="controls__time" id="cur">00:00</span>
-      <div class="slider__wrap">
-        <input class="slider slider--progress" type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度">
+  <footer class="pp-controls pp-demo__controls is-idle" id="controls">
+    <div class="pp-controls__group pp-controls__group--progress">
+      <button class="pp-btn--icon" data-skin="play" aria-label="播放">
+        <svg class="pp-icon"><use href="../assets/icons.svg#i-play"/></svg></button>
+      <span class="pp-controls__time" id="cur">00:00</span>
+      <div class="pp-range-wrap">
+        <input class="pp-range pp-range--progress" type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度">
       </div>
-      <span class="controls__time controls__time--total" id="total">00:00</span>
+      <span class="pp-controls__time pp-controls__time--total" id="total">00:00</span>
     </div>
-    <div class="controls__group">
-      <button class="btn-icon" data-skin="mute" aria-label="静音">
-        <svg class="icon"><use href="../assets/icons.svg#i-volume-high"/></svg></button>
-      <input class="slider slider--volume" type="range" min="0" max="100" value="100" aria-label="音量">
-      <div class="menu" data-skin="rate" id="rate">
-        <button class="btn-icon" aria-label="倍速"><span class="menu__label mono" style="font-size:12px">1x</span></button>
-        <ul class="menu__list">
-          <li><button class="menu__item" data-rate="0.5">0.5x</button></li>
-          <li><button class="menu__item" data-rate="0.75">0.75x</button></li>
-          <li><button class="menu__item menu__item--selected" data-rate="1">正常</button></li>
-          <li><button class="menu__item" data-rate="1.25">1.25x</button></li>
-          <li><button class="menu__item" data-rate="1.5">1.5x</button></li>
-          <li><button class="menu__item" data-rate="2">2x</button></li>
+    <div class="pp-controls__group">
+      <button class="pp-btn--icon" data-skin="mute" aria-label="静音">
+        <svg class="pp-icon"><use href="../assets/icons.svg#i-volume-high"/></svg></button>
+      <input class="pp-range pp-range--volume" type="range" min="0" max="100" value="100" aria-label="音量">
+      <div class="pp-menu" data-skin="rate" id="rate">
+        <button class="pp-btn--icon" aria-label="倍速"><span class="pp-menu__label pp-mono" style="font-size:12px">1x</span></button>
+        <ul class="pp-menu__list">
+          <li><button class="pp-menu__item" data-rate="0.5">0.5x</button></li>
+          <li><button class="pp-menu__item" data-rate="0.75">0.75x</button></li>
+          <li><button class="pp-menu__item pp-menu__item--selected" data-rate="1">正常</button></li>
+          <li><button class="pp-menu__item" data-rate="1.25">1.25x</button></li>
+          <li><button class="pp-menu__item" data-rate="1.5">1.5x</button></li>
+          <li><button class="pp-menu__item" data-rate="2">2x</button></li>
         </ul>
       </div>
-      <button class="btn-icon" disabled title="参考流无字幕轨" aria-label="字幕">
-        <svg class="icon"><use href="../assets/icons.svg#i-cc"/></svg></button>
-      <button class="btn-icon" data-skin="fs" aria-label="全屏">
-        <svg class="icon"><use href="../assets/icons.svg#i-expand"/></svg></button>
+      <button class="pp-btn--icon" disabled title="参考流无字幕轨" aria-label="字幕">
+        <svg class="pp-icon"><use href="../assets/icons.svg#i-cc"/></svg></button>
+      <button class="pp-btn--icon" data-skin="fs" aria-label="全屏">
+        <svg class="pp-icon"><use href="../assets/icons.svg#i-expand"/></svg></button>
     </div>
   </footer>
 
-  <aside class="panel demo__panel" id="panel">
-    <section class="panel__section">
-      <h2 class="panel__title">媒体信息</h2>
-      <div class="kv"><span class="kv__key">容器</span><span class="kv__val">HLS (m3u8)</span></div>
-      <div class="kv"><span class="kv__key">时长</span><span class="kv__val" id="i-dur">—</span></div>
-      <div class="kv"><span class="kv__key">分辨率</span><span class="kv__val" id="i-res">—</span></div>
-      <div class="kv"><span class="kv__key">引擎</span><span class="kv__val" id="i-engine">—</span></div>
+  <aside class="pp-aside pp-demo__panel" id="panel">
+    <section class="pp-panel">
+      <h2 class="pp-panel__title">媒体信息</h2>
+      <div class="pp-kv"><span class="pp-kv__key">容器</span><span class="pp-kv__val">HLS (m3u8)</span></div>
+      <div class="pp-kv"><span class="pp-kv__key">时长</span><span class="pp-kv__val" id="i-dur">—</span></div>
+      <div class="pp-kv"><span class="pp-kv__key">清晰度</span><div class="pp-actions" id="level-buttons"></div></div>
+      <div class="pp-kv"><span class="pp-kv__key">分辨率</span><span class="pp-kv__val" id="i-res">—</span></div>
+      <div class="pp-kv"><span class="pp-kv__key">引擎</span><span class="pp-kv__val" id="i-engine">—</span></div>
     </section>
-    <section class="panel__section">
-      <h2 class="panel__title">参考实现对照</h2>
-      <div class="kv"><span class="kv__key">本页方案</span><span class="kv__val">hls.js（社区生产级）</span></div>
-      <div class="kv"><span class="kv__key">依赖形态</span><span class="kv__val">CDN 可选增强·探测降级</span></div>
-      <div class="kv"><span class="kv__key">自研对照</span><span class="kv__val"><a href="../../hls/demo/index.html">hls/ 模块（m3u8 解析 + MSE）</a></span></div>
-      <div class="kv"><span class="kv__key">适用场景</span><span class="kv__val">快速验证播放效果</span></div>
-      <div class="kv"><span class="kv__key">自研价值</span><span class="kv__val">零依赖·可教学·可控定制</span></div>
+    <section class="pp-panel">
+      <h2 class="pp-panel__title">参考实现对照</h2>
+      <div class="pp-kv"><span class="pp-kv__key">本页方案</span><span class="pp-kv__val">hls.js（社区生产级）</span></div>
+      <div class="pp-kv"><span class="pp-kv__key">依赖形态</span><span class="pp-kv__val">CDN 可选增强·探测降级</span></div>
+      <div class="pp-kv"><span class="pp-kv__key">自研对照</span><span class="pp-kv__val"><a href="../../hls/demo/index.html">hls/ 模块（m3u8 解析 + MSE）</a></span></div>
+      <div class="pp-kv"><span class="pp-kv__key">适用场景</span><span class="pp-kv__val">快速验证播放效果</span></div>
+      <div class="pp-kv"><span class="pp-kv__key">自研价值</span><span class="pp-kv__val">零依赖·可教学·可控定制</span></div>
     </section>
-    <section class="panel__section">
-      <h2 class="panel__title">状态</h2>
-      <div class="kv"><span class="kv__key">阶段</span><span class="kv__val" id="i-stage">未加载</span></div>
-      <div class="kv"><span class="kv__key">码率</span><span class="kv__val" id="i-br">—</span></div>
+    <section class="pp-panel">
+      <h2 class="pp-panel__title">状态</h2>
+      <div class="pp-kv"><span class="pp-kv__key">阶段</span><span class="pp-kv__val" id="i-stage">未加载</span></div>
+      <div class="pp-kv"><span class="pp-kv__key">码率</span><span class="pp-kv__val" id="i-br">—</span></div>
     </section>
   </aside>
 </div>
 
-<script type="module" src="../js/skin.js"></script>
+<script type="module" src="../nav.js"></script>
 <script type="module">
   /* 本页胶水 = 模块侧逻辑（皮肤只派发事件/提供原语）。CDN 失败走降级提示。 */
-  import Skin from '../js/skin.js';
+  import * as Skin from '../skin.js';
+  import { initDemoSamples } from '../demo-samples.js';
+
+  const disposers = [];
+  const track = dispose => { disposers.push(dispose); return dispose; };
+  const disposeSamples = initDemoSamples('ref-hls');
+  disposers.push(disposeSamples);
+  window.addEventListener('pagehide', () => { disposers.forEach(dispose => dispose()); hls?.destroy(); selfHls?.destroy(); video.pause(); Skin.disposeFullscreen(document.getElementById('stage')); }, { once: true });
 
   const $ = s => document.querySelector(s);
   const video = $('#video'), stage = $('#stage'), controls = $('#controls');
-  const progress = $('input.slider--progress'), volume = $('input.slider--volume');
+  const progress = $('input.pp-range--progress'), volume = $('input.pp-range--volume');
   const playBtn = $('[data-skin="play"]'), muteBtn = $('[data-skin="mute"]');
 
   Skin.initTabs();
-  Skin.bindRange(progress, {
-    onCommit: v => { if (video.duration) video.currentTime = v / 1000 * video.duration; },
+  playBtn.disabled = true;
+  progress.disabled = true;
+  video.addEventListener('loadedmetadata', () => {
+    controls.classList.remove('is-idle');
+    playBtn.disabled = false;
+    progress.disabled = !Number.isFinite(video.duration) || video.duration <= 0;
   });
-  Skin.bindRange(volume, { onPreview: v => { if (!muted()) video.volume = v / 100; } });
-  Skin.bindKeys({
+  track(Skin.bindRange(progress, { format: value => Skin.formatTime(value / 1000 * (Number.isFinite(video.duration) ? video.duration : 0)),
+    onChange: v => { if (video.duration) video.currentTime = v / 1000 * video.duration; },
+  }));
+  track(Skin.bindRange(volume, { format: value => `${Math.round(value)}%`, onInput: v => { video.muted = false; video.volume = v / 100; controls.classList.remove('is-muted'); } }));
+  track(Skin.bindKeys({
     ' ': () => playBtn.click(),
     f: () => $('[data-skin="fs"]').click(), F: () => $('[data-skin="fs"]').click(),
     m: () => muteBtn.click(), M: () => muteBtn.click(),
-  });
+  }));
 
-  function muted() { return controls.classList.contains('is-muted'); }  // 提升声明：bindRange 初始化即派发 input
+  function muted() { return controls.classList.contains('is-muted'); }  // 提升声明：共享 range 初始化不派发业务事件
   function setPlaying(onNow) {    controls.classList.toggle('is-playing', onNow);
     controls.classList.toggle('is-paused', !onNow);
     playBtn.setAttribute('aria-label', onNow ? '暂停' : '播放');
     playBtn.querySelector('use').setAttribute('href', `../assets/icons.svg#i-${onNow ? 'pause' : 'play'}`);
   }
-  playBtn.addEventListener('click', () => { video.paused ? video.play() : video.pause(); });
+  playBtn.addEventListener('click', () => {
+    if (video.paused) video.play().catch(error => Skin.toast({ type: 'danger', title: '无法开始播放', detail: error.message }));
+    else video.pause();
+  });
   video.addEventListener('play', () => setPlaying(true));
   video.addEventListener('pause', () => setPlaying(false));
   muteBtn.addEventListener('click', () => {
     const m = !video.muted;
     video.muted = m;
     controls.classList.toggle('is-muted', m);
+    muteBtn.setAttribute('aria-label', m ? '取消静音' : '静音');
     muteBtn.querySelector('use').setAttribute('href',
       `../assets/icons.svg#i-volume-${m ? 'mute' : video.volume > .5 ? 'high' : 'low'}`);
   });
@@ -168,12 +173,12 @@
 
   // 倍速菜单（皮肤提供样式；接线属页面胶水）
   const menu = $('#rate');
-  $('.menu [aria-label="倍速"]', document)?.addEventListener('click', () => menu.classList.toggle('is-open'));
-  for (const it of menu.querySelectorAll('.menu__item')) {
+  $('.pp-menu [aria-label="倍速"]', document)?.addEventListener('click', () => menu.classList.toggle('is-open'));
+  for (const it of menu.querySelectorAll('.pp-menu__item')) {
     it.addEventListener('click', () => {
-      menu.querySelectorAll('.menu__item').forEach(x => x.classList.remove('menu__item--selected'));
-      it.classList.add('menu__item--selected');
-      menu.querySelector('.menu__label').textContent = `${it.dataset.rate}x`;
+      menu.querySelectorAll('.pp-menu__item').forEach(x => x.classList.remove('pp-menu__item--selected'));
+      it.classList.add('pp-menu__item--selected');
+      menu.querySelector('.pp-menu__label').textContent = `${it.dataset.rate}x`;
       menu.classList.remove('is-open');
       video.playbackRate = Number(it.dataset.rate);
     });
@@ -183,7 +188,7 @@
   const fmt = Skin.formatTime;
   video.addEventListener('timeupdate', () => {
     progress.value = String(video.duration ? Math.round(video.currentTime / video.duration * 1000) : 0);
-    progress.dispatchEvent(new Event('input'));
+    Skin.syncRange(progress, value => fmt(value / 1000 * (Number.isFinite(video.duration) ? video.duration : 0)));
     $('#cur').textContent = fmt(video.currentTime);
     if (video.buffered.length) {
       progress.dataset.buffered = String(Math.min(100,
@@ -208,6 +213,7 @@
   });
   video.addEventListener('loadedmetadata', () => {
     $('#i-res').textContent = `${video.videoWidth}×${video.videoHeight}`;
+    if (selfHls?.mediaPlaylist) $('#i-dur').textContent = Skin.formatTime(selfHls.mediaPlaylist.totalDuration * 1e6);
   });
   for (const ev of ['waiting', 'stalled']) video.addEventListener(ev, () => stage.classList.add('is-buffering'));
   for (const ev of ['playing', 'canplay']) video.addEventListener(ev, () => stage.classList.remove('is-buffering'));
@@ -225,20 +231,81 @@
   });
 
   /* ---- CDN 可选增强加载器：8s 超时即判失败并降级 ---- */
-  let hls = null, engineName = '—';
-  function loadScript(src, timeout = 8000) {
-    return new Promise((ok, bad) => {
-      const s = document.createElement('script');
-      const t = setTimeout(() => { s.remove(); bad(new Error('CDN 加载超时')); }, timeout);
-      s.src = src;
-      s.onload = () => { clearTimeout(t); ok(); };
-      s.onerror = () => { clearTimeout(t); s.remove(); bad(new Error('CDN 脚本加载失败')); };
-      document.head.appendChild(s);
-    });
+  let hls = null, selfHls = null, engineName = '—';
+  async function loadScript(timeout = 15000) {
+    const mirrors = [
+      'https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js',
+      'https://unpkg.com/hls.js@1.5.13/dist/hls.min.js',
+    ];
+    const failures = [];
+    for (const src of mirrors) {
+      try {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          let settled = false;
+          const finish = error => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            script.onload = null;
+            script.onerror = null;
+            if (error) { script.remove(); reject(error); }
+            else resolve();
+          };
+          const timer = setTimeout(() => finish(new Error('浏览器在 15 秒内未完成请求')), timeout);
+          script.onload = () => finish();
+          script.onerror = () => finish(new Error('浏览器报告脚本下载失败（可能是 CSP、代理或 CDN 链路限制）'));
+          script.src = src;
+          document.head.appendChild(script);
+        });
+        if (window.Hls) return;
+        throw new Error('脚本已下载但未注册 Hls 全局对象');
+      } catch (error) { failures.push(`${new URL(src).hostname}: ${error.message}`); }
+    }
+    throw new Error(`hls.js 的两个 CDN 地址均未能加载。普通网页可访问不代表 CDN 也可达。${failures.join('；')}`);
+  }
+  async function startSelfFallback(url, reason) {
+    try {
+      selfHls?.destroy();
+      const { HlsPlayer } = await import('../../hls/src/index.js');
+      selfHls = new HlsPlayer({ lowLatencyMode: false });
+      selfHls.on('error', error => showError(error.type || 'E_HLS', error.detail || '本地 HLS 播放失败'));
+      await selfHls.attach(url, video);
+      engineName = 'PurePlay hls/（CDN 降级）';
+      $('#cdn-badge').textContent = '已切换自研 HLS';
+      $('#cdn-badge').className = 'pp-badge pp-badge--warning';
+      $('#i-engine').textContent = engineName;
+      $('#i-stage').textContent = '自研离线兼容路线';
+      $('#i-dur').textContent = Skin.formatTime(selfHls.mediaPlaylist?.totalDuration * 1e6 || 0);
+      stage.classList.remove('is-idle', 'is-buffering', 'has-error');
+      controls.classList.remove('is-idle');
+      playBtn.disabled = false;
+      progress.disabled = !(selfHls.mediaPlaylist?.totalDuration > 0);
+      renderLevels();
+      video.play().catch(() => {});
+      Skin.toast({ type: 'warn', title: '参考播放器已自动降级', detail: `hls.js CDN 暂不可用；已改用项目自研 hls 模块。${reason}` });
+    } catch (error) {
+      stage.classList.remove('is-buffering');
+      degrade(`${reason}。自研 hls 路线也未能打开当前地址：${error.message}`);
+    }
+  }
+  function renderLevels() {
+    const box = $('#level-buttons');
+    box.replaceChildren();
+    const levels = selfHls?.levels?.levels || [];
+    if (!levels.length && selfHls?.mediaPlaylist) { const chip = document.createElement('span'); chip.className = 'pp-chip'; chip.textContent = '单码率'; box.appendChild(chip); return; }
+    for (let index = 0; index < levels.length; index++) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'pp-btn pp-btn--ghost';
+      button.textContent = levels[index].label || `${index}`;
+      button.addEventListener('click', () => { try { selfHls.setLevel(index); } catch (error) { showError('E_HLS_LEVEL', error.message); } });
+      box.appendChild(button);
+    }
   }
   function degrade(reason) {
     $('#cdn-badge').textContent = 'CDN 不可达 · 已降级';
-    $('#cdn-badge').className = 'badge badge--warning';
+    $('#cdn-badge').className = 'pp-badge pp-badge--warning';
     $('#i-engine').textContent = '不可用';
     $('#i-stage').textContent = '已降级（自研模块不受影响）';
     Skin.toast({ type: 'warn', title: '参考实现未能加载', detail: reason + '；自研 hls/ 模块不依赖 CDN，可正常使用。', timeout: 8000 });
@@ -248,16 +315,17 @@
     stage.classList.add('is-buffering');
     $('#i-stage').textContent = '加载 CDN…';
     try {
-      if (!window.Hls) await loadScript('https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js');
-    } catch (e) { stage.classList.remove('is-buffering'); degrade(e.message); return; }
+      if (!window.Hls) await loadScript();
+    } catch (e) { await startSelfFallback($('#url').value.trim(), e.message); return; }
 
     const url = $('#url').value.trim();
     $('#cdn-badge').textContent = 'CDN 已就绪';
-    $('#cdn-badge').className = 'badge badge--success';
+    $('#cdn-badge').className = 'pp-badge pp-badge--success';
     stage.classList.remove('is-idle');
 
     if (window.Hls && window.Hls.isSupported()) {
       engineName = 'hls.js ' + window.Hls.version;
+      selfHls?.destroy(); selfHls = null;
       hls?.destroy();
       hls = new window.Hls({ enableWorker: true });
       hls.loadSource(url);
@@ -280,7 +348,9 @@
     $('#i-engine').textContent = engineName;
     $('#i-stage').textContent = '就绪';
   }
-  $('#load').addEventListener('click', start);
+  $('#load').addEventListener('click', () => start().catch(error => degrade(error.message)));
+  video.addEventListener('play', () => setPlaying(true));
+  video.addEventListener('pause', () => setPlaying(false));
   $('#reload').addEventListener('click', start);
 
   /* 全屏/双击/拖放由皮肤原语完成 */

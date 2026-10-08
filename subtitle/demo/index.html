@@ -8,25 +8,25 @@
   <link rel="stylesheet" href="../../site/skin.css">
   <style>
     /* 本页专属样式（只引用 --pp-* 变量） */
+    .pp-page > .pp-main { display: flex; flex-direction: column; gap: var(--pp-sp-4); min-width: 0; }
+    .pp-subtitle-heading { order: 0; }
+    .stage-stack { order: 2; }
+    #drop { order: 1; }
+    .pp-row, .pp-aside { grid-area: auto; }
     .stage-stack { position: relative; width: 100%; }
     .stage-stack canvas { display: block; width: 100%; height: auto; border-radius: var(--pp-radius-md); }
-    #sub-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #sub-canvas { pointer-events: none; position: absolute; inset: 0; width: 100%; height: 100%; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   </style>
 </head>
 <body class="pp-scope">
 
   <!-- 顶栏：品牌 + 模块页签 -->
-  <header class="pp-topbar" data-pp-tabs>
-    <span class="pp-topbar__brand">PurePlay</span>
-    <nav class="pp-tabs">
-      <a class="pp-tabs__item" href="../../site/demo/index.html">总览</a>
-      <a class="pp-tabs__item" href="../../hls/demo/index.html">HLS</a>
-      <a class="pp-tabs__item is-active" href="./index.html">字幕</a>
-    </nav>
-  </header>
+  <div data-site-nav data-root="../../"></div>
 
-  <main class="pp-page" style="padding-top: var(--pp-sp-4);">
+  <main class="pp-page pp-page--subtitle">
+    <header class="pp-subtitle-heading"><p class="pp-eyebrow">SRT / VTT / ASS</p><h1>字幕解析与渲染预览</h1></header>
+    <section data-demo-samples></section>
     <section class="pp-main pp-col">
       <!-- 画布区：底层假视频 + 顶层字幕渲染 -->
       <div class="stage-stack pp-stage" id="stage" style="aspect-ratio:16/9;">
@@ -37,7 +37,7 @@
       <!-- 拖放区 -->
       <div class="pp-drop" id="drop" tabindex="0" role="button"
            aria-label="拖入或点击选择字幕文件（.srt/.vtt/.ass/.ssa）">
-        <span class="pp-drop__icon">🎬</span>
+        <span class="pp-drop__icon" aria-hidden="true">CC</span>
         <span>拖入本地字幕文件到此处，或点击选择</span>
         <span class="pp-drop__hint">支持 .srt / .vtt / .ass / .ssa · 解析在本地完成，不上传</span>
       </div>
@@ -53,12 +53,6 @@
         <span class="pp-mono" id="dur-label" style="font-size:var(--pp-fs-sm);color:var(--pp-text-faint)">00:00</span>
       </div>
 
-      <!-- 内置样例 -->
-      <div class="pp-row">
-        <button class="pp-btn pp-btn--ghost" data-sample="ass">载入 ASS 样例（定位/特效）</button>
-        <button class="pp-btn pp-btn--ghost" data-sample="srt">载入 SRT 样例</button>
-        <button class="pp-btn pp-btn--ghost" data-sample="vtt">载入 VTT 样例</button>
-      </div>
     </section>
 
     <!-- 信息面板：格式 / 统计 / 样式 / 未支持标签 -->
@@ -85,13 +79,15 @@
     </aside>
   </main>
 
+  <script type="module" src="../../site/nav.js"></script>
   <script type="module">
     /* ====== 第 3 行接入：初始化皮肤 ====== */
-    import { initSkin, bindDrop, bindRange, toast, formatClockUs } from '../../site/skin.js';
+    import { initSkin, bindDrop, bindKeys, syncRange, toast, formatClockUs } from '../../site/skin.js';
     import { parseAuto, SubtitleCanvasRenderer, SubtitleError } from '../src/index.js';
+    import { initDemoSamples } from '../../site/demo-samples.js';
 
     const $ = (id) => document.getElementById(id);
-    const disposers = [initSkin({ brand: 'PurePlay' })];
+    const disposers = [initSkin({ ranges: false }), initDemoSamples('subtitle')];
 
     /* ---- 假视频背景（演示用静态渐变 + 网格，与播放器无关） ---- */
     {
@@ -140,7 +136,7 @@
     function syncUI() {
       renderer.renderAt(currentUs);
       $('timeline').value = String(durationUs > 0 ? Math.round(currentUs / durationUs * 1000) : 0);
-      $('timeline').style.setProperty('--p', String(durationUs > 0 ? currentUs / durationUs * 100 : 0));
+      syncRange($('timeline'), value => formatClockUs(value / 1000 * durationUs));
       $('cur-label').textContent = formatClockUs(currentUs);
       if (!$('timeline').matches(':active')) {
         // 拖动中不覆盖用户输入
@@ -235,12 +231,11 @@
     }));
 
     // 快捷键：空格播放暂停、←→ ±1s
-    document.addEventListener('keydown', (ev) => {
-      if (/^(INPUT|TEXTAREA|SELECT)$/.test(/** @type {HTMLElement} */ (ev.target).tagName)) return;
-      if (ev.code === 'Space') { ev.preventDefault(); $('play-btn').click(); }
-      if (ev.key === 'ArrowLeft') { setPlaying(false); seekTo(currentUs - 1_000_000); }
-      if (ev.key === 'ArrowRight') { setPlaying(false); seekTo(currentUs + 1_000_000); }
-    });
+    disposers.push(bindKeys({
+      ' ': () => $('play-btn').click(),
+      ArrowLeft: () => { setPlaying(false); seekTo(currentUs - 1_000_000); },
+      ArrowRight: () => { setPlaying(false); seekTo(currentUs + 1_000_000); },
+    }));
 
     /* ---- 内置样例 ---- */
     const SAMPLES = {
@@ -279,7 +274,11 @@
       });
     });
 
-    void bindRange; // 按需使用；本页时间轴为自绘 range
+    window.addEventListener('pagehide', () => {
+      setPlaying(false);
+      cancelAnimationFrame(rafId);
+      disposers.forEach(dispose => dispose());
+    }, { once: true });
 
     /* 初始装载 ASS 样例，页面打开即可玩 */
     loadText(SAMPLES.ass, '内置ASS样例');

@@ -99,6 +99,7 @@ test('bindRange：pointercancel 清除拖动态并撤销监听', () => {
     range.dispatchEvent(new Event('pointerdown'));
     dispose();
     window.dispatchEvent(new Event('pointercancel'));
-    assert.equal(controls.classList.contains('is-scrubbing'), true, 'disposer 后不应执行已移除监听');
+    assert.equal(controls.classList.contains('is-scrubbing'), false, 'disposer 应复位拖动态并移除监听');
+    assert.equal(stage.classList.contains('is-scrubbing'), false);
   });
 });

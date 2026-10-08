@@ -321,8 +321,8 @@ export class WavPlayer {
 
   #pushBlock(frames) {
     // 注意：必须先拷贝再 transfer——subarray 视图的 transfer 会 detach 整个底层 planar 缓冲
-    const copies = Array.from(frames, (f) => f.slice());
-    this.#node.port.postMessage({ type: 'write', planar: copies }, copies);
+    const copies = Array.from(frames, (frame) => frame.slice());
+    this.#node.port.postMessage({ type: 'write', planar: copies }, copies.map((channel) => channel.buffer));
   }
 }
 

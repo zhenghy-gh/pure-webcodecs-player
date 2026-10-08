@@ -4,54 +4,20 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>rtsp.js · WebSocket 中继 RTSP 播放器演示</title>
-<style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-    background: #10141a; color: #d7dee8; padding: 24px;
-  }
-  h1 { font-size: 20px; margin-bottom: 4px; }
-  .sub { color: #7d8aa0; font-size: 13px; margin-bottom: 18px; }
-  .panel {
-    display: grid; grid-template-columns: minmax(320px, 480px) 1fr; gap: 18px; align-items: start;
-  }
-  .card {
-    background: #171d26; border: 1px solid #232c3a; border-radius: 10px; padding: 16px;
-  }
-  .card h2 { font-size: 14px; color: #9fb4d1; margin-bottom: 10px; }
-  label { display: block; font-size: 12px; color: #7d8aa0; margin: 10px 0 4px; }
-  input, select {
-    width: 100%; background: #0d1117; border: 1px solid #2a3444; border-radius: 6px;
-    color: #d7dee8; padding: 8px 10px; font-size: 13px; font-family: ui-monospace, monospace;
-  }
-  .row { display: flex; gap: 10px; margin-top: 14px; }
-  button {
-    flex: 1; border: 0; border-radius: 6px; padding: 9px 0; font-size: 13px; cursor: pointer;
-    background: #2563eb; color: white;
-  }
-  button.secondary { background: #334155; }
-  button:disabled { opacity: 0.5; cursor: default; }
-  video, canvas {
-    width: 100%; aspect-ratio: 16/9; background: black; border-radius: 8px;
-    image-rendering: pixelated; display: block;
-  }
-  #log {
-    height: 180px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 11px;
-    line-height: 1.6; color: #86efac; background: #0d1117; border-radius: 6px; padding: 8px 10px;
-    white-space: pre-wrap; word-break: break-all;
-  }
-  #log .warn { color: #fbbf24; } #log .err { color: #f87171; } #log .info { color: #93c5fd; }
-  .stats { font-size: 12px; color: #7d8aa0; margin-top: 8px; line-height: 1.8; }
-  code { background: #0d1117; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
-</style>
+
+<link rel="stylesheet" href="../../site/skin.css">
 </head>
-<body>
-<h1>rtsp.js —— WebSocket 中继 RTSP 播放器（SDP / RTP / H264·H265 depacketize）</h1>
-<div class="sub">
+<body class="pp-scope">
+<div data-site-nav data-root="../../"></div>
+<main class="pp-lab pp-lab--rtsp pp-lab--protocol">
+  <header class="pp-module-heading"><p class="pp-eyebrow">PUREPLAY / MEDIA LAB</p><h1>RTSP 网关播放</h1><p class="pp-module-copy">
   前置条件：<code>node samples/gateway/bin/gateway.js</code> 已启动；本页通过静态服务器打开
   （<code>python3 -m http.server</code> 后访问）。
-</div>
+</p></header>
+  <section data-demo-samples></section>
+
+
+
 
 <div class="panel">
   <div class="card">
@@ -83,6 +49,7 @@
   </div>
 </div>
 
+</main>
 <script type="module">
 import { RtspWsClient } from '../src/index.js';
 
@@ -217,7 +184,7 @@ function stop() {
 $('btnStop').onclick = stop;
 
 const stats = { frames: 0, decodeErrors: 0 };
-setInterval(() => {
+const statsTimer = setInterval(() => {
   if (!client) { $('stats').textContent = '未连接'; return; }
   const s = client.stats;
   $('stats').textContent =
@@ -227,6 +194,12 @@ setInterval(() => {
 if (location.protocol === 'file:') {
   log('请通过 http:// 静态服务器打开本页（ES module 不支持 file://）', 'err');
 }
+</script>
+<script type="module" src="../../site/nav.js"></script>
+<script type="module">
+  import { initDemoSamples } from '../../site/demo-samples.js';
+  const dispose = initDemoSamples('rtsp');
+window.addEventListener('pagehide', () => { dispose(); clearInterval(statsTimer); stop(); }, { once: true });
 </script>
 </body>
 </html>

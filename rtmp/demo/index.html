@@ -4,46 +4,21 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>rtmp.js · WebSocket-FLV 播放器演示</title>
-<style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: #10141a; color: #d7dee8; padding: 24px; }
-  h1 { font-size: 20px; margin-bottom: 4px; }
-  .sub { color: #7d8aa0; font-size: 13px; margin-bottom: 18px; line-height: 1.6; }
-  .panel { display: grid; grid-template-columns: minmax(340px, 500px) 1fr; gap: 18px; align-items: start; }
-  .card { background: #171d26; border: 1px solid #232c3a; border-radius: 10px; padding: 16px; }
-  .card h2 { font-size: 14px; color: #9fb4d1; margin-bottom: 10px; }
-  label { display: block; font-size: 12px; color: #7d8aa0; margin: 10px 0 4px; }
-  input, select {
-    width: 100%; background: #0d1117; border: 1px solid #2a3444; border-radius: 6px;
-    color: #d7dee8; padding: 8px 10px; font-size: 13px; font-family: ui-monospace, monospace;
-  }
-  .row { display: flex; gap: 10px; margin-top: 14px; }
-  button { flex: 1; border: 0; border-radius: 6px; padding: 9px 0; font-size: 13px; cursor: pointer; background: #2563eb; color: white; }
-  button.secondary { background: #334155; }
-  button:disabled { opacity: 0.5; cursor: default; }
-  video { width: 100%; aspect-ratio: 16/9; background: black; border-radius: 8px; display: block; }
-  canvas { width: 100%; aspect-ratio: 16/9; background: black; border-radius: 8px; image-rendering: pixelated; display: none; }
-  #log {
-    height: 200px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 11px;
-    line-height: 1.6; background: #0d1117; border-radius: 6px; padding: 8px 10px; white-space: pre-wrap;
-  }
-  .ok { color: #86efac; } .warn { color: #fbbf24; } .err { color: #f87171; } .info { color: #93c5fd; }
-  .stats { font-size: 12px; color: #7d8aa0; margin-top: 8px; line-height: 1.8; }
-  .edu {
-    margin-top: 12px; padding: 10px 12px; border-left: 3px solid #fbbf24; background: rgba(251,191,36,.08);
-    font-size: 12px; line-height: 1.7; color: #e5c56a; border-radius: 0 6px 6px 0; display: none;
-  }
-  code { background: #0d1117; padding: 1px 5px; border-radius: 4px; }
-</style>
+
+<link rel="stylesheet" href="../../site/skin.css">
 </head>
-<body>
-<h1>rtmp.js —— RTMP 浏览器播放的本质 = WebSocket-FLV</h1>
-<div class="sub">
+<body class="pp-scope">
+<div data-site-nav data-root="../../"></div>
+<main class="pp-lab pp-lab--rtmp pp-lab--protocol">
+  <header class="pp-module-heading"><p class="pp-eyebrow">PUREPLAY / MEDIA LAB</p><h1>RTMP / WS-FLV 网关播放</h1><p class="pp-module-copy">
   浏览器没有 TCP API，无法直连 RTMP(1935)；可行链路是「RTMP 源 → 网关转封装 FLV → WebSocket 推送 → 本模块解析」。
   延迟量级对照：HTTP-FLV ≈ 1~3s，WS-FLV ≈ 1~2s，WebRTC ≈ 0.2~1s。<br />
   前置：<code>node samples/gateway/bin/gateway.js</code>；本页经静态服务器打开（<code>python3 -m http.server</code>）。
-</div>
+</p></header>
+  <section data-demo-samples></section>
+
+
+
 
 <div class="panel">
   <div class="card">
@@ -78,12 +53,13 @@
   <div class="card">
     <h2>画面与日志</h2>
     <video id="video" muted autoplay playsinline></video>
-    <canvas id="canvas" width="320" height="320"></canvas>
+    <canvas style="display:none" id="canvas" width="320" height="320"></canvas>
     <div style="height:12px"></div>
     <div id="log"></div>
   </div>
 </div>
 
+</main>
 <script type="module">
 import { WsFlvPlayer } from '../src/index.js';
 
@@ -243,7 +219,7 @@ $('scheme').onchange = () => {
   if (v === 'direct') $('url').value = 'rtmp://127.0.0.1/live/test';
 };
 
-setInterval(() => {
+const statsTimer = setInterval(() => {
   if (!player) { $('stats').textContent = '未连接'; return; }
   const s = player.stats;
   $('stats').textContent =
@@ -251,6 +227,12 @@ setInterval(() => {
 }, 500);
 
 if (location.protocol === 'file:') log('请通过 http:// 静态服务器打开本页', 'err');
+</script>
+<script type="module" src="../../site/nav.js"></script>
+<script type="module">
+  import { initDemoSamples } from '../../site/demo-samples.js';
+  const dispose = initDemoSamples('rtmp');
+window.addEventListener('pagehide', () => { dispose(); clearInterval(statsTimer); stop(); }, { once: true });
 </script>
 </body>
 </html>

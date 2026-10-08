@@ -59,67 +59,6 @@
  * 注：DESIGN.md（designer）发布后，仅需对齐第 1 节令牌取值。
  * ============================================================ */
 
-/* ---------- 1. 设计令牌 ---------- */
-:root {
-  color-scheme: dark;
-
-  /* 色板 */
-  --dsk-bg: #0b0e14;            /* 页面背景 */
-  --dsk-bg-elev: #11151f;       /* 抬升面（卡片/面板） */
-  --dsk-surface: #171c29;       /* 控件表面 */
-  --dsk-border: #232a3b;        /* 描边 */
-  --dsk-border-strong: #303a52;
-  --dsk-text: #e8ecf4;          /* 主文字 */
-  --dsk-text-dim: #9aa5bd;      /* 次要文字 */
-  --dsk-text-faint: #626e8c;    /* 弱化文字 */
-  --dsk-accent: #6c8cff;        /* 主色（进度/按钮/链接） */
-  --dsk-accent-strong: #89a1ff;
-  --dsk-accent-contrast: #0b0e14;
-  --dsk-ok: #3fce7c;
-  --dsk-warn: #f2b94b;
-  --dsk-danger: #ff6b6b;
-
-  /* 字体 */
-  --dsk-font: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei",
-              -apple-system, "Segoe UI", Roboto, sans-serif;
-  --dsk-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
-  --dsk-fs-xs: 12px;
-  --dsk-fs-sm: 13px;
-  --dsk-fs-md: 14px;
-  --dsk-fs-lg: 17px;
-  --dsk-fs-xl: 24px;
-
-  /* 尺寸与圆角 */
-  --dsk-radius-sm: 6px;
-  --dsk-radius-md: 10px;
-  --dsk-radius-lg: 16px;
-  --dsk-bar-h: 56px;            /* 控制条高度 */
-  --dsk-nav-h: 56px;            /* 顶部导航高度 */
-
-  /* 阴影 */
-  --dsk-shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
-  --dsk-shadow-2: 0 8px 24px rgb(0 0 0 / 45%);
-
-  /* 动效 */
-  --dsk-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --dsk-fast: 120ms var(--dsk-ease);
-}
-
-[data-theme="light"] {
-  color-scheme: light;
-  --dsk-bg: #f4f6fb;
-  --dsk-bg-elev: #ffffff;
-  --dsk-surface: #eceff7;
-  --dsk-border: #d8deec;
-  --dsk-border-strong: #bcc6dd;
-  --dsk-text: #1a2130;
-  --dsk-text-dim: #55607a;
-  --dsk-text-faint: #8b96ad;
-  --dsk-accent: #3d63dd;
-  --dsk-accent-strong: #2c50c4;
-  --dsk-accent-contrast: #ffffff;
-}
-
 /* ---------- 2. 基础重置 ---------- */
 *,
 *::before,
@@ -147,7 +86,7 @@ code, pre { font-family: var(--dsk-font-mono); font-size: 0.92em; }
 .site-page {
   max-width: 1080px;
   margin: 0 auto;
-  padding: calc(var(--dsk-nav-h) + 28px) 20px 48px;
+  padding: 28px 20px 48px;
 }
 
 .site-hero { margin-bottom: 28px; }

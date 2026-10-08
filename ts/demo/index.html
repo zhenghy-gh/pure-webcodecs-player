@@ -4,40 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TS 解复用器 · PurePlay</title>
-<style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body { margin:0; padding:24px; font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
-         background:#101418; color:#d8dee6; line-height:1.6; }
-  h1 { font-size:22px; margin:0 0 4px; }
-  .sub { color:#7a8593; font-size:13px; margin-bottom:20px; }
-  .card { background:#171c22; border:1px solid #232b34; border-radius:10px; padding:16px 20px; margin-bottom:16px; }
-  #dropZone { border:2px dashed #33404e; border-radius:10px; padding:36px; text-align:center; cursor:pointer;
-              transition:border-color .2s,background .2s; }
-  #dropZone.dragover { border-color:#4f9cf9; background:#182233; }
-  input[type="text"] { width:100%; padding:9px 12px; margin-top:10px; background:#0d1117;
-    border:1px solid #2a3441; border-radius:6px; color:#d8dee6; font-size:13px; }
-  button { padding:8px 16px; margin:8px 8px 0 0; background:#2563eb; color:#fff; border:none;
-           border-radius:6px; font-size:13px; cursor:pointer; }
-  button:hover { background:#3b82f6; }
-  button.warn { background:#7c5c10; } button.warn:hover { background:#96700f; }
-  table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
-  th,td { text-align:left; padding:6px 10px; border-bottom:1px solid #232b34; }
-  th { color:#7a8593; font-weight:normal; }
-  pre { background:#0d1117; padding:10px; border-radius:6px; overflow-x:auto; font-size:12px;
-        font-family:ui-monospace,Menlo,Consolas,monospace; }
-  .err { color:#f87171; } .warn { color:#fbbf24; } .ok { color:#4ade80; }
-  .hidden { display:none; }
-  kbd { background:#222b35; border-radius:4px; padding:1px 6px; font-size:12px; }
-</style>
+
+<link rel="stylesheet" href="../../site/skin.css">
 </head>
-<body>
-<h1>ts/ · MPEG-TS 解复用器 · PurePlay</h1>
-<div class="sub">
+<body class="pp-scope">
+<div data-site-nav data-root="../../"></div>
+<main class="pp-lab pp-lab--ts ">
+  <header class="pp-module-heading"><p class="pp-eyebrow">PUREPLAY / MEDIA LAB</p><h1>TS 解复用实验</h1><p class="pp-module-copy">
   契约口径：static probe → ProbeResult｜open() → MediaInfo｜samples(trackId) 异步迭代｜时间基整数微秒。<br>
   拖入 <kbd>.ts</kbd>/<kbd>.m2ts</kbd> 文件或输入地址 → program/PMT 树 + 轨道信息；
   「扰动开关」注入垃圾字节演示失步重同步（resync）；非 0x47 输入将得到 PROBE_FAILED。
-</div>
+</p></header>
+  <section data-demo-samples></section>
+
+
+
 
 <div class="card">
   <div id="dropZone">
@@ -60,6 +41,7 @@
 
 <div class="card hidden" id="errorCard"><h2 style="font-size:16px;margin-top:0" class="warn">警告 / 错误（非致命错误保留解析）</h2><pre id="errors"></pre></div>
 
+</main>
 <script type="module">
 import { createDemuxer, TsDemuxer } from '../src/index.js';
 
@@ -69,7 +51,7 @@ const fmtUs = (us) => us == null ? '—' : (us >= 1e6 ? (us / 1e6).toFixed(2) + 
 
 let currentBytes = null;
 
-$('dropZone').addEventListener('click', () => $('fileInput').click());
+$('dropZone').addEventListener('click', event => { if (!event.target.closest('input, button')) $('fileInput').click(); });
 $('fileInput').addEventListener('change', (e) => e.target.files[0] && runFile(e.target.files[0]));
 $('urlInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.value.trim()) runUrl(e.target.value.trim());
@@ -226,6 +208,12 @@ function showError(list) {
   $('errorCard').classList.remove('hidden');
   $('errors').textContent = list.join('\n');
 }
+</script>
+<script type="module" src="../../site/nav.js"></script>
+<script type="module">
+  import { initDemoSamples } from '../../site/demo-samples.js';
+  const dispose = initDemoSamples('ts');
+  window.addEventListener('pagehide', dispose, { once: true });
 </script>
 </body>
 </html>
