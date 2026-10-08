@@ -64,9 +64,13 @@ test('HlsPlayer 配置贯通到 loader；缺省回落 omit', () => {
   assert.equal(default_.loader.credentials, 'omit');
 });
 
-test('HlsPlayer 非法 credentials 同样快速失败', () => {
-  assert.throws(
-    () => new HlsPlayer({ credentials: 'auto' }),
-    (err) => err instanceof PlayerError && err.code === ErrorCode.STATE_ERROR
-  );
+test('HlsPlayer 非法 credentials（含空字符串）在 loader 构造时即快速失败', () => {
+  for (const credentials of ['auto', '', false]) {
+    assert.throws(
+      () => new HlsPlayer({ credentials }),
+      (err) => err instanceof PlayerError && err.code === ErrorCode.STATE_ERROR,
+      `credentials=${JSON.stringify(credentials)}`
+    );
+  }
+  assert.equal(new HlsPlayer({ credentials: null }).loader.credentials, 'omit');
 });

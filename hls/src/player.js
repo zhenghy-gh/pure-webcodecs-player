@@ -59,7 +59,7 @@ export class HlsPlayer {
       ...config,
     };
     this.events = new EventBus();
-    this.loader = new SegmentLoader(config.credentials ? { credentials: config.credentials } : {});
+    this.loader = new SegmentLoader({ credentials: config.credentials ?? 'omit' });
     this.mse = new MseController();
     /** @type {LevelController|null} */
     this.levels = null;
