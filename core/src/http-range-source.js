@@ -106,26 +106,25 @@ export class HttpRangeDataSource {
     assertByteLength(length, this.maxReadLength, `HTTP Range 单次读取`);
     const want = Math.min(length, this.size - offset);
 
-    // 命中检查：全部落在缓存则直接拼
     const firstBlock = Math.floor(offset / this.chunkSize);
     const lastBlock = Math.floor((offset + want - 1) / this.chunkSize);
-    const blocks = [];
-    let allCached = true;
+    const missingRuns = [];
+    let missingStart = null;
     for (let b = firstBlock; b <= lastBlock; b++) {
       const cached = this._cache.get(b);
       if (cached) {
-        blocks.push(cached);
         this._touch(b, cached);
-      } else {
-        allCached = false;
-        break;
+        if (missingStart !== null) {
+          missingRuns.push([missingStart, b - 1]);
+          missingStart = null;
+        }
+      } else if (missingStart === null) {
+        missingStart = b;
       }
     }
+    if (missingStart !== null) missingRuns.push([missingStart, lastBlock]);
 
-    if (!allCached) {
-      await this._prefetch(firstBlock, lastBlock);
-      return this._assemble(offset, want);
-    }
+    for (const [start, end] of missingRuns) await this._prefetch(start, end);
     return this._assemble(offset, want);
   }
 

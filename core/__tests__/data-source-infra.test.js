@@ -213,6 +213,33 @@ test('HttpRangeDataSource（core 版）：HEAD 探长 + 跨块读 + 缓存淘汰
   assert.ok(requests > 3, `应发生多次 Range 请求，实际 ${requests}`);
 });
 
+test('HttpRangeDataSource：交错缓存时只请求连续缺口', async () => {
+  const whole = makeWhole(256);
+  const ranges = [];
+  const ds = new HttpRangeDataSource('http://fixture.invalid/gaps.mp4', {
+    chunkSize: 64,
+    maxCachedBlocks: 4,
+    fetchImpl: async (_u, init = {}) => {
+      const range = init.headers?.Range ?? init.headers?.range;
+      if (range) ranges.push(range);
+      return stubFetch(whole)(_u, init);
+    },
+  });
+  await ds.open();
+
+  await ds.read(0, 8);
+  await ds.read(128, 8);
+  ranges.length = 0;
+
+  const result = await ds.read(0, whole.length);
+  assert.deepEqual([...result], [...whole]);
+  assert.deepEqual(ranges, ['bytes=64-127', 'bytes=192-255']);
+
+  ranges.length = 0;
+  assert.deepEqual([...(await ds.read(0, whole.length))], [...whole]);
+  assert.deepEqual(ranges, [], '完整缓存命中不应再次发起 Range 请求');
+});
+
 test('HttpRangeDataSource：无 HEAD 允许时退回 Content-Range 探测', async () => {
   const whole = makeWhole(512);
   const ds = new HttpRangeDataSource('http://fixture.invalid/b.mp4', {
