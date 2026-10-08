@@ -50,6 +50,7 @@ export class HlsPlayer {
    * @param {number} [config.backBufferSeconds] 后退缓冲保留（默认 30s，仅长直播/EVENT 周期回收时生效）
    * @param {('omit'|'same-origin'|'include')} [config.credentials] fetch 凭据策略（默认 omit；
    *   带 Cookie 的授权源传 'same-origin' 或 'include'）
+   * @param {typeof fetch} [config.fetchImpl] 可选自定义资源获取器（代理、测试或宿主网络栈）
    */
   constructor(config = {}) {
     this.config = {
@@ -59,7 +60,10 @@ export class HlsPlayer {
       ...config,
     };
     this.events = new EventBus();
-    this.loader = new SegmentLoader({ credentials: config.credentials ?? 'omit' });
+    this.loader = new SegmentLoader({
+      credentials: config.credentials ?? 'omit',
+      fetchImpl: config.fetchImpl,
+    });
     this.mse = new MseController();
     /** @type {LevelController|null} */
     this.levels = null;

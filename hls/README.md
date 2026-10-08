@@ -87,6 +87,8 @@ await source.start()
 </script>
 ```
 
+`HlsPlayer` 的可选配置：`credentials: 'omit' | 'same-origin' | 'include'` 控制清单、密钥与分片 fetch 凭据（默认 `omit`），`fetchImpl` 可注入代理、宿主请求层或离线测试桩。`credentials: ''` 等非法取值会在构造期抛 `STATE_ERROR`。跨域 Cookie 场景除使用 `include` 外，服务端仍须允许携带凭据的 CORS（精确 `Access-Control-Allow-Origin` + `Access-Control-Allow-Credentials: true`），浏览器缓存/第三方 Cookie 策略也须允许。
+
 本地跑 demo：仓库根目录 `npm run demo` 后访问 `/hls/demo/`（file:// 下无法 fetch，必须 http 服务）。
 
 ## 六、API 说明

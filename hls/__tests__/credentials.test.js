@@ -74,3 +74,26 @@ test('HlsPlayer 非法 credentials（含空字符串）在 loader 构造时即�
   }
   assert.equal(new HlsPlayer({ credentials: null }).loader.credentials, 'omit');
 });
+
+
+test('HlsPlayer 注入的 fetchImpl 用于所有清单/分片加载并保留 credentials', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      body: null,
+      arrayBuffer: async () => new TextEncoder().encode('#EXTM3U\n#EXT-X-ENDLIST').buffer,
+    };
+  };
+  const player = new HlsPlayer({ credentials: 'include', fetchImpl });
+  await player.loader.loadText('https://media.example/playlist.m3u8');
+  await player.loader.load('https://media.example/segment.m4s');
+  assert.deepEqual(calls.map(call => call.url), [
+    'https://media.example/playlist.m3u8',
+    'https://media.example/segment.m4s',
+  ]);
+  assert.ok(calls.every(call => call.init.credentials === 'include'));
+});
