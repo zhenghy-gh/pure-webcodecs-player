@@ -10,7 +10,7 @@
 <body class="pp-scope">
 <div data-site-nav data-root="../../"></div>
 <div class="pp-demo">
-  <header class="pp-demo__topbar"><div><p class="pp-eyebrow">LOCAL FIRST / MEDIA LAB</p><h1>HLS 参考实现</h1></div><span class="pp-badge pp-badge--warning" id="cdn-badge">CDN 未加载</span></header>
+  <header class="pp-demo__topbar"><div><p class="pp-eyebrow">LOCAL FIRST / MEDIA LAB</p><h1>HLS 参考实现</h1></div><span class="pp-badge pp-badge--warning" id="cdn-badge">待启动 · 点击载入</span></header>
   <section data-demo-samples></section>
 
   <main class="pp-stage pp-demo__stage is-idle" id="stage">
@@ -23,7 +23,7 @@
     </div>
     <div class="pp-drop" id="drop" data-skin="drop">
       <span class="pp-drop__icon"><svg class="pp-icon pp-icon-32"><use href="../assets/icons.svg#i-upload"/></svg></span>
-      <strong>HLS 参考实现（hls.js，生产级方案对照）</strong>
+      <strong>HLS 参考实现（hls.js CDN，可选）</strong>
       <span>通过 CDN 加载 hls.js 播放公开测试流；与左侧自研 <code>hls/</code> 模块管线互为对照。</span>
       <div class="pp-field pp-field-row">
         <input class="pp-field__input" id="url" type="text" readonly
@@ -36,7 +36,7 @@
         <span class="pp-chip">CDN 可选增强</span><span class="pp-chip">失败自动降级提示</span>
         <span class="pp-chip">自研路线：../../hls/demo/index.html</span>
       </div>
-      <span class="pp-drop__hint">离线或 CDN 被拦截时将给出降级提示；不影响本仓任何零依赖模块。</span>
+      <span class="pp-drop__hint">点击载入后才请求 CDN。CDN 不可达时会自动切换到本地 hls/ 模块，无需手动重试。</span>
     </div>
     <div class="pp-stage__errbox">
       <div class="pp-errbox">
@@ -262,7 +262,7 @@
         throw new Error('脚本已下载但未注册 Hls 全局对象');
       } catch (error) { failures.push(`${new URL(src).hostname}: ${error.message}`); }
     }
-    throw new Error(`hls.js 的两个 CDN 地址均未能加载。普通网页可访问不代表 CDN 也可达。${failures.join('；')}`);
+    throw new Error(`当前页面无法下载 hls.js；这不一定代表你的整体网络中断。可能是 CDN 域名/DNS、浏览器扩展、代理或 CSP 策略的影响。浏览器诊断：${failures.join('；')}`);
   }
   async function startSelfFallback(url, reason) {
     try {
@@ -313,7 +313,9 @@
   async function start() {
     stage.classList.remove('has-error');
     stage.classList.add('is-buffering');
-    $('#i-stage').textContent = '加载 CDN…';
+    $('#cdn-badge').textContent = '正在检查 CDN…';
+    $('#cdn-badge').className = 'pp-badge pp-badge--warn';
+    $('#i-stage').textContent = '检查 CDN 并载入参考播放器…';
     try {
       if (!window.Hls) await loadScript();
     } catch (e) { await startSelfFallback($('#url').value.trim(), e.message); return; }

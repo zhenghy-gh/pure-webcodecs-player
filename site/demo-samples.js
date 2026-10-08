@@ -20,7 +20,7 @@ export const DEMO_SAMPLES = {
   webtorrent: [{ title: '体验内置装配', button: '#builtin-sample' }],
   rtsp: [{ title: '连接本地测试网关', url: 'ws://127.0.0.1:8322/rtsp', input: '#url', button: '#btnStart', gateway: true }],
   rtmp: [{ title: '连接本地测试网关', url: 'ws-flv://127.0.0.1:8321/live/test', input: '#url', button: '#btnStart', gateway: true }],
-  'ref-hls': [{ title: '内置 HLS 对照地址', url: local('playlist.m3u8'), input: '#url', button: '#load' }],
+  'ref-hls': [{ title: '内置 HLS 对照（点击后尝试 CDN）', url: local('playlist.m3u8'), input: '#url', button: '#load' }],
   'ref-flv': [{ title: '播放内置 FLV 对照', file: 'color-bars.flv', input: '#url', button: '#load', requires: 'flv.js CDN' }],
 };
 
@@ -80,7 +80,7 @@ function renderSamples(module, samples, target, controller) {
   const hint = document.createElement('span'); hint.className = 'pp-drop__hint';
   hint.textContent = samples.some(sample => sample.gateway)
     ? '地址已内置；需先运行 npm run gateway。本地测试网关不连接外部媒体源。'
-    : module === 'ref-hls' || module === 'ref-flv' ? '地址已内置；第三方参考播放器需联网加载 CDN。离线可用的自研播放器见 HLS / FLV 模块。'
+    : module === 'ref-hls' || module === 'ref-flv' ? module === 'ref-hls' ? 'CDN 仅在点按后加载；下载失败会自动回退到本地自研 HLS。' : '参考 FLV 需联网加载 CDN；完全离线可用的自研解析与 MSE 样例见 FLV 模块。'
       : '内置示例 · 无需手填地址 · 点击后立即运行。';
   target.appendChild(hint);
   const first = samples.find(sample => sample.input && sample.file);
