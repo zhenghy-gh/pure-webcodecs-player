@@ -339,7 +339,7 @@ export class Mp4Demuxer extends Demuxer {
       const mdatBox = this._findMdatAfter(cursorIndex);
       if (!mdatBox) throw parseError(`moof at ${box.start}: no following mdat`);
 
-      const frags = parseMoofTracks(moofBytes, 8, moofBytes.byteLength);
+      const frags = parseMoofTracks(moofBytes, box.contentStart - box.start, moofBytes.byteLength);
       for (const frag of frags) {
         if (frag.trackId !== trackId) continue;
         const trackState = this._trackState.get(frag.trackId);

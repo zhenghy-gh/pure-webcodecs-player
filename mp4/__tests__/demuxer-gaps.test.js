@@ -42,6 +42,49 @@ function largesizeFreeBox() {
   return b;
 }
 
+function rewriteFirstMoofAsLargesize(bytes) {
+  let pos = 0;
+  let moofStart = -1;
+  let moofSize = 0;
+  while (pos + 8 <= bytes.length) {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset + pos, 8);
+    const size = dv.getUint32(0);
+    const type = String.fromCharCode(...bytes.subarray(pos + 4, pos + 8));
+    if (type === 'moof') {
+      moofStart = pos;
+      moofSize = size;
+      break;
+    }
+    pos += size;
+  }
+  assert.ok(moofStart >= 0, 'fixture should contain a moof');
+
+  const oldMoof = bytes.subarray(moofStart, moofStart + moofSize);
+  const newMoof = new Uint8Array(oldMoof.byteLength + 8);
+  const newView = new DataView(newMoof.buffer);
+  newView.setUint32(0, 1);
+  newMoof.set(oldMoof.subarray(4, 8), 4);
+  newView.setBigUint64(8, BigInt(newMoof.byteLength));
+  newMoof.set(oldMoof.subarray(8), 16);
+
+  let trunType = -1;
+  for (let i = 16; i + 4 <= newMoof.length; i++) {
+    if (String.fromCharCode(...newMoof.subarray(i, i + 4)) === 'trun') {
+      trunType = i;
+      break;
+    }
+  }
+  assert.ok(trunType >= 0, 'fixture should contain a trun');
+  const trunDataOffset = trunType + 12;
+  newView.setInt32(trunDataOffset, newView.getInt32(trunDataOffset) + 8);
+
+  const out = new Uint8Array(bytes.length + 8);
+  out.set(bytes.subarray(0, moofStart));
+  out.set(newMoof, moofStart);
+  out.set(bytes.subarray(moofStart + moofSize), moofStart + newMoof.byteLength);
+  return out;
+}
+
 /**
  * 极简单轨渐进 MP4（ftyp 仅 8 字节头 → parseFtypSafe 兜底 null）。
  * prefix 可塞额外顶层 box（如 largesize free）；withMoov=false 时只有 ftyp+mdat。
@@ -257,6 +300,24 @@ test('分片迭代：moof 后无 mdat → PARSE_ERROR', async () => {
   const info = await d.open();
   assert.equal(info.fragmented, true);
   await assert.rejects(d.readSample(1), (e) => e.code === 'PARSE_ERROR' && /no following mdat/.test(e.message));
+});
+
+test('分片迭代：largesize moof 仍解析首片样本', async () => {
+  const fixture = buildFragmentedFixture();
+  const bytes = rewriteFirstMoofAsLargesize(fixture.bytes);
+  const d = new Mp4Demuxer(new MemoryDataSource(bytes));
+  await d.open();
+
+  const samples = [];
+  for (;;) {
+    const sample = await d.readSample(fixture.trackId);
+    if (!sample) break;
+    samples.push(sample);
+  }
+
+  assert.equal(samples.length, fixture.expectedSamples.length);
+  assert.deepEqual(samples.map((s) => s.size), fixture.expectedSamples.map((s) => s.size));
+  assert.deepEqual(samples.map((s) => [...s.data]), fixture.expectedSamples.map((s) => [...s.data]));
 });
 
 test('分片 seek：关键帧二分命中后从 resumeIndex 续读', async () => {
