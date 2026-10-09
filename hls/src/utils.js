@@ -55,11 +55,14 @@ export function parseByteRange(value, prevEnd) {
   const m = /^\s*(\d+)\s*(?:@\s*(\d+)\s*)?$/.exec(value);
   if (!m) return null;
   const length = Number(m[1]);
+  if (!Number.isSafeInteger(length)) return null;
   let offset;
   if (m[2] !== undefined) {
     offset = Number(m[2]);
+    if (!Number.isSafeInteger(offset)) return null;
   } else if (prevEnd != null) {
     offset = prevEnd;
+    if (!Number.isSafeInteger(offset)) return null;
   } else {
     return { length, offset: null }; // 非法用法标记，交由上层报错
   }

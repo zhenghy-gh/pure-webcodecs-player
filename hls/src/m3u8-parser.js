@@ -361,19 +361,18 @@ export function parseMedia(text, baseUrl = '') {
 
     if (line.startsWith(TAG.BYTERANGE)) {
       const br = parseByteRange(line.slice(TAG.BYTERANGE.length + 1), prevByteRangeEnd);
-      if (br) {
-        if (br.offset == null) {
-          throw parseFail('m3u8 解析失败：BYTERANGE 缺省 offset 但无前序引用可滚动');
-        }
-        if (!(br.length > 0)) {
-          // RFC 8216 §4.3.2.2：length 必须为正整数；length=0 会生成非法
-          // "bytes=offset-(offset-1)" 请求头，须在解析期拦截。
-          throw parseFail(`m3u8 解析失败：BYTERANGE 长度必须为正整数，实际 ${br.length}`);
-        }
-        prevByteRangeEnd = br.offset + br.length;
-        if (current) current.byteRange = br;
-        else pendingByteRange = br; // 前置（非规范）：挂给下一个 EXTINF 分片
+      if (!br) throw parseFail('m3u8 解析失败：BYTERANGE 格式或数值非法');
+      if (br.offset == null) {
+        throw parseFail('m3u8 解析失败：BYTERANGE 缺省 offset 但无前序引用可滚动');
       }
+      if (!(br.length > 0)) {
+        // RFC 8216 §4.3.2.2：length 必须为正整数；length=0 会生成非法
+        // "bytes=offset-(offset-1)" 请求头，须在解析期拦截。
+        throw parseFail(`m3u8 解析失败：BYTERANGE 长度必须为正整数，实际 ${br.length}`);
+      }
+      prevByteRangeEnd = br.offset + br.length;
+      if (current) current.byteRange = br;
+      else pendingByteRange = br; // 前置（非规范）：挂给下一个 EXTINF 分片
       continue;
     }
 
@@ -385,16 +384,14 @@ export function parseMedia(text, baseUrl = '') {
 
     if (line.startsWith(TAG.MAP)) {
       const a = parseAttributes(line.slice(TAG.MAP.length + 1));
-      const mapByteRange = a.BYTERANGE
-        ? (() => {
-            const br = parseByteRange(a.BYTERANGE, prevByteRangeEnd);
-            return br && br.offset >= 0 && br.length > 0 ? br : null;
-          })()
-        : null;
-      lastMap = {
-        uri: resolveUrl(a.URI, baseUrl),
-        byteRange: mapByteRange,
-      };
+      let mapByteRange = null;
+      if (a.BYTERANGE) {
+        mapByteRange = parseByteRange(a.BYTERANGE, prevByteRangeEnd);
+        if (!mapByteRange || mapByteRange.offset == null || mapByteRange.length <= 0) {
+          throw parseFail('m3u8 解析失败：EXT-X-MAP BYTERANGE 非法');
+        }
+      }
+      lastMap = { uri: resolveUrl(a.URI, baseUrl), byteRange: mapByteRange };
       if (current) current.map = lastMap;
       continue;
     }
@@ -468,6 +465,9 @@ export function parseMedia(text, baseUrl = '') {
     if (line.startsWith(TAG.PART)) {
       const a = parseAttributes(line.slice(TAG.PART.length + 1));
       const br = a.RANGE ? parseByteRange(a.RANGE, prevByteRangeEnd) : null;
+      if (a.RANGE && (!br || br.offset == null || br.length <= 0)) {
+        throw parseFail('m3u8 解析失败：EXT-X-PART RANGE 非法');
+      }
       if (br && br.offset != null) prevByteRangeEnd = br.offset + br.length;
       const part = {
         uri: resolveUrl(a.URI, baseUrl),

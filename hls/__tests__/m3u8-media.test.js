@@ -112,6 +112,27 @@ a.mp4`;
   assert.throws(() => parseMedia(BAD, ''), /无前序引用/);
 });
 
+test('BYTERANGE：超大数值拒绝解析，避免生成失真的 Range 请求', () => {
+  const BAD = `#EXTM3U
+#EXTINF:5.0,
+#EXT-X-BYTERANGE:${'1'.repeat(309)}@0
+main.mp4
+#EXT-X-ENDLIST`;
+  assert.throws(() => parseMedia(BAD, ''), /BYTERANGE 格式或数值非法/);
+});
+
+test('EXT-X-MAP/EXT-X-PART：非法 RANGE 拒绝解析', () => {
+  const map = `#EXTM3U
+#EXT-X-MAP:URI="init.mp4",BYTERANGE="${'9'.repeat(309)}@0"
+#EXTINF:1,
+a.m4s`;
+  assert.throws(() => parseMedia(map, ''), /EXT-X-MAP BYTERANGE 非法/);
+
+  const part = `#EXTM3U
+#EXT-X-PART:URI="a.m4s",DURATION=0.5,RANGE="${'8'.repeat(309)}@0"`;
+  assert.throws(() => parseMedia(part, ''), /EXT-X-PART RANGE 非法/);
+});
+
 test('缺少 EXTINF 时长属于非法输入，报错定位分片下标', () => {
   const BAD = `#EXTM3U
 #EXTINF:5.0,
