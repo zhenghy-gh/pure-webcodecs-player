@@ -130,6 +130,7 @@ export class FlvTagStream {
     this.headerDone = true;
     this.finished = false;
     this._batchFed = 0;
+    this._absPos = 0;
     this.header = {
       version: 1,
       hasAudio: !!flags.hasAudio,

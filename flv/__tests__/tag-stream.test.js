@@ -57,8 +57,8 @@ test('FlvTagStream：整块 vs 任意切块结果一致', () => {
   }
   stream.end();
   assert.deepEqual(
-    incremental.map((t) => [t.type, t.timestamp, t.data.length]),
-    whole.map((t) => [t.type, t.timestamp, t.data.length]),
+    incremental.map((t) => [t.type, t.timestamp, t.data.length, t.offset]),
+    whole.map((t) => [t.type, t.timestamp, t.data.length, t.offset]),
   );
   // offset 字段为绝对偏移且递增
   for (let i = 1; i < incremental.length; i++) {

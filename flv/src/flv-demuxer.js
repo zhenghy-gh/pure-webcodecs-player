@@ -400,7 +400,6 @@ export class FlvDemuxer extends Demuxer {
     this._pos += data.length;
     this.emit('progress', { loadedBytes: this._pos, totalBytes: src.size ?? null });
     try {
-      this.parser.baseOffset = this._pos - data.length;
       this.parser.push(data);
     } catch (err) {
       this.emit('error', err);
@@ -489,6 +488,7 @@ export class FlvDemuxer extends Demuxer {
       hasAudio: this.parser.hasAudio,
       hasVideo: this.parser.hasVideo,
     });
+    this.parser.baseOffset = target.offset;
     for (const q of this._queues.values()) q.length = 0;
     this._pos = target.offset;
     this._sourceEof = false;

@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { FlvDemuxer, createFlvDemuxer } from '../src/flv-demuxer.js';
+import { iterateTags } from '../src/tag-stream.js';
 import * as Mod from '../src/index.js';
 import { MemoryDataSource } from '../../core/src/index.js';
 
@@ -156,6 +157,22 @@ test('泵：解析器抛错（非 FLV 数据）→ error 事件且 open 终止',
 });
 
 /* ------------------------------ 迭代与等待 ------------------------------ */
+
+test('迭代器内泵：跨 64KiB 边界的关键帧索引保持绝对偏移', async () => {
+  const file = assembleFlv({ video: { frames: 2400, gopSize: 50 }, audio: null });
+  const expected = [...iterateTags(file)]
+    .filter((tag) => tag.type === 9 && ((tag.data[0] >> 4) === 1) && tag.data[1] === 1)
+    .map((tag) => tag.offset);
+  const src = {
+    size: file.length,
+    read: async (pos, want) => file.subarray(pos, Math.min(pos + want, file.length)),
+  };
+  const d = new FlvDemuxer(src);
+  await d.open();
+  for await (const sample of d.samples(1)) void sample;
+  assert.deepEqual(d.parser.keyframeIndex.map((entry) => entry.offset), expected);
+  await d.destroy();
+});
 
 test('迭代器内泵：open 仅拿配置即返回，剩余数据经迭代器内泵推进直到 EOS', async () => {
   // 文件 > PUMP_CHUNK(64KB)：open 的首个泵块拿到序列头配置即返回，源未耗尽；
