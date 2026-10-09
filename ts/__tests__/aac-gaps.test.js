@@ -10,6 +10,17 @@ import assert from 'node:assert/strict';
 import { splitAdtsFrames, splitLatmUnits, parseLatmSyncStream } from '../src/aac.js';
 import { adtsFrame } from './fixtures/build-ts.mjs';
 
+test('splitAdtsFrames：截断假帧长度不应吞掉后续完整帧', () => {
+  const fake = adtsFrame(new Uint8Array(0), { frameLen: 8191 });
+  const real = adtsFrame(new Uint8Array([7, 7, 7]));
+  const data = new Uint8Array(fake.length + real.length);
+  data.set(fake);
+  data.set(real, fake.length);
+  const frames = splitAdtsFrames(data);
+  assert.equal(frames.length, 1);
+  assert.deepEqual([...frames[0].raw], [7, 7, 7]);
+});
+
 test('splitAdtsFrames：假同步码（channelConfig=0）→ pos++ 继续找真帧', () => {
   const fake = new Uint8Array([0xff, 0xf1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
   const real = adtsFrame(new Uint8Array(20).fill(7));

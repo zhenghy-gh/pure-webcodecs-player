@@ -72,7 +72,10 @@ export function splitAdtsFrames(data) {
       pos++;   // 假同步码，继续找
       continue;
     }
-    if (pos + header.frameLength > data.length) break; // 最后半帧留给上层补数据
+    if (pos + header.frameLength > data.length) {
+      pos++;
+      continue;
+    } // 截断候选当作假同步，继续寻找后续完整帧
     frames.push({
       header,
       raw: data.slice(pos + header.headerSize, pos + header.frameLength),
