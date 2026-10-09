@@ -240,6 +240,47 @@ test('HttpRangeDataSource：交错缓存时只请求连续缺口', async () => {
   assert.deepEqual(ranges, [], '完整缓存命中不应再次发起 Range 请求');
 });
 
+test('HttpRangeDataSource：单次跨块读取超过 LRU 容量仍返回完整数据', async () => {
+  const whole = makeWhole(256);
+  const ranges = [];
+  const ds = new HttpRangeDataSource('http://fixture.invalid/small-cache.mp4', {
+    chunkSize: 64,
+    maxCachedBlocks: 2,
+    fetchImpl: async (_u, init = {}) => {
+      if (init.headers?.Range) ranges.push(init.headers.Range);
+      return stubFetch(whole)(_u, init);
+    },
+  });
+
+  assert.deepEqual(await ds.read(0, whole.length), whole);
+  assert.deepEqual(ranges, ['bytes=0-255']);
+  assert.equal(ds._cache.size, 2);
+});
+
+test('HttpRangeDataSource：LRU 淘汰不影响交错缺口与尾块截断读取', async () => {
+  const whole = makeWhole(350);
+  const ranges = [];
+  const ds = new HttpRangeDataSource('http://fixture.invalid/evicted-gaps.mp4', {
+    chunkSize: 64,
+    maxCachedBlocks: 2,
+    fetchImpl: async (_u, init = {}) => {
+      if (init.headers?.Range) ranges.push(init.headers.Range);
+      return stubFetch(whole)(_u, init);
+    },
+  });
+  await ds.read(64, 8);
+  await ds.read(256, 8);
+  ranges.length = 0;
+
+  assert.deepEqual(await ds.read(31, 400), whole.subarray(31));
+  assert.deepEqual(ranges, ['bytes=0-63', 'bytes=128-255', 'bytes=320-349']);
+  assert.equal(ds._cache.size, 2);
+
+  ranges.length = 0;
+  assert.deepEqual(await ds.read(330, 100), whole.subarray(330));
+  assert.deepEqual(ranges, []);
+});
+
 test('HttpRangeDataSource：无 HEAD 允许时退回 Content-Range 探测', async () => {
   const whole = makeWhole(512);
   const ds = new HttpRangeDataSource('http://fixture.invalid/b.mp4', {

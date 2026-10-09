@@ -109,10 +109,12 @@ export class HttpRangeDataSource {
     const firstBlock = Math.floor(offset / this.chunkSize);
     const lastBlock = Math.floor((offset + want - 1) / this.chunkSize);
     const missingRuns = [];
+    const blocks = new Map();
     let missingStart = null;
     for (let b = firstBlock; b <= lastBlock; b++) {
       const cached = this._cache.get(b);
       if (cached) {
+        blocks.set(b, cached);
         this._touch(b, cached);
         if (missingStart !== null) {
           missingRuns.push([missingStart, b - 1]);
@@ -124,11 +126,11 @@ export class HttpRangeDataSource {
     }
     if (missingStart !== null) missingRuns.push([missingStart, lastBlock]);
 
-    for (const [start, end] of missingRuns) await this._prefetch(start, end);
-    return this._assemble(offset, want);
+    for (const [start, end] of missingRuns) await this._prefetch(start, end, blocks);
+    return this._assemble(offset, want, blocks);
   }
 
-  async _prefetch(firstBlock, lastBlock) {
+  async _prefetch(firstBlock, lastBlock, blocks = null) {
     // 连续块合并为一次 Range 请求，减少请求数
     const start = firstBlock * this.chunkSize;
     const endInclusive = Math.min(lastBlock * this.chunkSize + this.chunkSize - 1, this.size - 1);
@@ -139,7 +141,9 @@ export class HttpRangeDataSource {
       const relStart = blockStart - start;
       if (relStart >= bytes.byteLength) break;
       const blockBytes = bytes.subarray(relStart, Math.min(relStart + this.chunkSize, bytes.byteLength));
-      this._put(b, blockBytes.slice());
+      const stored = blockBytes.slice();
+      blocks?.set(b, stored);
+      this._put(b, stored);
     }
   }
 
@@ -170,13 +174,13 @@ export class HttpRangeDataSource {
     return new Uint8Array(buf).subarray(start, Math.min(endInclusive + 1, buf.byteLength));
   }
 
-  _assemble(offset, length) {
+  _assemble(offset, length, blocks = this._cache) {
     const out = new Uint8Array(length);
     let pos = 0;
     while (pos < length) {
       const abs = offset + pos;
       const blockIdx = Math.floor(abs / this.chunkSize);
-      const block = this._cache.get(blockIdx);
+      const block = blocks.get(blockIdx);
       if (!block) throw sourceError(`internal: missing block ${blockIdx}`);
       const within = abs - blockIdx * this.chunkSize;
       const n = Math.min(block.byteLength - within, length - pos);
