@@ -10,6 +10,8 @@
  * 重组 Section 的 PsiAssembler。
  */
 
+import { parseError } from '../../core/src/errors.js';
+
 /** MPEG-2 CRC32：多项式 0x04C11DB7，初值/终值全 1，MSB 先行 */
 export function mpegCrc32(bytes, start = 0, end = bytes.length) {
   let crc = 0xffffffff;
@@ -40,10 +42,11 @@ function parseSectionHeader(section) {
  * @returns {{ programs: Array<{ number:number, pid:number }>, versionNumber:number, crcOk:boolean }}
  */
 export function parsePAT(section) {
-  const header = parseSectionHeader(section);
-  const bodyEnd = section.length - 4; // 去掉尾部 CRC32
+  const header = assertSection(section, 12, 'PAT');
+  const bodyEnd = 3 + header.sectionLength - 4;
+  if ((bodyEnd - 8) % 4 !== 0) throw parseError('PAT program loop truncated');
   const programs = [];
-  for (let pos = 8; pos + 4 <= bodyEnd; pos += 4) {
+  for (let pos = 8; pos < bodyEnd; pos += 4) {
     const number = (section[pos] << 8) | section[pos + 1];
     const pid = ((section[pos + 2] & 0x1f) << 8) | section[pos + 3];
     if (number !== 0) programs.push({ number, pid }); // number 0 = NIT，跳过
@@ -52,6 +55,18 @@ export function parsePAT(section) {
     | (section[bodyEnd + 2] << 8) | section[bodyEnd + 3]) >>> 0;
   const actual = mpegCrc32(section, 0, bodyEnd);
   return { programs, versionNumber: header.versionNumber, crcOk: expected === actual };
+}
+
+function assertSection(section, minLength, name) {
+  if (!(section instanceof Uint8Array) || section.length < minLength) {
+    throw parseError(`${name} section truncated`);
+  }
+  const sectionLength = ((section[1] & 0x0f) << 8) | section[2];
+  const totalLength = 3 + sectionLength;
+  if (sectionLength < minLength - 3 || totalLength !== section.length) {
+    throw parseError(`${name} section length mismatch`);
+  }
+  return parseSectionHeader(section);
 }
 
 /** PMT 中常见的 stream_type 映射（节选自 ISO 13818-1 / ITU-T H.222） */
@@ -73,16 +88,19 @@ export const STREAM_TYPE_MAP = {
  * @returns {{ pcrPid:number, streams:Array<{pid:number, streamType:number, codec:string|undefined}>, versionNumber:number, crcOk:boolean }}
  */
 export function parsePMT(section) {
-  const header = parseSectionHeader(section);
+  const header = assertSection(section, 16, 'PMT');
+  const bodyEnd = 3 + header.sectionLength - 4;
   const pcrPid = ((section[8] & 0x1f) << 8) | section[9];
   const programInfoLength = ((section[10] & 0x0f) << 8) | section[11];
   let pos = 12 + programInfoLength;
-  const bodyEnd = section.length - 4;
+  if (pos > bodyEnd) throw parseError('PMT program info loop truncated');
   const streams = [];
-  while (pos + 5 <= bodyEnd) {
+  while (pos < bodyEnd) {
+    if (pos + 5 > bodyEnd) throw parseError('PMT stream loop truncated');
     const streamType = section[pos];
     const pid = ((section[pos + 1] & 0x1f) << 8) | section[pos + 2];
     const esInfoLength = ((section[pos + 3] & 0x0f) << 8) | section[pos + 4];
+    if (pos + 5 + esInfoLength > bodyEnd) throw parseError('PMT ES descriptors truncated');
     streams.push({
       pid,
       streamType,

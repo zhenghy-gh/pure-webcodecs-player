@@ -66,6 +66,20 @@ test('PsiAssembler：跨包 Section 重组（60 个流的超长 PMT）', () => {
   assert.equal(pmt.streams[59].pid, 0x23b);
 });
 
+test('PAT/PMT：声明长度或循环边界损坏时拒绝解析', () => {
+  assert.throws(
+    () => parsePAT(new Uint8Array([0x00, 0xb0, 0x09])),
+    (e) => e.code === 'PARSE_ERROR' && /section (truncated|length mismatch)/.test(e.message),
+  );
+
+  const pmt = buildPMT({ pcrPid: 0x0101, streams: [{ streamType: 0x1b, pid: 0x0101 }] });
+  pmt[16] = 0x10; // ES_info_length 声明超出 section 末尾
+  assert.throws(
+    () => parsePMT(pmt),
+    (e) => e.code === 'PARSE_ERROR' && /ES descriptors truncated/.test(e.message),
+  );
+});
+
 test('mpegCrc32 与已知向量一致', () => {
   // "123456789" 的 MPEG-2 CRC32 = 0x0376E6E7
   const data = new Uint8Array([0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39]);

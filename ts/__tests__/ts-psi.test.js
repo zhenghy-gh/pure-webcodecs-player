@@ -238,7 +238,25 @@ test('多节目分账：PMT_A 换版只重建自己的流，PMT_B 不受影响',
   assert.equal(ev.errors.length, 0);
 });
 
-/* ------------------------------ 粘包 ------------------------------ */
+test('坏 PMT 不应污染版本状态，后续合法同版本 PMT 仍可生效', () => {
+  resetCc();
+  const e = mkEngine();
+  const ev = attachCollector(e);
+  const pat = buildPAT([{ number: 1, pid: PMT_PID }]);
+  e.push(concatBytes(sectionToPackets(0x0000, pat)));
+
+  const bad = buildPMT({ pcrPid: VIDEO_PID, streams: [{ streamType: 0x1b, pid: VIDEO_PID }] });
+  bad[16] = 0x10;
+  e.push(concatBytes(sectionToPackets(PMT_PID, bad)));
+  assert.equal(e.pmtVersions.has(PMT_PID), false);
+  assert.equal(e.tracks.length, 0);
+
+  const good = buildPMT({ pcrPid: VIDEO_PID, streams: [{ streamType: 0x1b, pid: VIDEO_PID }] });
+  e.push(concatBytes(sectionToPackets(PMT_PID, good)));
+  assert.equal(e.tracks.length, 1);
+  assert.equal(ev.errors.length, 1);
+  assert.match(ev.errors[0].message, /ES descriptors truncated/);
+});
 
 test('同包双 section 粘包：仅 pointer_field 指向的首节生效，次节待下一个 PUSI', () => {
   const e = mkEngine();
