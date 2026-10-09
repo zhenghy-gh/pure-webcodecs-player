@@ -214,14 +214,13 @@ test('parseTrun 缺陷C：sample_count 巨大但无 per-sample 标志不得挂�
   assert.equal(r.sampleCount, 0xffffffff, 'sample_count 原样回显，仅作信息');
 });
 
-test('parseTrun 缺陷C：sample_count 超框体时按 contentEnd 收敛且不抛裸 RangeError', () => {
-  // hasDuration|hasSize(stride=8)，声明 1000 样本，但框体只容得下 2 行。
+test('parseTrun 缺陷C：sample_count 超框体时拒绝截断表而非静默丢样本', () => {
   const b = fullBox('trun', 0, 0x000100 | 0x000200,
-    u32(1000), u32(10), u32(20), u32(30), u32(40));
-  const r = parseTrun(b, 8, b.length);
-  assert.equal(r.rows.length, 2, '截断到框体内可容纳的完整行');
-  assert.equal(r.rows[0].duration, 10);
-  assert.equal(r.rows[1].size, 40);
+    u32(3), u32(10), u32(20), u32(30), u32(40));
+  assert.throws(
+    () => parseTrun(b, 8, b.length),
+    (error) => error.code === 'NOT_SUPPORTED' && /trun.*截断/.test(error.message),
+  );
 });
 
 test('parseTrun 缺陷C：有效 trun 全字段解析不受钳制影响', () => {

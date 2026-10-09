@@ -299,8 +299,11 @@ test('currentTimeSec：Worklet 欠载期间冻结音频主钟，恢复消费后�
     ctx.currentTime = 1.5;
     assert.equal(player.currentTimeSec(), 0.6);
 
+    const progress = [];
+    player.on('progress', (time) => progress.push(time));
     node.port.dispatch({ type: 'underrun', at: 1.5, playedFrames: 6960 });
     assert.equal(player.currentTimeSec(), 0.145, '主钟回到欠载时精确消费的 PCM 帧');
+    assert.equal(progress.at(-1), 0.145, '欠载同步发出的 progress 使用冻结后的主钟');
     ctx.currentTime = 2.5;
     assert.equal(player.currentTimeSec(), 0.145, 'AudioContext 前进但输出静音时主钟冻结');
     node.port.dispatch({ type: 'stats', bufferedFrames: 2000, playedFrames: 6960, sampleRate: 48000 });

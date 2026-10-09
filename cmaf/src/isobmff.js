@@ -245,6 +245,9 @@ export function parseTrun(buf, contentStart, contentEnd) {
   const maxByBytes = perSampleBytes > 0
     ? Math.floor((contentEnd - p) / perSampleBytes)
     : DEFAULT_MAX_TRUN_SAMPLES;
+  if (perSampleBytes > 0 && sampleCount > maxByBytes) {
+    throw notSupported(`ISO-BMFF trun 样本行截断: count=${sampleCount} available=${maxByBytes}`);
+  }
   const rowCount = Math.min(sampleCount, maxByBytes);
   for (let i = 0; i < rowCount; i++) {
     const row = { duration: 0, size: 0, flags: 0, cts: 0 };
