@@ -21,12 +21,15 @@ export class Stats extends Emitter {
     super();
     // 单调钟优先 performance.now（可被 NTP 回拨的 Date.now 兜底），与 core/src/clock.js 口径一致，
     // 避免系统时钟回拨导致 fps EMA 出现负 dt（markVideoRendered 虽已 dt>0 守卫，但优先单调源更稳）。
-    this._now =
-      options.now ??
-      (() =>
-        typeof performance !== 'undefined'
-          ? performance.now() / 1000
-          : Date.now() / 1000);
+    const nowFn = options.now ?? (() =>
+      typeof performance !== 'undefined' ? performance.now() / 1000 : Date.now() / 1000);
+    let lastNow = 0;
+    this._now = () => {
+      let value;
+      try { value = nowFn(); } catch { value = lastNow; }
+      if (Number.isFinite(value)) lastNow = value;
+      return lastNow;
+    };
     this.counters = {
       bytesDemuxed: 0,
       bytesAppended: 0,

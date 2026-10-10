@@ -156,3 +156,22 @@
 
 ### 提交和推送
 - 基于 maintenance/round-6 继续提交。
+
+## Attempt 14：修复 Stats 非有限时钟污染 FPS
+
+### 发现
+- 复现条件：Stats 注入的 now() 返回 NaN/Infinity 或抛出异常。
+- 根因：统计模块直接保存时钟回调，渲染时间锚点和 FPS 计算可能接收非有限时间。
+- 用户影响：FPS 统计可能失真，进度上报出现异常值。
+
+### 修改
+- core/src/stats.js：缓存最近一次有限 now 值；异常读取回退到该值。
+- core/__tests__/clock-stats.test.js：增加 Stats 异常时钟回退回归断言。
+
+### 验证
+- 定向测试：10/10 通过。
+- 全量测试：npm test 串行通过 3135/3135，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+- 真实浏览器：Chromium 156 + MSE 验收通过 19/19；无 console.error、pageerror、unhandledrejection 或网络失败。
+
+### 提交和推送
+- 基于 maintenance/round-6 继续提交。

@@ -177,6 +177,13 @@ test('Stats：demux 计数、decodeError 事件与 Date.now 时钟回退', async
     const stats = new Stats();
     assert.equal(stats._now(), 2, 'performance.now 应按秒换算');
   });
+  let now = 1;
+  const guarded = new Stats({ now: () => now });
+  assert.equal(guarded._now(), 1);
+  now = Number.NaN;
+  assert.equal(guarded._now(), 1);
+  now = 3;
+  assert.equal(guarded._now(), 3);
 });
 
 async function withGlobal(key, value, fn) {
