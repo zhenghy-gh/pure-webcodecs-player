@@ -327,3 +327,37 @@
 
 ### 下一轮候选
 - 继续审计 Player 与 MSE/WebCodecs 管线的同步 setter、pause/seek/destroy 竞态及事件转发边界。
+
+## Attempt 24：修复 AudioContext pause/resume 拒绝并收紧真实浏览器验收
+
+### 发现
+- 复现条件：浏览器 AudioContext 因用户手势、权限或设备状态导致 `resume()` / `suspend()` 返回 rejected Promise；AudioWorkletPlayer 原先只调用 Promise，不消费拒绝。
+- 根因：AudioWorklet 播放控制路径没有统一处理 WebAudio 异步控制 Promise，可能留下 `unhandledrejection`；同时 WebCodecs E2E 运行器只观察控制台，未区分媒体销毁时浏览器主动取消的正常请求。
+- 用户影响：真实浏览器控制台可能出现未处理拒绝，宿主无法通过播放器 `error` 事件感知音频输出失败；E2E 验收还可能把正常资源回收误报为网络故障。
+
+### 修改
+- core/src/audio-worklet-player.js：新增受保护的 AudioContext resume/suspend 辅助路径，同步 throw 与 rejected Promise 均转为 `DECODE_ERROR` 的 `error` 事件；成功 resume 仍派发 `resumed`，不改变原有播放状态 API。
+- core/__tests__/core-audio-worklet-env.test.js：FakeAudioContext 增加可控 resume/suspend 拒绝，补充两条无未处理拒绝且正确上报 error 的回归测试。
+- scripts/e2e/player-harness.html：声明空 favicon，避免 WebCodecs 验收页面产生无关 404。
+- scripts/e2e/run.mjs：捕获 pageerror、unhandledrejection 和 HTTP/request failure；将媒体 destroy 时 Chromium 的 `ERR_ABORTED` 单独标为主动取消，不把它当网络失败；真实 console error/pageerror、非预期网络失败或 unhandledrejection 使验收失败。该文件仅为开发验收工具，不进入运行时依赖。
+
+### 验证
+- 复现基线：原 AudioContext 控制路径对 rejected Promise 会留下未处理拒绝；修复后定向测试收到 `DECODE_ERROR`，无未处理拒绝。
+- 定向测试：`node --test --test-timeout=15000 core/__tests__/core-audio-worklet-env.test.js`，16/16 通过。
+- 全量测试：`npm test` 串行通过 3143/3143，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；check 内嵌测试 3143/3143，lint 检查 547 个 JS 文件。
+- 浏览器首次尝试：使用不存在的 `/samples/e2e/bbb480_30s.ts`，真实 Chromium 返回 404、退出码 1；已确认是工作区缺失媒体 fixture，不将其报告为通过，随后改用实际存在的 `sintel-trailer.mp4` 重跑。
+- 真实 Chromium WebCodecs：`scripts/e2e/run.mjs --harness=player-harness.html --media=/samples/e2e/sintel-trailer.mp4`，15/15 通过；能力探测、轨道解析、进入 playing、首帧（约 473ms）、播放推进（0.49→1.29s）、seek（12s→9.33s）、seek 后恢复（9.51→10.01s）、stats/buffered、背压、AudioWorklet 输出、destroy 均通过。无 console.error、pageerror、unhandledrejection 或非预期网络失败；仅有 Chromium headless 的 WebGL ReadPixels 性能 warning，以及 2 个 destroy 时主动取消媒体请求。
+- 真实 Chromium MSE：`scripts/e2e/run.mjs --harness=mse-harness.html --media=/samples/e2e/sintel-trailer.mp4`，19/19 通过；首帧（854x480、约 210ms）、播放推进、seek（20s→16.50s）、seek 后恢复（16.50→16.95s）、buffered、destroy 和 src 释放均通过。无 console.error、pageerror、unhandledrejection 或非预期网络失败；1 个主动取消媒体请求已单独记录。
+- E2E 生成截图已恢复为提交前版本，未纳入本轮提交。
+
+### 提交和推送
+- 本轮待提交：AudioWorklet 实现与回归测试、E2E 验收工具改进和本条 progress 记录。
+
+### 风险
+- headless Chromium 仍输出 WebGL `ReadPixels` 性能 warning；它不是页面 error，也未阻断播放，但属于当前浏览器/渲染环境噪声。
+- E2E runner 的默认 TS 样本在当前工作区不存在，默认命令仍需调用方提供存在的媒体或准备 fixture；本轮未伪造该路径。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 继续审计 WebCodecs 解码器/AudioWorklet 销毁竞态、Player 参数 setter 和 pause/seek 状态恢复；优先验证真实错误事件和资源释放。

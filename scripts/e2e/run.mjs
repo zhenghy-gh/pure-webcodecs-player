@@ -64,16 +64,32 @@ async function main() {
   });
   const page = await browser.newPage({ viewport: { width: 900, height: 640 } });
   const consoleMsgs = [];
+  const networkFailures = [];
+  const abortedRequests = [];
   page.on('console', (m) => { if (['error', 'warning'].includes(m.type())) consoleMsgs.push(`[${m.type()}] ${m.text()} @${m.location()?.url ?? ''}`); });
   page.on('pageerror', (e) => consoleMsgs.push(`[pageerror] ${e.message}`));
+  page.on('requestfailed', (request) => {
+    const reason = request.failure()?.errorText ?? 'request failed';
+    const record = `${request.url()}: ${reason}`;
+    if (reason === 'net::ERR_ABORTED') abortedRequests.push(record);
+    else networkFailures.push(record);
+  });
+  page.on('response', (response) => { if (response.status() >= 400) networkFailures.push(`${response.status()} ${response.url()}`); });
   await page.addInitScript(() => {
     try {
+      globalThis.__E2E_UNHANDLED_REJECTIONS__ = [];
+      globalThis.addEventListener('unhandledrejection', (event) => {
+        const reason = event.reason;
+        globalThis.__E2E_UNHANDLED_REJECTIONS__.push(String(reason?.stack ?? reason?.message ?? reason));
+      });
       const proto = typeof VideoDecoder !== 'undefined' && VideoDecoder.prototype;
       if (proto && !proto.__closeProbe) {
         proto.__closeProbe = true;
         const orig = proto.close;
         proto.close = function () {
-          console.error('[VD-CLOSE]' + (new Error().stack?.split('\n').slice(1, 8).join(' <- ') ?? ''));
+          (globalThis.__E2E_VIDEO_DECODER_CLOSES__ ??= []).push(
+            new Error().stack?.split('\n').slice(1, 8).join(' <- ') ?? '',
+          );
           return orig.apply(this, arguments);
         };
       }
@@ -95,6 +111,7 @@ async function main() {
   const result = await runPromise;
   await sleep(300);
   try { await page.screenshot({ path: shot }); } catch { /* 截图尽力而为 */ }
+  const unhandledRejections = await page.evaluate(() => globalThis.__E2E_UNHANDLED_REJECTIONS__ ?? []);
 
   await browser.close();
   server.kill();
@@ -111,8 +128,20 @@ async function main() {
     console.log('\n浏览器 console 告警/错误：');
     consoleMsgs.slice(0, 12).forEach((m) => console.log('  ' + m));
   }
+  if (networkFailures.length) {
+    console.log('\n浏览器网络失败：');
+    networkFailures.slice(0, 12).forEach((failure) => console.log('  ' + failure));
+  }
+  if (abortedRequests.length) {
+    console.log(`\n浏览器主动取消请求（非网络故障）：${abortedRequests.length}`);
+  }
+  if (unhandledRejections.length) {
+    console.log('\n浏览器 unhandledrejection：');
+    unhandledRejections.slice(0, 12).forEach((reason) => console.log('  ' + reason));
+  }
   console.log(`截图：${shot}`);
-  process.exit(result.ok ? 0 : 1);
+  process.exit(result.ok && networkFailures.length === 0 && unhandledRejections.length === 0
+    && !consoleMsgs.some((message) => message.startsWith('[error]') || message.startsWith('[pageerror]')) ? 0 : 1);
 }
 
 main().catch((err) => {

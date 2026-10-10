@@ -8,7 +8,7 @@
  * worklet 处理器代码以内联字符串 + Blob URL 注入，零构建、单文件可用。
  */
 import { Emitter } from './emitter.js';
-import { notSupported, stateError } from './errors.js';
+import { notSupported, stateError, decodeError } from './errors.js';
 
 /** AudioWorkletProcessor 源码（在 audio 线程运行） */
 export const PCM_WORKLET_CODE = /* js */ `
@@ -286,27 +286,51 @@ export class AudioWorkletPlayer extends Emitter {
     this._bufferedFrames += frames;
   }
 
+  _resumeContext() {
+    let result;
+    try { result = this.context?.resume?.(); } catch (error) {
+      this.emit('error', decodeError('AudioContext resume() 被拒绝', { cause: error }));
+      return;
+    }
+    if (result && typeof result.then === 'function') {
+      void Promise.resolve(result).then(() => this.emit('resumed')).catch((error) => {
+        this.emit('error', decodeError('AudioContext resume() 被拒绝', { cause: error }));
+      });
+    }
+  }
+
   play() {
     if (!this.context) throw stateError('call init() before play()');
     this.playing = true;
-    if (this.context.state === 'suspended') {
-      this.context.resume().then(() => this.emit('resumed'));
-    }
+    if (this.context.state === 'suspended') this._resumeContext();
     this._anchorCtxTime = this.context.currentTime;
     this._startedAt = this._playedFrames / this.sampleRate;
     this.emit('play');
   }
 
+  _suspendContext() {
+    let result;
+    try { result = this.context?.suspend?.(); } catch (error) {
+      this.emit('error', decodeError('AudioContext suspend() 被拒绝', { cause: error }));
+      return;
+    }
+    if (result && typeof result.then === 'function') {
+      void Promise.resolve(result).catch((error) => {
+        this.emit('error', decodeError('AudioContext suspend() 被拒绝', { cause: error }));
+      });
+    }
+  }
+
   pause() {
     this.playing = false;
-    this.context?.suspend?.();
+    this._suspendContext();
     this.emit('pause');
   }
 
   resume() {
     if (!this.context) return;
     this.playing = true;
-    this.context.resume().then(() => this.emit('resumed'));
+    this._resumeContext();
   }
 
   setVolume(v) {

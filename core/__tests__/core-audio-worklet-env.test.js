@@ -163,7 +163,9 @@ function makeFakes() {
       this.currentTime = 0;
       this.destination = { kind: 'destination' };
       this.resumed = 0;
+      this.resumeRejects = false;
       this.suspended = 0;
+      this.suspendRejects = false;
       this.closed = 0;
       this.gains = [];
       this.addModuleUrls = [];
@@ -175,8 +177,16 @@ function makeFakes() {
       this.gains.push(g);
       return g;
     }
-    async resume() { this.resumed++; this.state = 'running'; }
-    async suspend() { this.suspended++; this.state = 'suspended'; }
+    async resume() {
+      this.resumed++;
+      if (this.resumeRejects) throw new Error('resume 被拒');
+      this.state = 'running';
+    }
+    async suspend() {
+      this.suspended++;
+      if (this.suspendRejects) throw new Error('suspend 被拒');
+      this.state = 'suspended';
+    }
     async close() { this.closed++; }
   }
 
@@ -320,6 +330,34 @@ test('play/pause/resume 状态机：suspended 触发 resume、锚点与 startedA
     await new Promise((r) => setImmediate(r));
     assert.equal(ctx.resumed, 2);
     assert.deepEqual(events, ['play', 'resumed', 'pause', 'resumed']);
+  });
+});
+
+test('resume()：AudioContext 返回 rejected Promise 时上报 error 且无未处理拒绝', async (t) => {
+  await withPlayer(t, {}, async (player, fakes) => {
+    await player.init();
+    const ctx = fakes.ctxInstances[0];
+    const errors = [];
+    player.on('error', (error) => errors.push(error));
+    ctx.resumeRejects = true;
+    player.resume();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].code, ErrorCode.DECODE_ERROR);
+  });
+});
+
+test('pause()：AudioContext 返回 rejected Promise 时上报 error 且无未处理拒绝', async (t) => {
+  await withPlayer(t, {}, async (player, fakes) => {
+    await player.init();
+    const ctx = fakes.ctxInstances[0];
+    const errors = [];
+    player.on('error', (error) => errors.push(error));
+    ctx.suspendRejects = true;
+    player.pause();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].code, ErrorCode.DECODE_ERROR);
   });
 });
 
