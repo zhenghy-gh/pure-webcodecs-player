@@ -638,7 +638,7 @@ export class WebCodecsPipeline extends Emitter {
 
   /** 主时钟（秒）：音频优先，否则单调钟 */
   currentTimeSec() {
-    if (this.audioOutput && typeof this.audioOutput.currentTimeUs === 'number') {
+    if (this.audioOutput && Number.isFinite(this.audioOutput.currentTimeUs)) {
       return this._offsetUs / 1_000_000 + this.audioOutput.currentTimeUs / 1_000_000;
     }
     return this._clock.getTimeSec();

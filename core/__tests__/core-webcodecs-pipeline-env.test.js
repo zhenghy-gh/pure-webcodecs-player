@@ -578,6 +578,11 @@ test('currentTimeSec：音频主钟优先（offset + audioOutput），否则单�
   pipeline._offsetUs = 1_000_000;
   assert.equal(pipeline.currentTimeUs, 3_000_000, 'offset(1s) + audio(2s)');
 
+  // 音频时钟异常时必须回退单调时钟，不能把 NaN/Infinity 暴露给 Player。
+  audioOutput._currentTimeUs = Number.NaN;
+  pipeline._clock.seekTo(0.75);
+  assert.equal(pipeline.currentTimeUs, 750_000);
+
   const noAudio = build({ audioOutput: null, options: { now: () => 0 } });
   await noAudio.pipeline.init();
   noAudio.pipeline._clock.seekTo(0.5);

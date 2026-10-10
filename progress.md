@@ -92,7 +92,29 @@
 - 真实浏览器：Chromium 156 + MSE 验收通过 19/19，覆盖首帧、播放推进、seek 后恢复、buffered、destroy；无 console.error、pageerror、unhandledrejection 或网络失败。
 
 ### 提交和推送
-- 基于 maintenance/round-6 继续提交。
+- 基于 maintenance/round-6 继续提交并推送。
 
 ### 风险与下一轮
 - 本轮仅收紧 buffered 公开语义，不改变数据追加或播放时钟。
+
+## Attempt 11：修复 WebCodecs 非有限音频时钟污染主时钟
+
+### 发现
+- 复现条件：AudioOutput.currentTimeUs 返回 NaN 或 Infinity。
+- 根因：WebCodecs 管线仅检查类型为 number，非有限值会参与偏移换算，Player.currentTimeUs 随之变成非有限值。
+- 用户影响：播放进度、缓冲水位和同步决策可能被 NaN/Infinity 污染。
+
+### 修改
+- core/src/pipeline-webcodecs.js：只有有限音频时钟才作为主时钟；异常时回退单调 PlaybackClock。
+- core/__tests__/core-webcodecs-pipeline-env.test.js：增加 NaN 音频时钟回退回归断言。
+
+### 验证
+- 定向测试：node --test --test-timeout=15000 core/__tests__/core-webcodecs-pipeline-env.test.js，30/30 通过。
+- 全量测试：npm test 串行通过 3134/3134，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+- 真实浏览器：Chromium 156 + MSE 验收通过 19/19；无 console.error、pageerror、unhandledrejection 或网络失败。
+
+### 提交和推送
+- 基于 maintenance/round-6 继续提交。
+
+### npm 发布
+- 第十轮已完成 npm pack --dry-run；npm whoami 因 ENEEDAUTH 失败，实际发布待 npm 登录后执行。
