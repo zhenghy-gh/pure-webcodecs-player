@@ -380,7 +380,9 @@ export class AudioWorkletPlayer extends Emitter {
     try {
       this.node?.disconnect();
       this.gainNode?.disconnect();
-      this.context?.close?.();
+      const result = this.context?.close?.();
+      // AudioContext.close() 返回 Promise；销毁路径不能留下 unhandledrejection。
+      if (result && typeof result.then === 'function') void Promise.resolve(result).catch(() => {});
     } catch {
       /* 忽略关闭竞态 */
     }

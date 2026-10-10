@@ -361,3 +361,34 @@
 
 ### 下一轮候选
 - 继续审计 WebCodecs 解码器/AudioWorklet 销毁竞态、Player 参数 setter 和 pause/seek 状态恢复；优先验证真实错误事件和资源释放。
+
+## Attempt 25：修复 AudioContext destroy() 异步拒绝
+
+### 发现
+- 复现条件：AudioContext 的 `close()` 在 destroy 期间返回 rejected Promise（设备/上下文关闭竞态）；调用 `AudioWorkletPlayer.destroy()`。
+- 根因：destroy 原先只用同步 try/catch；异步 close rejection 没有被消费，会触发 `unhandledrejection`。
+- 用户影响：销毁本应是幂等、静默的资源回收路径，却可能污染控制台并触发宿主全局未处理拒绝监控。
+
+### 修改
+- core/src/audio-worklet-player.js：消费 `AudioContext.close()` 的 thenable rejection；保持 destroy 同步返回、资源引用清理与既有事件/公共 API 不变。
+- core/__tests__/core-audio-worklet-env.test.js：FakeAudioContext 增加 close 拒绝能力，增加 destroy 异步拒绝回归测试。
+
+### 验证
+- 复现基线：注入返回 rejected Promise 的 AudioContext.close，原实现真实触发 Node `unhandledRejection`；修复后拒绝被消费。
+- 定向测试：`node --test --test-timeout=15000 core/__tests__/core-audio-worklet-env.test.js`，17/17 通过。
+- 全量测试：`npm test` 串行通过 3144/3144，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；check 内嵌测试 3144/3144，lint 检查 547 个 JS 文件。
+- 真实 Chromium WebCodecs：`scripts/e2e/run.mjs --harness=player-harness.html --media=/samples/e2e/sintel-trailer.mp4`，15/15 通过；首帧约 489ms、播放推进 0.50→1.30s、seek 12s→9.33s、seek 后恢复 9.50→10.01s、stats/buffered、背压、AudioWorklet、destroy 均通过；无 console.error、pageerror、unhandledrejection 或非预期网络失败，仅 2 个 destroy 主动取消媒体请求和 headless WebGL 性能 warning。
+- 真实 Chromium MSE：同媒体执行 `--harness=mse-harness.html`，19/19 通过；首帧 854x480 约 207ms、播放推进 0.08→0.88s、seek 20s→16.50s、seek 后恢复 16.50→16.93s、buffered、水位、destroy 和 src 释放均通过；无 console.error、pageerror、unhandledrejection 或非预期网络失败，仅 1 个主动取消请求。
+- E2E 生成截图已恢复为提交前版本，未纳入提交。
+
+### 提交和推送
+- 本轮待提交：AudioWorklet destroy 修复、回归测试和 progress.md。
+
+### 风险
+- AudioContext close rejection 按 destroy 语义静默忽略；资源回收失败不会通过 error 事件上报，因为对象已进入 destroyed。
+- headless Chromium WebGL ReadPixels warning 仍是环境噪声，不影响上述真实播放断言。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 审计 Player 参数 setter 与 MSE/WebCodecs 管线 setter 的异常/Promise 边界，或检查 destroy 后延迟控制调用是否仍会泄漏拒绝。

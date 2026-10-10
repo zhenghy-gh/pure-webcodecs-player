@@ -166,6 +166,7 @@ function makeFakes() {
       this.resumeRejects = false;
       this.suspended = 0;
       this.suspendRejects = false;
+      this.closeRejects = false;
       this.closed = 0;
       this.gains = [];
       this.addModuleUrls = [];
@@ -187,7 +188,10 @@ function makeFakes() {
       if (this.suspendRejects) throw new Error('suspend 被拒');
       this.state = 'suspended';
     }
-    async close() { this.closed++; }
+    async close() {
+      this.closed++;
+      if (this.closeRejects) throw new Error('close 被拒');
+    }
   }
 
   class FakeAudioWorkletNode {
@@ -358,6 +362,17 @@ test('pause()：AudioContext 返回 rejected Promise 时上报 error 且无未�
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(errors.length, 1);
     assert.equal(errors[0].code, ErrorCode.DECODE_ERROR);
+  });
+});
+
+test('destroy()：AudioContext close 返回 rejected Promise 时不产生未处理拒绝', async (t) => {
+  await withPlayer(t, {}, async (player, fakes) => {
+    await player.init();
+    fakes.ctxInstances[0].closeRejects = true;
+    player.destroy();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, true);
+    assert.equal(player.context, null);
   });
 });
 
