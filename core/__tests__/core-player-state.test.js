@@ -886,6 +886,19 @@ test('volume/playbackRate/muted：合法值透传管线，非法值拒绝且不�
   await player.destroy();
 });
 
+test('buffered：底层区间读取异常时安全回退为空或其他来源', () => {
+  const player = new Player();
+  player.demuxer = { getBufferedRanges: () => { throw new Error('stale source buffer'); } };
+  player.pipeline = { getBufferedRanges: () => { throw new Error('detached media source'); }, bufferedAheadUs: 0 };
+  assert.deepEqual(player.buffered, []);
+  const ranges = [{ startUs: 100, endUs: 200 }];
+  player.pipeline.getBufferedRanges = () => ranges;
+  assert.deepEqual(player.buffered, ranges, 'demuxer 失败后仍读取有效管线范围');
+  player.pipeline.getBufferedRanges = () => { throw new Error('detached media source'); };
+  player.pipeline.bufferedAheadUs = 500;
+  assert.deepEqual(player.buffered, [{ startUs: 0, endUs: 500 }], '范围失败后沿用水位兜底');
+});
+
 test('currentTimeUs：外部时钟返回非有限值时保持有限且不跳变', () => {
   const clock = { getTimeSec: () => Number.NaN };
   const player = new Player({ clock });

@@ -213,3 +213,22 @@
 
 ### 提交和推送
 - 基于 maintenance/round-6 继续提交。
+
+## Attempt 17：修复 Player buffered 读取异常崩溃
+
+### 发现
+- 复现条件：demuxer 或 pipeline 在销毁/SourceBuffer 失效期间，getBufferedRanges() 抛出异常。
+- 根因：Player.buffered 直接调用底层区间读取，没有隔离底层生命周期异常。
+- 用户影响：UI 读取 buffered 可能同步抛错，阻断进度展示和播放控制。
+
+### 修改
+- core/src/player.js：分别保护 demuxer 与 pipeline 的缓冲区间读取；失败后继续尝试其他来源，再回退到 bufferedAheadUs 合成区间或空数组。
+- core/__tests__/core-player-state.test.js：覆盖双来源异常、有效管线回退和水位合成回退。
+
+### 验证
+- 定向测试：36/36 通过。
+- 全量测试：npm test 串行通过 3138/3138，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+- 真实浏览器：Chromium 156 + MSE 验收通过 19/19；无 console.error、pageerror、unhandledrejection 或网络失败。
+
+### 提交和推送
+- 基于 maintenance/round-6 继续提交。

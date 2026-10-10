@@ -169,9 +169,11 @@ export class Player extends Emitter {
    * 管线水位合成（仅有 bufferedAheadUs 时）→ 空数组。
    */
   get buffered() {
-    const fromDemuxer = this.demuxer?.getBufferedRanges?.();
+    let fromDemuxer;
+    try { fromDemuxer = this.demuxer?.getBufferedRanges?.(); } catch {}
     if (Array.isArray(fromDemuxer) && fromDemuxer.length > 0) return fromDemuxer;
-    const fromPipeline = this.pipeline?.getBufferedRanges?.();
+    let fromPipeline;
+    try { fromPipeline = this.pipeline?.getBufferedRanges?.(); } catch {}
     if (Array.isArray(fromPipeline) && fromPipeline.length > 0) return fromPipeline;
     const ahead = this.bufferedAheadUs;
     if (typeof ahead === 'number' && ahead > 0) {
