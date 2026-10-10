@@ -38,12 +38,15 @@ export class PlaybackClock extends Emitter {
    */
   constructor(options = {}) {
     super();
-    this._now =
-      options.now ??
-      (() =>
-        typeof performance !== 'undefined'
-          ? performance.now() / 1000
-          : Date.now() / 1000);
+    const nowFn = options.now ?? (() =>
+      typeof performance !== 'undefined' ? performance.now() / 1000 : Date.now() / 1000);
+    let lastNow = 0;
+    this._now = () => {
+      let value;
+      try { value = nowFn(); } catch { value = lastNow; }
+      if (Number.isFinite(value)) lastNow = value;
+      return lastNow;
+    };
     this._mediaAnchor = 0;
     this._monoAnchor = this._now();
     this._rate = 1;

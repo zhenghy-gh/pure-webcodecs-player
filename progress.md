@@ -137,3 +137,22 @@
 
 ### 提交和推送
 - 基于 maintenance/round-6 继续提交。
+
+## Attempt 13：修复 PlaybackClock 非有限 now 值污染
+
+### 发现
+- 复现条件：注入的单调时钟回调返回 NaN/Infinity，或时钟读取本身抛异常。
+- 根因：PlaybackClock 直接使用 now() 结果计算播放时间，异常值会污染主时钟。
+- 用户影响：播放进度和 A/V 同步决策可能产生非有限时间或跳变。
+
+### 修改
+- core/src/clock.js：缓存最近一次有限单调时钟值；now 异常、抛错或非有限时回退该值。
+- core/__tests__/clock-stats.test.js：增加 NaN/Infinity 时钟回退与不跳变回归测试。
+
+### 验证
+- 定向测试：10/10 通过。
+- 全量测试：npm test 串行通过 3135/3135，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+- 真实浏览器：Chromium 156 + MSE 验收通过 19/19；无 console.error、pageerror、unhandledrejection 或网络失败。
+
+### 提交和推送
+- 基于 maintenance/round-6 继续提交。

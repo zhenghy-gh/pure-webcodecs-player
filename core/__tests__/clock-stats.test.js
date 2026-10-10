@@ -31,6 +31,18 @@ test('PlaybackClock 播放/暂停/seek/倍速', () => {
   assert.equal(clock.getTimeSec(), 50);
 });
 
+test('PlaybackClock：now 返回非有限值时保持有限且不跳变', () => {
+  let now = 1;
+  const clock = new PlaybackClock({ now: () => now });
+  clock.play(2);
+  now = Number.NaN;
+  assert.equal(clock.getTimeSec(), 2);
+  now = 3;
+  assert.equal(clock.getTimeSec(), 4);
+  now = Infinity;
+  assert.equal(clock.getTimeSec(), 4);
+});
+
 test('PlaybackClock rejects non-finite seek positions', () => {
   const clock = new PlaybackClock({ now: manualClock().now });
   for (const value of [NaN, Infinity, -Infinity]) {
