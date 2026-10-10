@@ -51,3 +51,26 @@
 ### 风险与下一轮
 - 本轮修复未改变公共 API；仅收紧 bufferedAhead 的连续可播放语义。
 - 下一步：提交本轮修复并推送维护分支。
+
+## Attempt 8：修复 MSE 多轨 buffered 错误返回并集
+
+### 发现
+- 复现条件：活动视频轨与音频轨的 SourceBuffer.buffered 区间不完全重叠。
+- 根因：MSE 管线原先逐轨拼接区间并返回并集；只有单轨存在数据的时间段也会被公开为可播放缓冲区间。
+- 用户影响：Player.buffered 可能虚报可播放范围，seek UI 或预加载逻辑据此做出错误判断，并在音视频不同步处遇到卡顿。
+
+### 修改
+- core/src/pipeline-mse.js：活动音视频轨的 buffered 区间改为求交集，仅报告两条活动轨均可用的区间；过滤零长度区间。
+- core/__tests__/core-pipeline-mse-branches.test.js：补充多轨区间交集回归断言。
+
+### 验证
+- 定向测试：node --test --test-timeout=15000 core/__tests__/core-pipeline-mse-branches.test.js，21/21 通过。
+- 全量测试：npm test 串行通过 3134/3134，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+- 真实浏览器：Chromium 156 + MSE 验收通过 19/19，覆盖首帧、播放推进、seek 后恢复、buffered 交集、destroy；无 console.error、pageerror、unhandledrejection 或网络失败。
+
+### 提交和推送
+- 基于 maintenance/round-6 继续提交，保持不覆盖 origin/main 历史。
+
+### 风险与下一轮
+- 本轮只改变公开 buffered 区间计算，不改变 SourceBuffer 写入和播放时钟。
+- 下一步：提交本轮修复并推送维护分支。

@@ -285,9 +285,8 @@ test('getBufferedRanges：逐活动轨取区间转微秒；无能力返回 null'
   await pipeline.init();
   mse.rangesByKey.set('v1', { length: 2, start: (i) => [0, 10][i], end: (i) => [4, 12][i] });
   mse.rangesByKey.set('a2', { length: 1, start: () => 1.5, end: () => 2.5 });
+  // 公开 buffered 是可播放区间，必须取活动音视频轨的交集，而不是逐轨并集。
   assert.deepEqual(pipeline.getBufferedRanges(), [
-    { startUs: 0, endUs: 4_000_000 },
-    { startUs: 10_000_000, endUs: 12_000_000 },
     { startUs: 1_500_000, endUs: 2_500_000 },
   ]);
 

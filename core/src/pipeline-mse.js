@@ -22,6 +22,21 @@ function defaultSchedule(fn, ms) {
   return () => clearTimeout(t);
 }
 
+/** @param {{startUs:number,endUs:number}[]} left @param {{startUs:number,endUs:number}[]} right */
+function intersectRanges(left, right) {
+  const out = [];
+  let i = 0;
+  let j = 0;
+  while (i < left.length && j < right.length) {
+    const startUs = Math.max(left[i].startUs, right[j].startUs);
+    const endUs = Math.min(left[i].endUs, right[j].endUs);
+    if (endUs > startUs) out.push({ startUs, endUs });
+    if (left[i].endUs < right[j].endUs) i += 1;
+    else j += 1;
+  }
+  return out;
+}
+
 /** 默认 fMP4 重封装器：按需延迟引入 mp4 模块（core 不硬依赖上层容器模块） */
 async function defaultRemuxerFactory() {
   try {
@@ -336,17 +351,23 @@ export class MsePipeline extends Emitter {
    */
   getBufferedRanges() {
     if (!this.mse || typeof this.mse.buffered !== 'function') return null;
-    const out = [];
+    let out = null;
     for (const track of this._tracks.values()) {
       if (track.type !== 'video' && track.type !== 'audio') continue;
       if (this.active[track.type] !== track.id) continue;
       const ranges = this.mse.buffered(this._keyOf(track));
       if (!ranges) continue;
+      const current = [];
       for (let i = 0; i < ranges.length; i++) {
-        out.push({ startUs: Math.round(ranges.start(i) * 1_000_000), endUs: Math.round(ranges.end(i) * 1_000_000) });
+        const startUs = Math.round(ranges.start(i) * 1_000_000);
+        const endUs = Math.round(ranges.end(i) * 1_000_000);
+        if (endUs > startUs) current.push({ startUs, endUs });
       }
+      // HTMLMediaElement/MSE 可播放范围是活动音视频轨的交集；
+      // 返回并集会把只有单轨数据的区间误报成可播放。
+      out = out === null ? current : intersectRanges(out, current);
     }
-    return out;
+    return out ?? [];
   }
 
   _emitCue(sample) {
