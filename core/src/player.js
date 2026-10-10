@@ -153,7 +153,12 @@ export class Player extends Emitter {
       return (this.currentTimeValue = pipeUs);
     }
     if (this.stateValue === PLAYER_STATES.PLAYING) {
-      this.currentTimeValue = Math.max(this.currentTimeValue, Math.round(this.clock.getTimeSec() * 1e6));
+      let clockUs;
+      try {
+        const clockSec = this.clock.getTimeSec();
+        if (Number.isFinite(clockSec)) clockUs = Math.round(clockSec * 1e6);
+      } catch {}
+      if (Number.isFinite(clockUs)) this.currentTimeValue = Math.max(this.currentTimeValue, clockUs);
     }
     return this.currentTimeValue;
   }

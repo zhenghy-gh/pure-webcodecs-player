@@ -194,3 +194,22 @@
 
 ### 提交和推送
 - 基于 maintenance/round-6 继续提交。
+
+## Attempt 16：修复 Player currentTimeUs 外部时钟污染
+
+### 发现
+- 复现条件：注入的播放时钟 getTimeSec() 返回 NaN/Infinity 或抛出异常。
+- 根因：Player.currentTimeUs 直接将外部时钟换算为微秒，异常值可能污染公共播放时间。
+- 用户影响：timeupdate、同步决策和 UI 播放进度可能收到非有限值。
+
+### 修改
+- core/src/player.js：读取外部时钟时增加异常捕获和有限性校验，仅接受有限微秒值。
+- core/__tests__/core-player-state.test.js：增加 currentTimeUs 非有限时钟回退回归测试。
+
+### 验证
+- 定向测试：35/35 通过。
+- 全量测试：npm test 串行通过 3137/3137，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+- 真实浏览器：Chromium 156 + MSE 验收通过 19/19；无 console.error、pageerror、unhandledrejection 或网络失败。
+
+### 提交和推送
+- 基于 maintenance/round-6 继续提交。

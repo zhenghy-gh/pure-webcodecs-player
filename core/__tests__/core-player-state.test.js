@@ -886,6 +886,15 @@ test('volume/playbackRate/muted：合法值透传管线，非法值拒绝且不�
   await player.destroy();
 });
 
+test('currentTimeUs：外部时钟返回非有限值时保持有限且不跳变', () => {
+  const clock = { getTimeSec: () => Number.NaN };
+  const player = new Player({ clock });
+  player.stateValue = PLAYER_STATES.PLAYING;
+  assert.equal(player.currentTimeUs, 0);
+  clock.getTimeSec = () => Infinity;
+  assert.equal(player.currentTimeUs, 0);
+});
+
 test('码率统计：now 返回非有限值时保持有限且不污染窗口', () => {
   let now = 1;
   const player = new Player({ now: () => now });
