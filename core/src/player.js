@@ -192,8 +192,9 @@ export class Player extends Emitter {
   }
   /** 管线自报的缓冲水位（µs）；管线不提供时为 null（不参与背压判定） */
   get bufferedAheadUs() {
-    const ahead = this.pipeline?.bufferedAheadUs;
-    return typeof ahead === 'number' && Number.isFinite(ahead) ? ahead : null;
+    let ahead;
+    try { ahead = this.pipeline?.bufferedAheadUs; } catch { return null; }
+    return typeof ahead === 'number' && Number.isFinite(ahead) && ahead >= 0 ? ahead : null;
   }
   get videoTracks() { return this.tracksOf('video'); }
   get audioTracks() { return this.tracksOf('audio'); }

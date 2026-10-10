@@ -247,3 +247,25 @@
 
 ### 提交和推送
 - 基于 maintenance/round-6 继续提交。
+
+## Attempt 21：修复 Player bufferedAheadUs 读取异常
+
+### 发现
+- 复现条件：管线在销毁或输出资源失效期间，读取 bufferedAheadUs getter 抛出异常，或返回负数、NaN 等非法水位。
+- 根因：Player.bufferedAheadUs 直接读取底层 getter，仅校验类型和有限性，没有隔离生命周期异常或拒绝负水位。
+- 用户影响：buffered、背压和预缓冲逻辑可能同步抛错，或将无效水位当作可用数据。
+
+### 修改
+- core/src/player.js：保护管线水位 getter；异常、负数和非有限值统一回退 null，保留 0 作为合法水位。
+- core/__tests__/core-player-state.test.js：增加异常 getter、负数、NaN 和零水位回归测试。
+
+### 验证
+- 定向测试：37/37 通过。
+- 全量测试：npm test 串行通过 3139/3139，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+- 真实浏览器：Chromium 156 + MSE 验收通过 19/19；无 console.error、pageerror、unhandledrejection 或网络失败。
+
+### 提交和推送
+- 基于 maintenance/round-6 继续提交。
+
+### 阶段性说明
+- 按当前维护策略不执行 npm 发布、版本递增、release commit、tag 或 npm 包发布；npm 仅作为测试工具使用。

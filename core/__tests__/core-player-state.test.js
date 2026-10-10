@@ -886,6 +886,18 @@ test('volume/playbackRate/muted：合法值透传管线，非法值拒绝且不�
   await player.destroy();
 });
 
+test('bufferedAheadUs：底层水位读取异常或为负值时安全返回 null', () => {
+  const player = new Player();
+  player.pipeline = { get bufferedAheadUs() { throw new Error('detached output'); } };
+  assert.equal(player.bufferedAheadUs, null);
+  player.pipeline = { bufferedAheadUs: -1 };
+  assert.equal(player.bufferedAheadUs, null);
+  player.pipeline = { bufferedAheadUs: Number.NaN };
+  assert.equal(player.bufferedAheadUs, null);
+  player.pipeline = { bufferedAheadUs: 0 };
+  assert.equal(player.bufferedAheadUs, 0);
+});
+
 test('buffered：底层区间读取异常时安全回退为空或其他来源', () => {
   const player = new Player();
   player.demuxer = { getBufferedRanges: () => { throw new Error('stale source buffer'); } };
