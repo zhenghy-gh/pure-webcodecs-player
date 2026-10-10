@@ -69,6 +69,11 @@ function asPlayerError(error, fallback = '播放器管线失败') {
   return new PlayerError('SOURCE_ERROR', fallback, { cause: error });
 }
 
+function asControlError(error) {
+  if (error instanceof PlayerError) return error;
+  return new PlayerError('DECODE_ERROR', '播放控制失败', { cause: error });
+}
+
 function validBufferedRanges(ranges) {
   if (!Array.isArray(ranges)) return [];
   return ranges.filter((range) => range && Number.isFinite(range.startUs)
@@ -205,20 +210,38 @@ export class Player extends Emitter {
     const s = this.statsValue.snapshot();
     return { ...s, droppedFrames: s.videoFramesDropped, underrunCount: s.audioUnderruns, decodedFps: s.fps, bitrateBps: this._bitrateBps() };
   }
+  _applyControl(method, value) {
+    let result;
+    try { result = this.pipeline?.[method]?.(value); } catch (error) {
+      const e = asControlError(error);
+      this.emit('error', e);
+      throw e;
+    }
+    if (result && typeof result.then === 'function') {
+      void Promise.resolve(result).catch((error) => {
+        this.emit('error', asControlError(error));
+      });
+    }
+    return result;
+  }
   get volume() { return this._volume; }
   set volume(value) {
     if (!Number.isFinite(value) || value < 0 || value > 1) throw stateError(`invalid volume: ${value}`);
+    this._applyControl('setVolume', value);
     this._volume = value;
-    this.pipeline?.setVolume?.(value);
   }
   get muted() { return this._muted; }
-  set muted(value) { this._muted = Boolean(value); this.pipeline?.setMuted?.(this._muted); }
+  set muted(value) {
+    const next = Boolean(value);
+    this._applyControl('setMuted', next);
+    this._muted = next;
+  }
   get playbackRate() { return this._playbackRate; }
   set playbackRate(value) {
     if (!Number.isFinite(value) || value <= 0) throw stateError(`invalid playbackRate: ${value}`);
-    this._playbackRate = value;
+    this._applyControl('setPlaybackRate', value);
     this.clock.setRate(value);
-    this.pipeline?.setPlaybackRate?.(value);
+    this._playbackRate = value;
   }
 
   tracksOf(type) { return (this.mediaInfoValue?.tracks ?? []).filter((t) => t.type === type); }

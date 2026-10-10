@@ -392,3 +392,33 @@
 
 ### 下一轮候选
 - 审计 Player 参数 setter 与 MSE/WebCodecs 管线 setter 的异常/Promise 边界，或检查 destroy 后延迟控制调用是否仍会泄漏拒绝。
+
+## Attempt 26：修复 Player 控制 setter 的管线异常泄漏
+
+### 发现
+- 复现条件：管线在 detach/destroy 或底层媒体元素失效期间，`setVolume`、`setMuted` 或 `setPlaybackRate` 同步抛错，或返回 rejected Promise；通过 Player 属性 setter 修改控制参数。
+- 根因：Player 先写本地状态再直接透传管线，既会把底层异常直接暴露为普通 Error，也会在异步拒绝时产生 `unhandledrejection`，并留下 Player 本地值与实际管线状态不一致。
+- 用户影响：音量、静音或速度控制可能污染宿主控制流/控制台；失败控制还会被 UI 误认为已生效。
+
+### 修改
+- core/src/player.js：新增统一控制透传边界；同步异常转换为 `DECODE_ERROR`、派发 Player `error` 并抛出；thenable 拒绝被消费并派发 `error`；同步失败时本地 volume/muted/playbackRate 保持原值，成功调用后再更新本地值。
+- core/__tests__/core-player-state.test.js：增加同步失败状态回滚和异步拒绝消费回归测试，覆盖三个 setter。
+
+### 验证
+- 复现基线：注入会抛错的管线 setter，原实现直接抛出 `detached` 且本地值已被污染（volume=0.2、muted=true、playbackRate=1.5）；修复后抛 `DECODE_ERROR`、派发 error 且保留默认本地值。
+- 定向测试：`node --test --test-timeout=15000 core/__tests__/core-player-state.test.js`，40/40 通过。
+- 全量测试：`npm test` 串行通过 3146/3146，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；check 内嵌测试 3146/3146，lint 检查 547 个 JS 文件。
+- 真实 Chromium WebCodecs：`scripts/e2e/run.mjs --harness=player-harness.html --media=/samples/e2e/sintel-trailer.mp4`，15/15 通过；首帧约 463ms、播放推进 0.47→1.37s、seek 12s→9.33s、seek 后恢复 9.50→10.01s、stats/buffered、背压、AudioWorklet 输出和 destroy 均通过；无 console.error、pageerror、unhandledrejection 或非预期网络失败，仅 2 个主动取消媒体请求和 headless WebGL warning。
+- 真实 Chromium MSE：`--harness=mse-harness.html`，19/19 通过；首帧 854x480 约 220ms、播放推进 0.09→0.89s、seek 20s→16.50s、seek 后恢复 16.50→16.95s、buffered、水位、destroy 和 src 释放均通过；无 console.error、pageerror、unhandledrejection 或非预期网络失败，仅 1 个主动取消请求。
+- E2E 截图已恢复为提交前版本，未纳入提交。
+
+### 提交和推送
+- 本轮待提交：Player 控制边界实现、回归测试和 progress.md。
+
+### 风险
+- 管线异步 setter 拒绝通过 error 事件异步通知，属性 setter 本身按同步 API 返回；宿主需要监听 error 处理底层控制失败。
+- 本轮未改变公共 setter 名称或合法值校验；未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 审计 Player 的 play/pause/seek 对管线同步 throw、异步 Promise rejection 的统一处理，以及 destroy 后迟到控制结果是否仍会触发 error。

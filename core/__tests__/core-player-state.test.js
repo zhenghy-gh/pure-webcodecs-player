@@ -886,6 +886,45 @@ test('volume/playbackRate/muted：合法值透传管线，非法值拒绝且不�
   await player.destroy();
 });
 
+test('控制 setter：管线同步失败时发 error、抛 PlayerError 且不污染本地状态', () => {
+  const player = new Player();
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  player.pipeline = {
+    setVolume() { throw new Error('detached volume'); },
+    setMuted() { throw new Error('detached muted'); },
+    setPlaybackRate() { throw new Error('detached rate'); },
+  };
+  assert.throws(() => { player.volume = 0.25; }, (error) => error.code === 'DECODE_ERROR');
+  assert.throws(() => { player.muted = true; }, (error) => error.code === 'DECODE_ERROR');
+  assert.throws(() => { player.playbackRate = 1.5; }, (error) => error.code === 'DECODE_ERROR');
+  assert.equal(player.volume, 1);
+  assert.equal(player.muted, false);
+  assert.equal(player.playbackRate, 1);
+  assert.equal(errors.length, 3);
+  assert.ok(errors.every((error) => error.code === 'DECODE_ERROR'));
+});
+
+test('控制 setter：管线异步拒绝时消费 Promise 并发 error', async () => {
+  const player = new Player();
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  player.pipeline = {
+    setVolume: () => Promise.reject(new Error('async volume failure')),
+    setMuted: () => Promise.reject(new Error('async muted failure')),
+    setPlaybackRate: () => Promise.reject(new Error('async rate failure')),
+  };
+  player.volume = 0.25;
+  player.muted = true;
+  player.playbackRate = 1.5;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(errors.length, 3);
+  assert.ok(errors.every((error) => error.code === 'DECODE_ERROR'));
+  assert.equal(player.volume, 0.25);
+  assert.equal(player.muted, true);
+  assert.equal(player.playbackRate, 1.5);
+});
+
 test('bufferedAheadUs：底层水位读取异常或为负值时安全返回 null', () => {
   const player = new Player();
   player.pipeline = { get bufferedAheadUs() { throw new Error('detached output'); } };
