@@ -37,7 +37,7 @@ export function parseTimestamp(str) {
   const hours = m[1] ? Number.parseInt(m[1], 10) : 0;
   const minutes = Number.parseInt(m[2], 10);
   const seconds = Number.parseInt(m[3], 10);
-  if (minutes > 59 || seconds > 59) {
+  if (hours > 999 || minutes > 59 || seconds > 59) {
     throw new SubtitleError('PARSE_ERROR', `时间码分/秒越界（>59）：「${str.trim()}」`, { detail: { raw: str } });
   }
   // 小数位右补零、超长截断到毫秒（3 位）：'5'→500ms，'52'→520ms，'1234'→123ms

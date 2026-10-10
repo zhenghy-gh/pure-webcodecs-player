@@ -27,6 +27,15 @@ export class SourceError extends PlayerError {
   }
 }
 
+/** Validate byte windows before slicing or issuing network requests. */
+function validateRead(offset, length) {
+  if (!Number.isSafeInteger(offset) || offset < 0 ||
+      !Number.isSafeInteger(length) || length < 0 ||
+      !Number.isSafeInteger(offset + length)) {
+    throw new SourceError('read 参数非法', 'BAD_RANGE');
+  }
+}
+
 /** 内存源 */
 export class BufferSource {
   /** @param {Uint8Array|ArrayBuffer} data */
@@ -37,7 +46,7 @@ export class BufferSource {
   /** 契约 §2.1 DataSource 字段名（size；byteLength 为兼容别名） */
   get size() { return this.bytes.length; }
   async read(offset, length) {
-    if (offset < 0 || length < 0) throw new SourceError('read 参数非法');
+    validateRead(offset, length);
     if (length === 0) return new Uint8Array(0);
     if (offset >= this.bytes.length) {
       throw new SourceError(`越界读取: offset=${offset} ≥ size=${this.bytes.length}`, 'OUT_OF_RANGE');
@@ -65,6 +74,8 @@ export class BlobSource {
   /** 契约 §2.1 DataSource 字段名 */
   get size() { return this.blob.size; }
   async read(offset, length) {
+    validateRead(offset, length);
+    if (length === 0) return new Uint8Array(0);
     if (offset >= this.byteLength) {
       throw new SourceError(`越界读取: offset=${offset} ≥ size=${this.byteLength}`, 'OUT_OF_RANGE');
     }
@@ -155,7 +166,8 @@ export class FetchSource {
   /** @returns {Promise<Uint8Array>} */
   async read(offset, length) {
     if (this.#closed) throw new SourceError('源已关闭', 'CLOSED');
-    if (length <= 0) return new Uint8Array(0);
+    validateRead(offset, length);
+    if (length === 0) return new Uint8Array(0);
     if (this.byteLength !== null && offset >= this.byteLength) {
       throw new SourceError(`越界读取: offset=${offset} ≥ size=${this.byteLength}`, 'OUT_OF_RANGE');
     }

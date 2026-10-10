@@ -65,9 +65,10 @@ export function shiftCues(cues, deltaUs) {
  * @returns {Cue[]} 命中的 cue 列表（保持输入顺序）
  */
 export function findActiveCues(cues, us) {
+  if (!Number.isFinite(us)) return [];
   const out = [];
   for (const c of cues) {
-    if (c.startUs <= us && us < c.endUs) out.push(c);
+    if (Number.isFinite(c.startUs) && Number.isFinite(c.endUs) && c.startUs <= us && us < c.endUs) out.push(c);
   }
   return out;
 }

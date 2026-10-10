@@ -56,7 +56,8 @@ export function drawWaveform(ctx, size, peaks, progress01, theme = undefined) {
   if (!n) return;
   const barW = width / n;
   const mid = height / 2;
-  const progressX = width * Math.min(1, Math.max(0, progress01));
+  const safeProgress = Number.isFinite(progress01) ? progress01 : 0;
+  const progressX = width * Math.min(1, Math.max(0, safeProgress));
 
   for (let b = 0; b < n; b++) {
     const x = b * barW;

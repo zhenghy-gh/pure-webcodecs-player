@@ -109,6 +109,16 @@ test('findActiveCues：重叠区间都返回且保持原序', () => {
   assert.deepEqual(hit.map((c) => c.text), ['a', 'b']);
 });
 
+test('findActiveCues：非有限时刻与畸形 cue 不命中', () => {
+  const cues = [
+    { startUs: 0, endUs: 2_000_000, text: 'valid' },
+    { startUs: Number.NaN, endUs: 3_000_000, text: 'bad-start' },
+    { startUs: 0, endUs: Number.POSITIVE_INFINITY, text: 'bad-end' },
+  ];
+  assert.deepEqual(findActiveCues(cues, Number.NaN), []);
+  assert.deepEqual(findActiveCues(cues, 1_000_000).map((c) => c.text), ['valid']);
+});
+
 test('shiftCues：正平移且不改入参', () => {
   const input = [{ startUs: 1_000, endUs: 2_000, text: 't' }];
   const out = shiftCues(input, 500);

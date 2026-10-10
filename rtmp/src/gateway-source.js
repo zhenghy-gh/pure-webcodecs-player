@@ -50,9 +50,11 @@ export class GatewayChunkSource extends MiniEmitter {
   async start() {
     if (this.started) throw errors.state('source 已启动');
     this.started = true;
+    this.stopped = false;
     const url = this.opts.url;
 
-    await new Promise((resolve, reject) => {
+    try {
+      await new Promise((resolve, reject) => {
       let settled = false;
       const ws = new WebSocket(url);
       ws.binaryType = 'arraybuffer';
@@ -86,9 +88,17 @@ export class GatewayChunkSource extends MiniEmitter {
       };
       ws.onclose = ({ code, reason }) => this.#onClose(code, reason);
       ws.onmessage = (ev) => this.#onMessage(ev.data);
-    });
+      });
 
-    this.emit('open');
+      this.emit('open');
+    } catch (err) {
+      clearTimeout(this._connectTimer);
+      clearTimeout(this._idleTimer);
+      this.ws = null;
+      this.started = false;
+      this.stopped = false;
+      throw err;
+    }
   }
 
   stop() {

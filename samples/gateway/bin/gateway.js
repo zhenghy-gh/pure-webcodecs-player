@@ -28,26 +28,39 @@ const rtspPort = Number(argValue('--rtsp-port', '8322'));
 // PORT 环境变量为 captain 冻结壳的既有约定，保持兼容
 const relayPort = Number(argValue('--relay-port', process.env.PORT || '8090'));
 
-let gw;
-try {
-  gw = startGateways({ host, wsFlvPort, rtspPort, relayPort });
-} catch (err) {
-  if (err?.code === 'EADDRINUSE') {
-    console.error(`[gateway] 端口被占用（可能是另一个 gateway/serve 实例）：${err.message}`);
-    console.error('[gateway] 换端口启动示例：node bin/gateway.js --relay-port 8091');
-    process.exit(1);
+async function main() {
+  let gw;
+  try {
+    gw = startGateways({ host, wsFlvPort, rtspPort, relayPort });
+    // 只有全部监听器成功绑定后才输出可用地址；启动失败由 ready 聚合捕获。
+    const [actualWsFlvPort, actualRtspPort, actualRelayPort] = await gw.ready;
+    // 记录实际端口：传入 0 时系统会动态分配，不能继续打印 0。
+    gw.actualPorts = { wsFlvPort: actualWsFlvPort, rtspPort: actualRtspPort, relayPort: actualRelayPort };
+  } catch (err) {
+    await gw?.dispose?.().catch(() => {});
+    if (err?.code === 'EADDRINUSE') {
+      console.error(`[gateway] 端口被占用（可能是另一个 gateway/serve 实例）：${err.message}`);
+      console.error('[gateway] 换端口启动示例：node bin/gateway.js --relay-port 8091');
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
   }
-  throw err;
+
+  const { wsFlvPort: actualWsFlvPort, rtspPort: actualRtspPort, relayPort: actualRelayPort } = gw.actualPorts;
+  console.log(`[gateway] ws-flv  : ws://${host}:${actualWsFlvPort}/live/test`);
+  console.log(`[gateway] rtsp-ws : ws://${host}:${actualRtspPort}/rtsp | ws://${host}:${actualRtspPort}/rtp?mode=passive`);
+  console.log(`[gateway] sdp     : http://${host}:${actualRtspPort}/sdp`);
+  console.log(`[gateway] relay   : POST http://${host}:${actualRelayPort}/publish/<name> → ws://${host}:${actualRelayPort}/stream/<name>`);
+
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, async () => {
+      try { await gw.dispose(); } finally { process.exit(0); }
+    });
+  }
 }
 
-console.log(`[gateway] ws-flv  : ws://${host}:${wsFlvPort}/live/test`);
-console.log(`[gateway] rtsp-ws : ws://${host}:${rtspPort}/rtsp | ws://${host}:${rtspPort}/rtp?mode=passive`);
-console.log(`[gateway] sdp     : http://${host}:${rtspPort}/sdp`);
-console.log(`[gateway] relay   : POST http://${host}:${relayPort}/publish/<name> → ws://${host}:${relayPort}/stream/<name>`);
-
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
-    gw.close();
-    process.exit(0);
-  });
-}
+main().catch((err) => {
+  console.error('[gateway] 启动失败:', err);
+  process.exitCode = 1;
+});

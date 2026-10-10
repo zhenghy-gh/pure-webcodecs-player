@@ -113,7 +113,9 @@ export function parseMacHeader(bytes) {
   const channels = dv.getUint16(p, true); p += 2;
   const sampleRate = dv.getUint32(p, true); p += 4;
   // 块大小按公开资料随版本推导；总帧数不可知 → null
-  const blocksPerFrame = version >= 3900 ? 73728 * (2 ** (compressionCode - 4000)) : 9216;
+  const blocksPerFrame = version >= 3900 && compressionCode >= 4000 && compressionCode <= 4003
+    ? 73728 * (2 ** (compressionCode - 4000))
+    : 9216;
   validate({ channels, sampleRate, blocksPerFrame, totalFrames: null });
 
   return {
@@ -136,5 +138,8 @@ export function parseMacHeader(bytes) {
 function validate(o) {
   if (o.channels < 1 || o.channels > 8) throw parseError(`非法声道数 ${o.channels}`);
   if (o.sampleRate < 1000 || o.sampleRate > 384000) throw parseError(`非法采样率 ${o.sampleRate}`);
+  if (!Number.isSafeInteger(o.blocksPerFrame) || o.blocksPerFrame < 1) {
+    throw parseError(`非法每帧块数 ${o.blocksPerFrame}`);
+  }
   if (o.totalFrames !== null && o.totalFrames < 1) throw parseError(`非法总帧数 ${o.totalFrames}`);
 }

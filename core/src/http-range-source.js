@@ -6,7 +6,7 @@
  * - 按块（默认 256KB）拉取 + LRU 缓存，moov 在尾部的文件也能只拉需要的字节；
  * - 服务器不支持 Range 时抛 SOURCE_ERROR 并给出明确提示。
  */
-import { sourceError } from './errors.js';
+import { parseError, sourceError } from './errors.js';
 import { assertSafeUrl } from './url-guard.js';
 import { DEFAULT_MAX_READ_BYTES, assertByteLength } from './limits.js';
 
@@ -143,9 +143,13 @@ export class HttpRangeDataSource {
     if (!Number.isSafeInteger(offset) || offset < 0) {
       throw sourceError(`read offset must be a non-negative safe integer: ${offset}`);
     }
-    // I5：先校验单次读取上界，畸形容器长度不得在任何网络探测前触发 I/O。
-    assertByteLength(length, this.maxReadLength, `HTTP Range 单次读取`);
+    // 类型/符号错误无需触碰网络；合法整数超出策略上限仍允许
+    // 完成 HEAD 元数据探测，再在真正的 Range 请求前拒绝大读。
+    if (!Number.isSafeInteger(length) || length < 0) {
+      throw parseError(`HTTP Range 单次读取越界: ${length}`);
+    }
     if (!this._opened) await this.open();
+    assertByteLength(length, this.maxReadLength, `HTTP Range 单次读取`);
     if (offset > this.size) {
       throw sourceError(`read out of range: offset=${offset} size=${this.size}`);
     }

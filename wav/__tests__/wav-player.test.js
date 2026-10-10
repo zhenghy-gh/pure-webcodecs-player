@@ -114,6 +114,7 @@ describe('mock 环境下 WavPlayer 基本方法', () => {
       player.on('time', (p) => { evt = p; });
       player.seek(0.5);
       assert.equal(player.currentTime(), 0.5);
+      await assert.rejects(() => player.seek(Number.NaN), (e) => e.code === ErrorCode.STATE_ERROR);
       assert.ok(evt && Math.abs(evt.currentTime - 0.5) < 1e-9);
 
       const stats = player.getStats();

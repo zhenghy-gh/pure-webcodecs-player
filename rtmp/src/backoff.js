@@ -8,10 +8,17 @@ export class Backoff {
    *   jitter 为相对抖动比例（0~1），实际延迟在 [raw*(1-j), raw*(1+j)] 内均匀取值。
    */
   constructor(opts = {}) {
-    this.baseMs = opts.baseMs ?? 500;
-    this.factor = opts.factor ?? 2;
-    this.maxMs = opts.maxMs ?? 30000;
-    this.jitter = Math.min(Math.max(opts.jitter ?? 0.3, 0), 1);
+    const baseMs = opts.baseMs ?? 500;
+    const factor = opts.factor ?? 2;
+    const maxMs = opts.maxMs ?? 30000;
+    const jitter = opts.jitter ?? 0.3;
+    if (![baseMs, factor, maxMs, jitter].every(Number.isFinite) || baseMs <= 0 || factor < 1 || maxMs < baseMs || jitter < 0 || jitter > 1) {
+      throw new TypeError('Backoff 参数非法');
+    }
+    this.baseMs = baseMs;
+    this.factor = factor;
+    this.maxMs = maxMs;
+    this.jitter = jitter;
     this.attempt = 0;
   }
 

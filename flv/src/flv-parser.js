@@ -38,7 +38,8 @@ export class FlvParser extends Emitter {
   constructor() {
     super();
     /** 低层分帧器（可复用面，见 ./tag-stream.js） */
-    this.stream = new FlvTagStream();
+    // Gateways may corrupt PreviousTagSize; framing uses declared dataSize.
+    this.stream = new FlvTagStream({ validatePreviousTagSize: false });
     this.hasAudio = false;
     this.hasVideo = false;
     /** 统计信息（demo 展示用） */

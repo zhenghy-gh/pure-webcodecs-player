@@ -267,7 +267,13 @@ test('未 open → 连接超时 TIMEOUT 并关闭底层连接', async () => {
   const err = await p;
   assert.equal(err?.code, 'TIMEOUT');
   assert.deepEqual(ws.closeArgs, [undefined, undefined], '超时应主动关闭');
-  assert.equal(src.started, true);
+  assert.equal(src.started, false);
+  const retry = src.start();
+  last()._open();
+  await retry;
+  src.stop();
+  src.stop();
+  assert.equal(src.stopped, true);
 });
 
 test('open 前 error → NETWORK_ERROR', async () => {

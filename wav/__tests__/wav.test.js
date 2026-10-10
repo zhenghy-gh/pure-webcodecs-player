@@ -251,6 +251,17 @@ describe('convertToFloat32Planar', () => {
     );
   });
 
+  test('非法声道数或非整字节位深 → STATE_ERROR', () => {
+    assert.throws(
+      () => convertToFloat32Planar(new Uint8Array(4), { formatTag: 1, channels: 0, bitsPerSample: 16 }),
+      (e) => e.code === ErrorCode.STATE_ERROR && /声道数/.test(e.message),
+    );
+    assert.throws(
+      () => convertToFloat32Planar(new Uint8Array(4), { formatTag: 1, channels: 1, bitsPerSample: 12 }),
+      (e) => e.code === ErrorCode.STATE_ERROR && /位深/.test(e.message),
+    );
+  });
+
   test('s16 数值精确归一化', () => {
     const wav = buildWav({ channels: 1, frames: 4 });
     const h = parseWavHeader(wav);
@@ -428,6 +439,13 @@ describe('computePeaks/drawWaveform', () => {
     const ctx = mockCtx();
     drawWaveform(ctx, { width: 10, height: 10 }, { mins: new Float32Array(0), maxs: new Float32Array(0) }, 0);
     assert.equal(ctx.calls.length, 1);
+  });
+
+  test('非有限 progress 安全回退到 0，不产生 NaN 坐标', () => {
+    const ctx = mockCtx();
+    drawWaveform(ctx, { width: 10, height: 10 }, { mins: new Float32Array([-0.5]), maxs: new Float32Array([0.5]) }, Number.NaN);
+    assert.equal(ctx.calls.length, 2);
+    assert.ok(ctx.calls.every(([, x, y, w, h]) => [x, y, w, h].every(Number.isFinite)));
   });
 });
 

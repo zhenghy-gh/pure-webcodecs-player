@@ -139,6 +139,27 @@ test('splitChunks：流内 sidx 被捕获为 segmentIndex', () => {
   }
 });
 
+test('prft：截断 payload、零 timescale 与 content 边界均受控拒绝', async () => {
+  const { parsePrft } = await import('../src/isobmff.js');
+  const make = (version, timescale, payloadBytes) => {
+    const body = new Uint8Array(12 + payloadBytes);
+    body[0] = version;
+    const dv = new DataView(body.buffer);
+    dv.setUint32(4, 1);
+    dv.setUint32(8, timescale);
+    const out = new Uint8Array(8 + body.length);
+    new DataView(out.buffer).setUint32(0, out.length);
+    out.set([0x70, 0x72, 0x66, 0x74], 4);
+    out.set(body, 8);
+    return out;
+  };
+  assert.throws(() => parsePrft(make(0, 90000, 4), 8, 24), /截断/);
+  assert.throws(() => parsePrft(make(1, 90000, 8), 8, 28), /截断/);
+  assert.throws(() => parsePrft(make(0, 0, 8), 8), /timescale/);
+  assert.throws(() => parsePrft(make(0, 90000, 8), 8, 7), /边界/);
+  assert.throws(() => parsePrft(make(2, 90000, 8), 8), /version 不支持/);
+});
+
 test('prft：生产者时钟参考（v0/v1 双版本）', async () => {
   const { parsePrft } = await import('../src/isobmff.js');
   const build = (version, producer, media) => {

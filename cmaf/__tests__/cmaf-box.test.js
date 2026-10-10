@@ -116,6 +116,15 @@ test('readBoxHeader：非法尺寸（< 头长）抛 NOT_SUPPORTED', () => {
   assert.throws(() => readBoxHeader(bad, 0), (e) => e.code === 'NOT_SUPPORTED');
 });
 
+test('readBoxHeader：largesize 超出安全整数范围时拒绝', () => {
+  const bad = new Uint8Array(16);
+  const dv = new DataView(bad.buffer);
+  dv.setUint32(0, 1);
+  bad.set([0x6d, 0x64, 0x61, 0x74], 4);
+  dv.setBigUint64(8, 0xffffffffffffffffn);
+  assert.throws(() => readBoxHeader(bad), (e) => e.code === 'NOT_SUPPORTED');
+});
+
 /* ---------------- iterateBoxes / find ---------------- */
 
 test('iterateBoxes：init 缓冲顶层顺序为 ftyp→moov', () => {

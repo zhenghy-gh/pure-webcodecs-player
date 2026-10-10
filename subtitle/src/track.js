@@ -82,21 +82,41 @@ let nextTrackId = 1;
 export function createTextTrack(cuesIterable) {
   const id = nextTrackId++;
   /** @type {object[]} */
-  const cache = [];
+  let cache = [];
   let done = false;
+  let pumpPromise = null;
+  let pumpError = null;
   let codec = 'x-srt';
 
-  async function* cachedAndPump() {
-    if (!done) {
-      // 先整流缓存（原子性保证后续 cuesUntil 可重放），再逐条产出
-      for await (const c of cuesIterable) cache.push(c);
-      done = true;
-      const first = cache[0];
-      if (first?.raw) {
-        const f = detectFormat(new TextDecoder().decode(first.raw));
-        if (f) codec = `x-${f}`;
-      }
+  async function pump() {
+    if (done) return;
+    if (pumpError) throw pumpError;
+    if (!pumpPromise) {
+      pumpPromise = (async () => {
+        // 先写临时数组；完整成功后一次性提交，避免 cuesUntil 观察半成品。
+        const pending = [];
+        try {
+          for await (const c of cuesIterable) pending.push(c);
+        } catch (error) {
+          pumpError = error;
+          throw error;
+        }
+        let nextCodec = codec;
+        const first = pending[0];
+        if (first?.raw) {
+          const f = detectFormat(new TextDecoder().decode(first.raw));
+          if (f) nextCodec = `x-${f}`;
+        }
+        cache = pending;
+        codec = nextCodec;
+        done = true;
+      })();
     }
+    await pumpPromise;
+  }
+
+  async function* cachedAndPump() {
+    if (!done) await pump();
     for (const c of cache) yield c;
   }
 

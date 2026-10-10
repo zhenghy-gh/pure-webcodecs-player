@@ -21,6 +21,12 @@ import { notSupported, stateError } from './errors.js';
 
 export function convertToFloat32Planar(pcmBytes, fmt) {
   const { formatTag, channels, bitsPerSample } = fmt;
+  if (!Number.isInteger(channels) || channels <= 0) {
+    throw stateError(`非法声道数 ${channels}`);
+  }
+  if (!Number.isInteger(bitsPerSample) || bitsPerSample <= 0 || (bitsPerSample & 7) !== 0) {
+    throw stateError(`非法位深 ${bitsPerSample}`);
+  }
   const bytesPerSample = bitsPerSample >> 3;
   if (!bytesPerSample) throw stateError(`非法位深 ${bitsPerSample}`);
   const totalFrames = Math.floor(pcmBytes.length / (bytesPerSample * channels));

@@ -34,7 +34,9 @@ export function readBoxHeader(buf, off = 0) {
   if (size === 1) {
     // largesize：64 位
     if (buf.length < off + 16) return null;
-    size = Number(dv.getBigUint64(off + 8));
+    const largeSize = dv.getBigUint64(off + 8);
+    if (largeSize > BigInt(Number.MAX_SAFE_INTEGER)) throw notSupported(`ISO-BMFF box 尺寸超出安全范围: ${type}`);
+    size = Number(largeSize);
     headerSize = 16;
   } else if (size === 0) {
     size = buf.length - off; // 到文件尾
@@ -75,12 +77,23 @@ export function* iterateBoxes(buf, start = 0, end = buf.length) {
  * @returns {{referenceTrackId:number, referenceTimescale:number,
  *            mediaTimeTicks:number, producerTimeTicks:number}}
  */
-export function parsePrft(buf, contentStart) {
+export function parsePrft(buf, contentStart, contentEnd = buf.byteLength) {
+  if (!Number.isSafeInteger(contentStart) || contentStart < 0 ||
+      !Number.isSafeInteger(contentEnd) || contentEnd < contentStart || contentEnd > buf.byteLength) {
+    throw notSupported(`PRFT 内容边界非法: ${contentStart}..${contentEnd}`);
+  }
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  if (contentStart + 12 > contentEnd) throw notSupported('PRFT 头部截断');
   const { version } = readVersionFlags(buf, contentStart);
+  if (version !== 0 && version !== 1) throw notSupported(`PRFT version 不支持: ${version}`);
   let p = contentStart + 4;
   const referenceTrackId = dv.getUint32(p); p += 4;
   const referenceTimescale = dv.getUint32(p); p += 4;
+  if (!referenceTimescale) throw notSupported('PRFT timescale 非法');
+  const payloadBytes = version === 1 ? 16 : 8;
+  if (p + payloadBytes > contentEnd) {
+    throw notSupported(`PRFT v${version} 内容截断`);
+  }
   if (version === 1) {
     const producerTime = Number(dv.getBigUint64(p)); p += 8;
     const mediaTime = Number(dv.getBigUint64(p));

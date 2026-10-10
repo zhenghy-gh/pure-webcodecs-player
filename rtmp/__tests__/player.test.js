@@ -100,6 +100,14 @@ test('退避节奏：连续失败时延迟按 base*factor^n 增长（含抖动�
   assert.equal(last, 5000);
 });
 
+test('Backoff 非法参数矩阵拒绝 NaN/Infinity/负值与非法关系', () => {
+  for (const opts of [
+    { baseMs: Number.NaN }, { factor: Number.POSITIVE_INFINITY },
+    { maxMs: -1 }, { factor: 0 }, { maxMs: 10, baseMs: 20 },
+    { jitter: Number.NaN }, { jitter: -0.1 }, { jitter: 1.1 },
+  ]) assert.throws(() => new Backoff(opts), /Backoff 参数非法/);
+});
+
 test('连接拒绝 → error(NETWORK_ERROR) 且状态机进入重连/错误路径而非崩溃', async () => {
   const p = new WsFlvPlayer({ backoff: { baseMs: 50, maxReconnectAttempts: 2 }, maxReconnectAttempts: 2 });
   const errors = [];

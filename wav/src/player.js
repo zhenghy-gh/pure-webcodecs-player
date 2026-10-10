@@ -143,6 +143,7 @@ export class WavPlayer {
    */
   async seek(sec) {
     if (!this.planar) return;
+    if (!Number.isFinite(sec)) throw stateError(`非法 seek 时间 ${sec}`);
     let targetFrame = Math.round(sec * this.sampleRate);
     targetFrame = Math.min(Math.max(targetFrame, 0), Math.max(this.totalFrames - 1, 0));
     this.#baseFrame = targetFrame;

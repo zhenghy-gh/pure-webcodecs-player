@@ -95,6 +95,9 @@ export class TorrentAssembler extends Emitter {
 
   /** 头部前缀是否覆盖 [offset, offset+length) */
   canReadNow(offset, length) {
+    if (!Number.isSafeInteger(offset) || offset < 0 ||
+        !Number.isSafeInteger(length) || length < 0 ||
+        !Number.isSafeInteger(offset + length)) return false;
     return offset + length <= this._prefixBytes || offset >= this.size;
   }
 
@@ -104,7 +107,8 @@ export class TorrentAssembler extends Emitter {
    */
   async read(offset, length) {
     if (this._destroyed) throw new PlayerError('STATE_ERROR', 'assembler 已销毁');
-    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(length) || length < 0) {
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 0 ||
+        !Number.isSafeInteger(offset + length)) {
       throw new PlayerError('SOURCE_ERROR', `read 参数非法: offset=${offset} length=${length}`);
     }
     if (length === 0) return new Uint8Array(0);

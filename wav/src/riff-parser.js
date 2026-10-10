@@ -174,6 +174,8 @@ function parseFmtChunk(bytes, offset, size) {
   }
   if (channels < 1 || channels > 64) throw parseError(`非法声道数 ${channels}`);
   if (sampleRate < 1 || sampleRate > 384000) throw parseError(`非法采样率 ${sampleRate}`);
+  if (blockAlign < 1) throw parseError(`非法帧对齐字节数 ${blockAlign}`);
+  if (bitsPerSample < 1 || bitsPerSample > 32) throw parseError(`非法位深 ${bitsPerSample}`);
 
   return /** @type {WavFormatInfo} */ ({
     formatTag, channels, sampleRate, byteRate, blockAlign, bitsPerSample,

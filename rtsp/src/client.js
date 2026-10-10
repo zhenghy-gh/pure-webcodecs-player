@@ -129,7 +129,16 @@ export class RtspWsClient {
     if (!this.opts.url) throw errors.state('缺少 url，无法启动');
     if (this.state !== STATES.IDLE && this.state !== STATES.CLOSED) throw errors.state(`当前状态 ${this.state} 不允许重复 start`);
     this.closedByUser = false;
-    await this.#connect();
+    try {
+      await this.#connect();
+    } catch (err) {
+      // A failed initial connection may synchronously fire close(), which would
+      // otherwise move the client to CLOSED and make a second start look valid.
+      // Keep the failed attempt non-restartable until the caller explicitly
+      // stops/resets the client.
+      if (this.state === STATES.CLOSED && !this.closedByUser) this.#setState(STATES.CONNECTING);
+      throw err;
+    }
   }
 
   stop() {

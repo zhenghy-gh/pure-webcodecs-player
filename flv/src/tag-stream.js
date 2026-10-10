@@ -51,7 +51,11 @@ export function parseFlvHeader(bytes) {
  *   };
  */
 export class FlvTagStream {
-  constructor() {
+  constructor(options = {}) {
+    // PreviousTagSize is advisory for live/bridged streams.
+    // Stream framing remains usable with malformed/missing PreviousTagSize.
+    // iterateTags() below stays strict for file validation.
+    this.validatePreviousTagSize = options.validatePreviousTagSize === true;
     /** @type {Uint8Array} 未消费缓冲 */
     this.buffer = new Uint8Array(0);
     /** 文件头信息（首个 push 后可用） */
@@ -114,7 +118,7 @@ export class FlvTagStream {
         (this.buffer[TAG_HEADER_SIZE + dataSize + 1] << 16) |
         (this.buffer[TAG_HEADER_SIZE + dataSize + 2] << 8) |
         this.buffer[TAG_HEADER_SIZE + dataSize + 3];
-      if (previousTagSize !== TAG_HEADER_SIZE + dataSize) {
+      if (this.validatePreviousTagSize && previousTagSize !== TAG_HEADER_SIZE + dataSize) {
         throw new Error(`FLV: PreviousTagSize 不匹配(${previousTagSize}，期望 ${TAG_HEADER_SIZE + dataSize})`);
       }
       const data = this.buffer.subarray(TAG_HEADER_SIZE, TAG_HEADER_SIZE + dataSize).slice();

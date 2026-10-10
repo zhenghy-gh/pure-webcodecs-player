@@ -1,5 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import net from 'node:net';
 
 import { startGateways } from '../src/index.js';
 import { parseSdp } from '../../../rtsp/src/sdp.js';
@@ -36,9 +37,8 @@ function connectWs(url) {
 }
 
 before(async () => {
-  gw = startGateways({ host: '127.0.0.1', wsFlvPort: 0, rtspPort: 0 });
-  PORT_W = await gw.servers[0].ready;
-  PORT_R = await gw.servers[1].ready;
+  gw = startGateways({ host: '127.0.0.1', wsFlvPort: 0, rtspPort: 0, relayPort: 0 });
+  [PORT_W, PORT_R] = await gw.ready;
 });
 
 after(async () => {
@@ -162,7 +162,19 @@ test('chaos=dropEvery:N 会产生序列号跳变（供客户端容错测试）',
 
 test('startGateways：close() 关闭独立启动的全部服务', async () => {
   const local = startGateways({ host: '127.0.0.1', wsFlvPort: 0, rtspPort: 0, relayPort: 0 });
-  await Promise.all(local.servers.map((server) => server.ready));
-  assert.doesNotThrow(() => local.close());
+  const ports = await local.ready;
+  assert.equal(ports.length, 3);
+  assert.ok(ports.every((port) => port > 0));
   await local.dispose();
+  await local.dispose();
+});
+
+test('startGateways：任一端口冲突时 ready 拒绝并收尾已启动服务', async () => {
+  const blocker = net.createServer();
+  await new Promise((resolve) => blocker.listen(0, '127.0.0.1', resolve));
+  const occupied = blocker.address().port;
+  const local = startGateways({ host: '127.0.0.1', wsFlvPort: 0, rtspPort: 0, relayPort: occupied });
+  await assert.rejects(local.ready, (error) => error?.code === 'EADDRINUSE');
+  await local.dispose();
+  await new Promise((resolve, reject) => blocker.close((error) => error ? reject(error) : resolve()));
 });

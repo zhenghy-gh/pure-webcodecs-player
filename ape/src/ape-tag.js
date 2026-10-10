@@ -95,6 +95,7 @@ function parseTagAt(bytes, footerPos, isHeader) {
     let keyEnd = q;
     while (keyEnd < itemsEnd && bytes[keyEnd] !== 0) keyEnd++;
     const key = textDecoder.decode(bytes.subarray(q, keyEnd)).trim();
+    if (keyEnd >= itemsEnd) break;
     q = keyEnd + 1;
     const typeCode = (itemFlags >> 1) & 0x03;
     const valueBytes = bytes.slice(q, Math.min(q + valueLen, itemsEnd));
