@@ -272,14 +272,15 @@ export class MseHelper extends Emitter {
     const ranges = this.buffered(key);
     if (!ranges || ranges.length === 0) return 0;
     const t = currentTime ?? this.element.currentTime ?? 0;
-    let ahead = 0;
+    // 可播放水位只能覆盖当前连续区间；跨越 TimeRanges 空洞
+    // 的未来区间不可直接播放，不能把它们相加后误判为可安全背压。
     for (let i = 0; i < ranges.length; i++) {
       const start = ranges.start(i);
       const end = ranges.end(i);
-      if (t >= start && t <= end) ahead += end - t;
-      else if (start > t) ahead += end - start;
+      if (t >= start && t <= end) return Math.max(0, end - t);
+      if (t < start) return 0;
     }
-    return ahead;
+    return 0;
   }
 
   async setDuration(sec) {

@@ -231,10 +231,10 @@ test('bufferedAhead：无轨/空区间返回 0', async () => {
 test('bufferedAhead：当前点落在区间内只算剩余，之后的区间整段计入，之前的忽略', async () => {
   const { helper, sb } = await makeOpenedHelper();
   sb.buffered = rangeSet([[0, 10], [20, 30]]);
-  // t=5：区间[0,10] 剩 5；[20,30] 整段 10 → 15
-  assert.equal(helper.bufferedAhead('v1', 5), 15);
-  // t=15（落在空隙）：[0,10] 已过 → 0；[20,30] 整段 → 10
-  assert.equal(helper.bufferedAhead('v1', 15), 10);
+  // t=5：当前连续区间[0,10]只剩 5；后续区间跨越空洞不可计入。
+  assert.equal(helper.bufferedAhead('v1', 5), 5);
+  // t=15（落在空隙）：下一段尚未连续可播，不能跨空洞累计未来区间。
+  assert.equal(helper.bufferedAhead('v1', 15), 0);
   // t=25：区间[20,30] 剩 5 → 5
   assert.equal(helper.bufferedAhead('v1', 25), 5);
   // t=40：全过 → 0

@@ -22,9 +22,32 @@
 
 ### 提交和推送
 - 前置用户要求代码提交：591d3ba fix: harden media and gateway boundaries，已推送 main。
-- 本轮修复待提交，提交后推送 main。
+- 本轮修复将在验证完成后提交并推送 maintenance/round-6。
 
 ### 风险与下一轮
 - 浏览器验证使用下载到本地 samples/e2e/sintel-trailer.mp4 的真实媒体，该文件未纳入提交。
 - 当前未执行 npm 发布；第 1 个完整轮次不触发发布。
 - 下一轮候选：继续审计 MSE 多轨 buffered 合并语义、其他容器 seek 后轨道对齐，或优先处理下一项真实浏览器可复现问题。
+
+## Attempt 6：修复 MSE 缓冲水位跨空洞误计
+
+### 发现
+- 复现条件：SourceBuffer.buffered 包含多个不连续区间，例如 [0,10] 与 [20,30]，播放器当前时间在第一个区间内。
+- 根因：bufferedAhead() 把当前区间剩余时间和所有未来区间直接相加，跨过不可播放的时间空洞，导致背压错误地认为后续内容连续可播。
+- 用户影响：播放器可能过早停止拉取/追加数据，遇到空洞时出现等待或卡顿。
+
+### 修改
+- core/src/mse-helper.js：bufferedAhead 只返回当前时间所在连续区间的剩余时长；当前时间在空洞或未来区间前时返回 0，不再跨区间累加。
+- core/__tests__/core-mse-helper-units.test.js：增加不连续 TimeRanges 的回归断言。
+
+### 验证
+- 定向测试：node --test --test-timeout=15000 core/__tests__/core-mse-helper-units.test.js，29/29 通过。
+- 全量测试：npm test 串行通过 3134/3134，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+- 真实浏览器：Chromium 156 + MSE 验收通过 19/19，覆盖首帧、播放推进、seek 后恢复、buffered、destroy；无 console.error、pageerror、unhandledrejection 或网络失败。
+
+### 提交和推送
+- 从远端 origin/main=d192951 创建 maintenance/round-6 分支，避免覆盖之前的本地/远端分叉。
+
+### 风险与下一轮
+- 本轮修复未改变公共 API；仅收紧 bufferedAhead 的连续可播放语义。
+- 下一步：提交本轮修复并推送维护分支。
