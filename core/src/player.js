@@ -110,6 +110,15 @@ export class Player extends Emitter {
     };
     /** 背压/预缓冲的让出调度器（可注入以便单测立即推进） */
     this._schedule = this.options.schedule ?? defaultSchedule;
+    const nowFn = this.options.now ?? (() =>
+      typeof performance !== 'undefined' ? performance.now() / 1000 : Date.now() / 1000);
+    let lastNow = 0;
+    this._now = () => {
+      let value;
+      try { value = nowFn(); } catch { value = lastNow; }
+      if (Number.isFinite(value)) lastNow = value;
+      return lastNow;
+    };
     /** 码率滑动窗口：{t: 秒, bytes} */
     this._bitrateWindow = [];
     this.stateValue = PLAYER_STATES.IDLE;
@@ -596,7 +605,7 @@ export class Player extends Emitter {
   }
 
   _nowSec() {
-    return typeof performance !== 'undefined' ? performance.now() / 1000 : Date.now() / 1000;
+    return this._now();
   }
 
   async _pump(token) {

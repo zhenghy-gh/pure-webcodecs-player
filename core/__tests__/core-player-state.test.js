@@ -886,6 +886,18 @@ test('volume/playbackRate/muted：合法值透传管线，非法值拒绝且不�
   await player.destroy();
 });
 
+test('码率统计：now 返回非有限值时保持有限且不污染窗口', () => {
+  let now = 1;
+  const player = new Player({ now: () => now });
+  player._markBitrate(100);
+  now = Number.NaN;
+  player._markBitrate(100);
+  assert.ok(Number.isFinite(player.stats.bitrateBps));
+  assert.equal(player._bitrateWindow.length, 2);
+  now = 3;
+  assert.ok(Number.isFinite(player.stats.bitrateBps));
+});
+
 /* ------------------------------ destroy ------------------------------ */
 
 test('destroy：派发 end(aborted)、移除全部监听器、幂等、中断样本泵', async () => {

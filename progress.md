@@ -175,3 +175,22 @@
 
 ### 提交和推送
 - 基于 maintenance/round-6 继续提交。
+
+## Attempt 15：修复 Player 码率统计非有限时钟输入
+
+### 发现
+- 复现条件：Player 码率窗口使用的 now() 返回 NaN/Infinity 或抛出异常。
+- 根因：Player 的码率统计直接读取系统时钟，可能生成非有限时间戳并污染滑动窗口。
+- 用户影响：stats.bitrateBps 可能失真，异常时钟还会造成窗口清理和速率计算不稳定。
+
+### 修改
+- core/src/player.js：增加有限时钟缓存与异常回退，并让码率窗口统一使用该安全时钟。
+- core/__tests__/core-player-state.test.js：增加码率统计异常时钟回归测试。
+
+### 验证
+- 定向测试：34/34 通过。
+- 全量测试：npm test 串行通过 3136/3136，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+- 真实浏览器：Chromium 156 + MSE 验收通过 19/19；无 console.error、pageerror、unhandledrejection 或网络失败。
+
+### 提交和推送
+- 基于 maintenance/round-6 继续提交。
