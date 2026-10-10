@@ -298,3 +298,32 @@
 
 ### 下一轮候选
 - 审计 Player 其余同步管线边界（volume/muted/playbackRate、pipeline 事件转发及 destroy 竞态），优先选择可真实复现且能补回归测试的问题。
+
+## Attempt 23：修复 MSE play() Promise 未处理拒绝
+
+### 发现
+- 复现条件：真实 HTMLMediaElement 的 `play()` 因 autoplay、权限或浏览器策略返回 rejected Promise；MSE 管线调用 `element.play()` 后不接收 Promise。
+- 根因：`MsePipeline.play()` 只捕获同步 throw，未处理标准异步 Promise rejection。
+- 用户影响：浏览器控制台出现 `unhandledrejection`，播放错误无法稳定进入播放器 error 事件面，导致宿主难以恢复或提示用户。
+
+### 修改
+- core/src/pipeline-mse.js：保留同步异常捕获，并对 thenable play 结果挂接拒绝处理，统一转为 `DECODE_ERROR` 的管线 `error` 事件。
+- core/__tests__/core-pipeline-mse-branches.test.js：扩展 FakeMediaElement 的异步拒绝能力，增加 rejected Promise 不产生未处理拒绝且上报 error 的回归测试。
+
+### 验证
+- 复现基线：原实现对 rejected Promise 产生 Node `unhandledRejection`；修复后定向测试捕获 `DECODE_ERROR`，无未处理拒绝。
+- 定向测试：`node --test --test-timeout=15000 core/__tests__/core-pipeline-mse-branches.test.js`，22/22 通过。
+- 全量测试：`npm test` 串行通过 3141/3141，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；check 内嵌测试 3141/3141，lint 检查 547 个 JS 文件。
+- 真实浏览器：Playwright + Chromium 执行 `scripts/e2e/run.mjs --harness=mse-harness.html --media=/samples/e2e/sintel-trailer.mp4`，19/19 通过；首帧 854x480（readyState=4，205ms）、播放推进（0.08→0.88s）、24 渲染帧且 dropped=0、seek（20s→16.50s）、seek 后恢复（16.50→16.96s）、stall 恢复、buffered、水位、destroy 和 src 释放均通过。
+- 浏览器 console.error、pageerror、unhandledrejection、网络失败：无输出；E2E 截图已恢复，不纳入提交。
+
+### 提交和推送
+- 本轮待提交：MSE 管线实现、回归测试和本条 progress 记录。
+
+### 风险
+- `play()` Promise 拒绝现在会发 error，但管线仍按既有语义保持 playing；宿主应按 error 事件决定重试或提示。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 继续审计 Player 与 MSE/WebCodecs 管线的同步 setter、pause/seek/destroy 竞态及事件转发边界。

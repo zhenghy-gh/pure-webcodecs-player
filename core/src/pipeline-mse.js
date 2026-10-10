@@ -391,7 +391,18 @@ export class MsePipeline extends Emitter {
   play() {
     if (this.state === 'destroyed') return;
     this.state = 'playing';
-    try { this.element?.play?.(); } catch (err) { this.emit('error', decodeError('play() 被拒绝', { cause: err })); }
+    try {
+      const result = this.element?.play?.();
+      // HTMLMediaElement.play() 以 Promise 形式拒绝时也必须转成管线 error，
+      // 否则 autoplay/权限策略会产生 unhandledrejection。
+      if (result && typeof result.then === 'function') {
+        void Promise.resolve(result).catch((err) => {
+          this.emit('error', decodeError('play() 被拒绝', { cause: err }));
+        });
+      }
+    } catch (err) {
+      this.emit('error', decodeError('play() 被拒绝', { cause: err }));
+    }
   }
 
   pause() {

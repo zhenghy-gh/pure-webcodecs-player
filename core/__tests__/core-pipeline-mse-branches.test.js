@@ -65,8 +65,14 @@ class FakeMediaElement {
     this.playCalls = 0;
     this.pauseCalls = 0;
     this.playThrows = false;
+    this.playRejects = false;
   }
-  play() { this.playCalls += 1; if (this.playThrows) throw new Error('play 被拒'); }
+  play() {
+    this.playCalls += 1;
+    if (this.playThrows) throw new Error('play 被拒');
+    if (this.playRejects) return Promise.reject(new Error('play promise 被拒'));
+    return Promise.resolve();
+  }
   pause() { this.pauseCalls += 1; }
   addEventListener(type, fn) {
     if (!this.listeners.has(type)) this.listeners.set(type, []);
@@ -372,6 +378,18 @@ test('play/pause：状态机切换并透传元素；play 抛错上报 error', as
 
   element.playThrows = true;
   pipeline.play();
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, 'DECODE_ERROR');
+});
+
+test('play()：元素返回 rejected Promise 时上报 error 而不产生未处理拒绝', async () => {
+  const { pipeline, element } = build();
+  await pipeline.init();
+  const errors = [];
+  pipeline.on('error', (error) => errors.push(error));
+  element.playRejects = true;
+  pipeline.play();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(errors.length, 1);
   assert.equal(errors[0].code, 'DECODE_ERROR');
 });
