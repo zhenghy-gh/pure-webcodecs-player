@@ -356,7 +356,9 @@ export class MsePipeline extends Emitter {
       if (track.type !== 'video' && track.type !== 'audio') continue;
       if (this.active[track.type] !== track.id) continue;
       const ranges = this.mse.buffered(this._keyOf(track));
-      if (!ranges) continue;
+      // 活动轨尚未建立缓冲时，轨道交集为空；不能跳过该轨后
+      // 把另一轨的区间误报为可播放范围。
+      if (!ranges) return [];
       const current = [];
       for (let i = 0; i < ranges.length; i++) {
         const startUs = Math.round(ranges.start(i) * 1_000_000);

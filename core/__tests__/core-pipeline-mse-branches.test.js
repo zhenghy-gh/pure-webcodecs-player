@@ -290,6 +290,10 @@ test('getBufferedRanges：逐活动轨取区间转微秒；无能力返回 null'
     { startUs: 1_500_000, endUs: 2_500_000 },
   ]);
 
+  // 活动音频轨尚无缓冲时，不能退化为仅视频轨的范围。
+  mse.rangesByKey.delete('a2');
+  assert.deepEqual(pipeline.getBufferedRanges(), []);
+
   const noBuf = build({ mse: { open: async () => {}, addTrack: async () => ({}), append: async () => {} } });
   await noBuf.pipeline.init();
   assert.equal(noBuf.pipeline.getBufferedRanges(), null);

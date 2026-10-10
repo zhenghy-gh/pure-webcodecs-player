@@ -74,3 +74,25 @@
 ### 风险与下一轮
 - 本轮只改变公开 buffered 区间计算，不改变 SourceBuffer 写入和播放时钟。
 - 下一步：提交本轮修复并推送维护分支。
+
+## Attempt 9：修复 MSE 活动轨缺失时 buffered 误报
+
+### 发现
+- 复现条件：视频轨存在 buffered 区间，但活动音频轨尚未产生区间。
+- 根因：多轨 buffered 求交集实现跳过 null 区间，导致仍返回视频轨范围，误报为可播放。
+- 用户影响：播放器可能在音频尚未就绪时错误暴露可播放范围，造成 seek/预加载判断过早。
+
+### 修改
+- core/src/pipeline-mse.js：任一活动音视频轨没有 buffered 数据时立即返回空区间；有数据时继续求轨道交集。
+- core/__tests__/core-pipeline-mse-branches.test.js：增加活动音频轨缺失缓冲的回归断言。
+
+### 验证
+- 定向测试：21/21 通过。
+- 全量测试：npm test 串行通过 3134/3134，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+- 真实浏览器：Chromium 156 + MSE 验收通过 19/19，覆盖首帧、播放推进、seek 后恢复、buffered、destroy；无 console.error、pageerror、unhandledrejection 或网络失败。
+
+### 提交和推送
+- 基于 maintenance/round-6 继续提交。
+
+### 风险与下一轮
+- 本轮仅收紧 buffered 公开语义，不改变数据追加或播放时钟。
