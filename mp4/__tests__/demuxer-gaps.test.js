@@ -341,14 +341,14 @@ test('双轨渐进 seek：目标轨关键帧对齐，其余轨按 _locateResumeI
 
   const d = new Mp4Demuxer(new MemoryDataSource(bytes));
   await d.open();
-  // 目标 80ms → 视频轨关键帧 dts 0/120 ticks 中取 0；音频轨 4 样本 dts 全 ≤ 3528 ticks → resumeIndex 3
+  // 目标 80ms → 视频轨关键帧 dts 0/120 ticks 中取 0；其余轨必须从实际落点 0 续读，避免 MSE 轨道间出现时间缺口。
   const r = await d.seek(80000);
   assert.equal(r.actualTimestampUs, 0);
   const v = await d.readSample(1);
   assert.equal(v.index, 0);
   const a = await d.readSample(2);
-  assert.equal(a.index, 3);
-  assert.equal(a.dts, 69660); // ticksToUs(3072, 44100) 就近取整
+  assert.equal(a.index, 0);
+  assert.equal(a.dts, 0);
 });
 
 test('expandSampleTable：stsc 首条目 firstChunk 晚于全部 chunk → 兜底 0 → 表不一致抛错', () => {

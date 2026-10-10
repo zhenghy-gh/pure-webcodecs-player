@@ -448,13 +448,12 @@ export class Mp4Demuxer extends Demuxer {
 
     const pickIdx = found >= 0 ? state.keyframes[found] : state.keyframes[0];
     state.resumeIndex = pickIdx;
-    // 多轨一致：其余轨按各自时间基定位 ≤ 目标时间的最后样本（解码序 dts，
-    // 与关键帧二分同口径），避免 seek 后音频轨从 0 重放或提前 EOS。
-    for (const [id, st] of this._trackState) {
-      if (id !== targetId) st.resumeIndex = _locateResumeIndex(st, timestampUs);
-    }
-
     const actualUs = ticksToUs(kfDtsTicks(state.samples[pickIdx], ts), ts);
+    // 多轨必须相对视频实际落点定位，而不是原始请求时间。否则请求落在
+    // 关键帧之间时，音频会从请求时间才开始，MSE 在视频落点处出现无声缺口。
+    for (const [id, st] of this._trackState) {
+      if (id !== targetId) st.resumeIndex = _locateResumeIndex(st, actualUs);
+    }
     this.emit('seek', { timestampUs, trackId: targetId });
     return { actualTimestampUs: Math.min(actualUs, timestampUs) };
   }

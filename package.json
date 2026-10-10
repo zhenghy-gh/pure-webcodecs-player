@@ -80,5 +80,8 @@
     "type": "git",
     "url": "git+https://github.com/zhenghy-gh/pure-webcodecs-player.git"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "devDependencies": {
+    "playwright-core": "^1.64.0"
+  }
 }
