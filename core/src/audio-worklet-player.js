@@ -325,10 +325,12 @@ export class AudioWorkletPlayer extends Emitter {
   currentTimeSec() {
     const consumed = this._playedFrames / this.sampleRate;
     if (!this.context) return consumed;
-    if (this.playing) {
-      return this._startedAt + Math.max(0, this.context.currentTime - this._anchorCtxTime);
+    if (this.playing && Number.isFinite(this.context.currentTime)
+      && Number.isFinite(this._anchorCtxTime) && Number.isFinite(this._startedAt)) {
+      const elapsed = Math.max(0, this.context.currentTime - this._anchorCtxTime);
+      return Number.isFinite(elapsed) ? this._startedAt + elapsed : consumed;
     }
-    return consumed;
+    return Number.isFinite(consumed) ? consumed : 0;
   }
 
   get bufferedSec() {

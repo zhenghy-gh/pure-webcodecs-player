@@ -118,3 +118,22 @@
 
 ### npm 发布
 - 第十轮已完成 npm pack --dry-run；npm whoami 因 ENEEDAUTH 失败，实际发布待 npm 登录后执行。
+
+## Attempt 12：修复 AudioWorklet 非有限 context 时钟回退
+
+### 发现
+- 复现条件：AudioContext.currentTime 在播放期间异常返回 NaN/Infinity。
+- 根因：AudioWorkletPlayer 直接用非有限 context 时钟计算播放进度，可能向同步层暴露 NaN。
+- 用户影响：AudioWorklet 音频主钟、currentTimeUs 和进度事件可能失真。
+
+### 修改
+- core/src/audio-worklet-player.js：播放态仅使用有限的 context.currentTime、锚点和 startedAt；异常时回退已消费帧时钟。
+- core/__tests__/core-audio-worklet-env.test.js：增加异常 context 时钟回归断言。
+
+### 验证
+- 定向测试：14/14 通过。
+- 全量测试：npm test 串行通过 3134/3134，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+- 真实浏览器：Chromium 156 + MSE 验收通过 19/19；无 console.error、pageerror、unhandledrejection 或网络失败。
+
+### 提交和推送
+- 基于 maintenance/round-6 继续提交。

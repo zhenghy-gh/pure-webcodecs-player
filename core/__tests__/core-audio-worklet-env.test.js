@@ -338,6 +338,11 @@ test('currentTimeSec 三态：无 ctx 用已消费帧；非 playing 用已消费
     player._anchorCtxTime = 9.0;
     player._startedAt = 2.0;
     assert.equal(player.currentTimeSec(), 3.0, 'playing：startedAt + ctx 增量');
+
+    // AudioContext 时钟异常时回落已消费帧，不能向上层暴露 NaN。
+    ctx.currentTime = Number.NaN;
+    assert.equal(player.currentTimeSec(), consumed);
+    assert.equal(player.currentTimeUs, consumed * 1e6);
   });
 });
 
