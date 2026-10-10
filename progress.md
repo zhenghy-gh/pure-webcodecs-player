@@ -228,6 +228,21 @@
 ### 验证
 - 定向测试：36/36 通过。
 - 全量测试：npm test 串行通过 3138/3138，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
+
+## Attempt 18：修复 Player buffered 非法区间污染
+
+### 发现
+- 复现条件：底层 getBufferedRanges() 返回负起点、零长度、end 不大于 start 或 NaN 的区间。
+- 根因：Player.buffered 仅检查数组，不校验区间数值契约，非法数据会直接暴露给 UI。
+- 用户影响：进度条、seek 范围和预加载逻辑可能收到不可用区间。
+
+### 修改
+- core/src/player.js：过滤非对象、非有限、负起点和非正长度的缓冲区间；同时保留底层读取异常时的来源回退。
+- core/__tests__/core-player-state.test.js：增加非法区间过滤回归覆盖。
+
+### 验证
+- 定向测试：36/36 通过。
+- 全量测试：npm test 串行通过 3138/3138，0 失败；npm run lint 通过（547 个 JS 文件）；npm run check 通过。
 - 真实浏览器：Chromium 156 + MSE 验收通过 19/19；无 console.error、pageerror、unhandledrejection 或网络失败。
 
 ### 提交和推送

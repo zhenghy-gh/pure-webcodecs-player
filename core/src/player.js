@@ -69,6 +69,12 @@ function asPlayerError(error, fallback = '播放器管线失败') {
   return new PlayerError('SOURCE_ERROR', fallback, { cause: error });
 }
 
+function validBufferedRanges(ranges) {
+  if (!Array.isArray(ranges)) return [];
+  return ranges.filter((range) => range && Number.isFinite(range.startUs)
+    && Number.isFinite(range.endUs) && range.startUs >= 0 && range.endUs > range.startUs);
+}
+
 /**
  * 面向具体媒体的能力探测：默认 codec 清单并集媒体实际 codec 后深探测，
  * 使 chooseRoute 能按「真实内容 codec」裁决（如 avc1.64001F 不在默认清单，
@@ -171,10 +177,12 @@ export class Player extends Emitter {
   get buffered() {
     let fromDemuxer;
     try { fromDemuxer = this.demuxer?.getBufferedRanges?.(); } catch {}
-    if (Array.isArray(fromDemuxer) && fromDemuxer.length > 0) return fromDemuxer;
+    const validDemuxer = validBufferedRanges(fromDemuxer);
+    if (validDemuxer.length > 0) return validDemuxer;
     let fromPipeline;
     try { fromPipeline = this.pipeline?.getBufferedRanges?.(); } catch {}
-    if (Array.isArray(fromPipeline) && fromPipeline.length > 0) return fromPipeline;
+    const validPipeline = validBufferedRanges(fromPipeline);
+    if (validPipeline.length > 0) return validPipeline;
     const ahead = this.bufferedAheadUs;
     if (typeof ahead === 'number' && ahead > 0) {
       const start = this.currentTimeUs;

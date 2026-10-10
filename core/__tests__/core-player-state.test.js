@@ -894,7 +894,13 @@ test('buffered：底层区间读取异常时安全回退为空或其他来源', 
   const ranges = [{ startUs: 100, endUs: 200 }];
   player.pipeline.getBufferedRanges = () => ranges;
   assert.deepEqual(player.buffered, ranges, 'demuxer 失败后仍读取有效管线范围');
+  player.demuxer.getBufferedRanges = () => [
+    { startUs: -1, endUs: 100 }, { startUs: 10, endUs: 10 },
+    { startUs: 20, endUs: Number.NaN }, ranges[0],
+  ];
+  assert.deepEqual(player.buffered, ranges, '过滤非法缓冲区间');
   player.pipeline.getBufferedRanges = () => { throw new Error('detached media source'); };
+  player.demuxer.getBufferedRanges = () => { throw new Error('stale source buffer'); };
   player.pipeline.bufferedAheadUs = 500;
   assert.deepEqual(player.buffered, [{ startUs: 0, endUs: 500 }], '范围失败后沿用水位兜底');
 });
