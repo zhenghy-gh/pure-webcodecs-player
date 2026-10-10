@@ -153,7 +153,8 @@ export class Player extends Emitter {
   get state() { return this.stateValue; }
   get ended() { return this.endedValue; }
   get currentTimeUs() {
-    const pipeUs = this.pipeline?.currentTimeUs;
+    let pipeUs;
+    try { pipeUs = this.pipeline?.currentTimeUs; } catch {}
     if (typeof pipeUs === 'number' && Number.isFinite(pipeUs) && pipeUs >= 0) {
       // 有真实输出管线时以其主时钟（音频优先）为准
       return (this.currentTimeValue = pipeUs);

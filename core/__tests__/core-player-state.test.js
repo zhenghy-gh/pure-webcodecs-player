@@ -926,6 +926,14 @@ test('currentTimeUs：外部时钟返回非有限值时保持有限且不跳变'
   assert.equal(player.currentTimeUs, 0);
 });
 
+test('currentTimeUs：管线时钟读取异常时回退播放器时钟', () => {
+  const player = new Player({ clock: { getTimeSec: () => 1.25 } });
+  player.currentTimeValue = 500_000;
+  player.stateValue = PLAYER_STATES.PLAYING;
+  player.pipeline = { get currentTimeUs() { throw new Error('detached output'); } };
+  assert.equal(player.currentTimeUs, 1_250_000);
+});
+
 test('码率统计：now 返回非有限值时保持有限且不污染窗口', () => {
   let now = 1;
   const player = new Player({ now: () => now });

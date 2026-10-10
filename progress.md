@@ -269,3 +269,32 @@
 
 ### 阶段性说明
 - 按当前维护策略不执行 npm 发布、版本递增、release commit、tag 或 npm 包发布；npm 仅作为测试工具使用。
+
+## Attempt 22：修复 Player 管线时钟 getter 异常崩溃
+
+### 发现
+- 复现条件：管线在销毁、输出设备失效或 MediaSource 断开期间，`pipeline.currentTimeUs` getter 抛出异常；读取 `Player.currentTimeUs`。
+- 根因：Player 只校验 getter 返回值的类型/有限性，没有隔离 getter 本身的同步异常。
+- 用户影响：暂停、timeupdate、buffered 合成和 seek 相关 UI 读取播放时间时可能同步抛错，阻断控制层。
+
+### 修改
+- core/src/player.js：用局部 try/catch 保护管线 `currentTimeUs` getter；读取失败时回退已有时间值或 PlaybackClock，不改变公共 API。
+- core/__tests__/core-player-state.test.js：增加管线时钟 getter 抛错时回退播放器时钟的回归测试。
+
+### 验证
+- 复现基线：未修复代码读取抛错 getter 真实退出码 1；修复后回退到 1.25s 播放时钟。
+- 定向测试：`node --test --test-timeout=15000 core/__tests__/core-player-state.test.js`，38/38 通过。
+- 全量测试：`npm test` 串行通过 3123/3123，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；check 内嵌测试报告 3140/3140，lint 检查 547 个 JS 文件。
+- 真实浏览器：Playwright + Chromium（本地安装）执行 `scripts/e2e/run.mjs --harness=mse-harness.html --media=/samples/e2e/sintel-trailer.mp4`，19/19 通过；覆盖 MSE 能力、MP4 load、轨道解析、MediaSource open、首帧（854x480，readyState=4）、播放推进、渲染帧（24，dropped=0）、seek（20s 请求对齐到 16.50s）、seek 后恢复（16.50→16.95s）、stall 恢复、buffered、水位、管线段计数、destroy 和 src 释放。
+- 浏览器 console.error、pageerror、unhandledrejection、网络失败：无输出；E2E 生成的截图仅作验证产物，未纳入本轮提交。
+
+### 提交和推送
+- 本轮待提交：Player 实现、回归测试和 progress.md；不包含 E2E 截图或媒体文件。
+
+### 风险
+- 本轮只保护管线时钟 getter 的异常边界；其他管线 getter 仍由各自调用点按既有语义处理。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 审计 Player 其余同步管线边界（volume/muted/playbackRate、pipeline 事件转发及 destroy 竞态），优先选择可真实复现且能补回归测试的问题。
