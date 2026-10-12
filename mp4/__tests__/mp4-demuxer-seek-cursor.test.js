@@ -231,13 +231,7 @@ test('seek 游标重定位：分片模式完整消费后 seek，重放表内续�
   await d2.destroy();
 });
 
-test('seek 游标重定位：扫描中途 seek 回早期关键帧（重放段 + 接续扫描段）', async () => {
-  // 只消费 2 个样本：生成器挂在 yield(index=1) 处，表内已解析 0..1，
-  // frag0 的第 3 个样本（dts 80）尚未解析且游标已越过 frag0。
-  // seek(50ms) 命中关键帧 0 → resumeIndex=0 → 重放 0..1，再扫 frag1（index 2..4）。
-  // ⚠️ 语义限制（分片模式既定）：中断时所在 moof 内未解析的样本（dts 80）
-  // 被跳过——游标只前进，找回它需回拨重扫+查重，会引入表膨胀与 index 重复。
-  // 断言核心：重放段与扫描段 index 单调衔接、不重复、不提前 EOS。
+test('seek 游标重定位：扫描中途 seek 回早期关键帧，保留同一 moof 尾部样本', async () => {
   const { buildFragmentedFixture } = await import('./fixtures.js');
   const { bytes: fb } = buildFragmentedFixture();
   const d3 = new Mp4Demuxer(new MemoryDataSource(fb));
@@ -253,8 +247,8 @@ test('seek 游标重定位：扫描中途 seek 回早期关键帧（重放段 + 
     indices.push(s.index);
     dtsList.push(s.dts);
   }
-  assert.deepEqual(indices, [0, 1, 2, 3, 4], '重放段(0..1)应衔接扫描段(2..4)');
-  assert.deepEqual(dtsList, [0, 40, 120, 160, 200].map((t) => t * TICK_US));
+  assert.deepEqual(indices, [0, 1, 2, 3, 4, 5], '重放后必须包含 frag0 未读样本，再继续 frag1');
+  assert.deepEqual(dtsList, [0, 40, 80, 120, 160, 200].map((t) => t * TICK_US));
   await d3.destroy();
 });
 

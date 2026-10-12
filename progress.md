@@ -1130,3 +1130,30 @@
 ### 风险
 - 格式特征混合文本本质上有歧义：节头/Dialogue 特征若先于独立 SRT 时间行仍按 ASS 处理，以避免 ASS 文件中示例或正文包含时间箭头时误判。
 - 无公开 API 变化；未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+## Attempt 53：修复分片 MP4 seek 中断及多轨扫描丢样本
+
+### 发现
+- 复现条件：fragment 中含多个样本；只读取其中部分后 seek，core 会关闭旧迭代器，但 MP4 的共享顶层游标已越过当前 moof。
+- 根因：旧实现只把请求轨已 yield 样本放进表，并在请求另一轨时过滤并跳过其 moof 数据。游标前进后 seek 重建迭代器只能重放已缓存项，因此同一 moof 未解析尾样本丢失；交错读取也会让未请求轨无法重放该 fragment 的数据。并行 track pull 还可能重复推进扫描位置。
+- 用户影响：播放过程 seek 或多轨异步读取可能产生样本缺口、音视频轨 EOS 不一致或不完整解码。
+
+### 修改
+- mp4/src/demuxer.js：共享扫描在每个 moof 解析所有已知轨的样本元数据，仅解析一次；用每轨独立 fragmentReadIndex 重放、加载该轨样本，并在并发读取时共享 in-flight fragment 扫描。
+- mp4/src/demuxer.js：fragment seek 将目标轨及其他轨的样本 cursor 与实际 seek 落点对齐；样本读取失败时不提前推进样本 cursor。
+- mp4/__tests__/mp4-demuxer-seek-cursor.test.js：把原先记录丢样本限制的用例改为 seek 后要求保留当前 moof 未读尾部，并接续后续 fragment。
+- mp4/__tests__/mp4-demuxer-multitrack.test.js：新增音视频 fragmented fixture，验证先读一轨再完整读另一轨，以及两轨并发 pull 均不丢失样本。
+- mp4/__tests__/demuxer.test.js：增加 lazySamples 分片 seek/重放后仍可 readSampleData 的回归。
+
+### 验证
+- 定向 MP4 测试：node --test --test-timeout=15000 mp4/__tests__/*.test.js，162/162 通过。
+- 全量测试：npm test 独立重跑 3160/3160 通过；npm run check 的 fixtures、3176/3176 全量测试及 lint 全部通过（扫描 547 个 JS 文件）。check 中样本数较 npm test 多 16，因 check 先生成并落盘 fixtures；此前一次独立 npm test 受 RTMP 测试的 event-loop pending promise 影响，有 125 项 cancelled，未作为通过结果计入。
+- 真实浏览器：Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；双轨 track parse、video 854x480 / readyState=4、播放推进、seek(20s)→16.50s 并恢复至 16.94s、buffered 和销毁均通过，无 console/pageerror/network error/unhandled rejection。浏览器截图由验收脚本临时重写，已还原，不纳入提交。
+- git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- 分片样本索引表会保存每条 track 已扫描过 fragment 的轻量样本元数据；样本 payload 仍按读取方式加载或保持 lazy，支持 seek 与跨轨重放所需的元数据随扫描量增长。
+- 本轮未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。

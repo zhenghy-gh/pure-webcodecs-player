@@ -15,10 +15,60 @@ import {
   buildFtyp,
   buildMdat,
   buildMoov,
+  buildMvhd,
+  buildMvex,
+  buildTkhd,
+  buildMdhd,
+  buildHdlr,
+  buildVmhd,
+  buildSmhd,
+  buildDinf,
+  buildStsd,
+  buildMoofMdat,
+  box,
 } from '../src/box-builder.js';
 import { makeAvcCFixture, makeAscFixture } from './fixtures.js';
 
 const TICK_US = 1000;
+
+function buildFragmentedMultiTrackFixture() {
+  const avcC = makeAvcCFixture();
+  const asc = makeAscFixture();
+  const ftyp = buildFtyp({ majorBrand: 'msfh', compatible: ['msfh', 'isom', 'iso2'] });
+  const trackBoxes = [
+    { id: 1, type: 'video', entry: { id: 1, type: 'video', sampleEntryType: 'avc1', codecPrivate: avcC, width: 320, height: 240, timescale: 1000, duration: 0, language: 'und' }, timescale: 1000 },
+    { id: 2, type: 'audio', entry: { id: 2, type: 'audio', sampleEntryType: 'mp4a', codecPrivate: asc, channelCount: 2, sampleRate: 44100, timescale: 44100, duration: 0, language: 'und' }, timescale: 44100 },
+  ];
+  const moov = box('moov', (w) => {
+    w.writeRaw(buildMvhd({ timescale: 1000, duration: 0, nextTrackId: 3 }));
+    for (const t of trackBoxes) {
+      w.writeRaw(box('trak', (tw) => {
+        tw.writeRaw(buildTkhd({ trackId: t.id, duration: 0, isVideo: t.type === 'video', isAudio: t.type === 'audio', width: t.entry.width, height: t.entry.height }));
+        tw.writeRaw(box('mdia', (mw) => {
+          mw.writeRaw(buildMdhd({ timescale: t.timescale, duration: 0 }));
+          mw.writeRaw(buildHdlr({ handlerType: t.type === 'video' ? 'vide' : 'soun', name: 'fragmented test' }));
+          mw.writeRaw(box('minf', (iw) => {
+            iw.writeRaw(t.type === 'video' ? buildVmhd() : buildSmhd());
+            iw.writeRaw(buildDinf());
+            iw.writeRaw(box('stbl', (sw) => sw.writeRaw(buildStsd(t.entry))));
+          }));
+        }));
+      }));
+    }
+    w.writeRaw(buildMvex([1, 2], { 1: { defaultSampleDuration: 40 }, 2: { defaultSampleDuration: 1024 } }));
+  });
+  const videoData = [0x11, 0x12, 0x13].map((v) => Uint8Array.from([v, v + 1]));
+  const audioData = [0x21, 0x22, 0x23].map((v) => Uint8Array.from([v, v + 1, v + 2]));
+  const fragments = [];
+  for (let i = 0; i < 3; i++) {
+    fragments.push(buildMoofMdat({ sequenceNumber: i * 2, trackId: 1, baseMediaDecodeTime: i * 40, samples: [{ dts: i * 40, pts: i * 40, duration: 40, size: videoData[i].length, keyframe: i === 0, data: videoData[i] }] }).data);
+    fragments.push(buildMoofMdat({ sequenceNumber: i * 2 + 1, trackId: 2, baseMediaDecodeTime: i * 1024, samples: [{ dts: i * 1024, pts: i * 1024, duration: 1024, size: audioData[i].length, keyframe: true, data: audioData[i] }] }).data);
+  }
+  const bytes = new Uint8Array(ftyp.length + moov.length + fragments.reduce((n, f) => n + f.length, 0));
+  let offset = 0;
+  for (const part of [ftyp, moov, ...fragments]) { bytes.set(part, offset); offset += part.length; }
+  return { bytes, videoData, audioData };
+}
 
 /** 双轨 fixture：视频 6 样本（3 chunk × 2）、音频 8 样本（2 chunk × 4），mda 区先视频后音频 */
 function buildTwoTrackFixture() {
@@ -141,6 +191,41 @@ function buildTwoTrackFixture() {
 
   return { bytes, expectedVideo, expectedAudio, avcC, asc, videoChunkOffsets, audioChunkOffsets };
 }
+
+test('分片双轨交错读取：共享扫描保留未请求轨道与各 fragment 样本', async () => {
+  const { bytes, videoData, audioData } = buildFragmentedMultiTrackFixture();
+  const d = new Mp4Demuxer(new MemoryDataSource(bytes));
+  await d.open();
+  const v0 = await d.readSample(1);
+  const a0 = await d.readSample(2);
+  const audioRest = [];
+  for (;;) { const sample = await d.readSample(2); if (!sample) break; audioRest.push(sample); }
+  assert.deepEqual([...v0.data], [...videoData[0]]);
+  assert.deepEqual([...a0.data], [...audioData[0]]);
+  assert.equal(v0.index, 0);
+  assert.equal(a0.index, 0);
+  assert.deepEqual(audioRest.map((sample) => sample.index), [1, 2]);
+  const videoRest = [];
+  for (;;) { const sample = await d.readSample(1); if (!sample) break; videoRest.push(sample); }
+  assert.deepEqual(videoRest.map((sample) => sample.index), [1, 2]);
+  assert.deepEqual(videoRest.map((sample) => [...sample.data]), videoData.slice(1).map((data) => [...data]));
+  await d.destroy();
+
+  const concurrent = new Mp4Demuxer(new MemoryDataSource(bytes));
+  await concurrent.open();
+  const [firstVideo, firstAudio] = await Promise.all([concurrent.readSample(1), concurrent.readSample(2)]);
+  assert.equal(firstVideo.index, 0);
+  assert.equal(firstAudio.index, 0);
+  const drain = async (trackId) => {
+    const indices = [];
+    for (;;) { const sample = await concurrent.readSample(trackId); if (!sample) break; indices.push(sample.index); }
+    return indices;
+  };
+  const [videoIndices, audioIndices] = await Promise.all([drain(1), drain(2)]);
+  assert.deepEqual(videoIndices, [1, 2]);
+  assert.deepEqual(audioIndices, [1, 2]);
+  await concurrent.destroy();
+});
 
 test('双轨 open：视频 avc1 + 音频 mp4a 契约字段各就各位', async () => {
   const { bytes, asc, videoChunkOffsets, audioChunkOffsets } = buildTwoTrackFixture();

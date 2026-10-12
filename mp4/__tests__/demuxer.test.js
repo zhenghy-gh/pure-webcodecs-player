@@ -142,6 +142,21 @@ test('分片 MP4：fragmented 标记与跨片样本迭代（µs 连续性）', a
   }
 });
 
+test('分片 MP4 lazySamples：缓存元数据重放仍保持 lazy 并可补取数据', async () => {
+  const { bytes, expectedSamples } = buildFragmentedFixture();
+  const d = new Mp4Demuxer(new MemoryDataSource(bytes), { lazySamples: true });
+  await d.open();
+  assert.equal((await d.readSample(1)).index, 0);
+  assert.equal((await d.readSample(1)).index, 1);
+  await d.seek(50 * TICK_US);
+  const sample = await d.readSample(1);
+  assert.equal(sample.index, 0);
+  assert.equal(sample.dataState, 'lazy');
+  assert.equal(sample.data, undefined);
+  assert.deepEqual([...(await d.readSampleData(sample))], [...expectedSamples[0].data]);
+  await d.destroy();
+});
+
 test('分片 MP4：迭代建立索引后可 seek 到关键帧', async () => {
   const { bytes } = buildFragmentedFixture();
   const d = new Mp4Demuxer(new MemoryDataSource(bytes), { lazySamples: true });
