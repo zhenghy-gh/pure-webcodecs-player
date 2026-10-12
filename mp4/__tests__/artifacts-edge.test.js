@@ -234,14 +234,12 @@ test('buildMoofMdat 负 cts（B 帧）trun 往返为负值', async () => {
   assert.equal(frags[0].baseMediaDecodeTime, 80);
 });
 
-test('batchSamplesByGop：尾部不足目标也成批；超长无关键帧按 3× 兜底', () => {
+test('batchSamplesByGop：尾部不足目标仍成批；无关键帧输入保持完整', () => {
   const D = 40000;
   const mk = (i, kf) => ({ index: i, duration: D, keyframe: kf, data: new Uint8Array(4) });
-  // 无关键帧：acc 到 3× 目标即兜底切
   const noKf = Array.from({ length: 10 }, (_, i) => mk(i, false));
   const b1 = batchSamplesByGop(noKf, { targetDurationUs: 120000 });
-  assert.deepEqual(b1.map((b) => b.length), [9, 1]); // 9*40000=360000 触发兜底
-  // 尾批不足目标仍输出
+  assert.deepEqual(b1.map((b) => b.length), [10]); // 无随机访问点时不可切分
   const tail = [mk(0, true), mk(1, false)];
   const b2 = batchSamplesByGop(tail, { targetDurationUs: 120000 });
   assert.equal(b2.length, 1);

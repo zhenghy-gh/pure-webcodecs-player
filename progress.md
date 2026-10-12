@@ -1279,3 +1279,28 @@
 
 ### 风险
 - 无公共 API 改动；错误的 Sample 输入现在更早抛出 STATE_ERROR，正确 byte buffer/view 保持支持。未执行版本/发布工作流。
+
+## Attempt 59：确保 remux GOP 切批只在随机访问点边界发生
+
+### 发现
+- 复现条件：视频 GOP 长于 3× targetDurationUs，且 GOP 内没有关键帧。旧兜底按时长在 delta sample 后拆出后续分段。
+- 根因：batchSamplesByGop 的“3× 时长兜底”在非关键帧处强制 flush，导致下一 moof 的第一 sample 仍依赖前段中的参考帧；对 MSE 独立 media segment 来说不是有效随机访问起点。旧算法还把切点关键帧放在前一段末尾，而非后一段开头。
+- 相关边界：若输入开头为 delta samples，直接生成的首段也无法从随机访问点开始；无 keyframe metadata 的轨则不能安全猜测切点。
+
+### 修改
+- mp4/src/remuxer.js：达到目标时长后仅在遇到下一个关键帧时 flush 前一 GOP，并将该关键帧放入新段；删除 mid-GOP 强制切段。
+- mp4/src/remuxer.js：跳过首个 keyframe 之前的 delta samples；没有任何关键帧时整体保留一个 batch，避免制造无法解码的附加片段。
+- mp4/__tests__/remuxer.test.js：更新边界归属断言，新增长 GOP、开头 delta、整条流无关键帧的回归。
+- mp4/__tests__/artifacts-edge.test.js：替换原 3× 无关键帧硬切预期，改测无随机访问信息时保持完整。
+
+### 验证
+- 定向 remux / remuxer-gaps / muxer-roundtrip / artifacts-edge 测试：38/38 通过。
+- npm run check：fixtures 通过；全量测试 3189/3189；lint 通过（548 个 JS 文件）；check 结论全部通过。
+- 真实浏览器：Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；视频解码、时间推进、seek、buffered 和 destroy 全部通过。
+- E2E 截图已还原；git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- 超长 GOP 现在会增大单个输出段以保持随机访问边界；无关键帧 metadata 时批次可能超过 targetDurationUs，但不再凭空在依赖帧处断开。无公共 API 更改。

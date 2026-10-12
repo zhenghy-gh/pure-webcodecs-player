@@ -182,24 +182,27 @@ function nmhdBox() {
 
 /**
  * 把样本按 GOP 边界 + 目标时长切成批（remux 调度策略）。
+ * 有关键帧标记时，初始随机访问点前的 delta 样本会被跳过，后续批次仅从关键帧开始。
+ * GOP 超长时延长该批，直到下一个关键帧，不在 GOP 中间切段；无关键帧时返回单一原样批次。
  * @param {Sample[]} samples 解码序、dts 升序的契约样本（duration 为 µs）
  * @param {{targetDurationUs?: number}} [opts] 默认 2 秒
  * @returns {Sample[][]}
  */
 export function batchSamplesByGop(samples, { targetDurationUs = 2_000_000 } = {}) {
+  if (samples.length > 0 && !samples.some((sample) => sample.keyframe)) return [samples];
   const batches = [];
   let current = [];
   let acc = 0;
   for (const s of samples) {
-    current.push(s);
-    acc += s.duration ?? 0;
-    const isBoundary =
-      current.length > 1 && s.keyframe && acc >= targetDurationUs;
-    if (isBoundary || acc >= targetDurationUs * 3) {
+    if (current.length === 0 && !s.keyframe) continue;
+    const isBoundary = current.length > 0 && s.keyframe && acc >= targetDurationUs;
+    if (isBoundary) {
       batches.push(current);
       current = [];
       acc = 0;
     }
+    current.push(s);
+    acc += s.duration ?? 0;
   }
   if (current.length > 0) batches.push(current);
   return batches;

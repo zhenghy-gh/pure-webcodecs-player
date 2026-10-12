@@ -131,9 +131,41 @@ test('batchSamplesByGop：关键帧对齐切批', () => {
   ];
   const batches = batchSamplesByGop(samples, { targetDurationUs: 120000 });
   assert.equal(batches.length, 2);
-  // 关键帧 #3 结束第一批，第二批从 #4 开始
-  assert.deepEqual(batches.map((b) => b[0].index), [0, 4]);
-  assert.equal(batches[0][batches[0].length - 1].index, 3);
+  // 达到目标时长后，在关键帧 #3 之前切分，保证第二段以随机访问点开始。
+  assert.deepEqual(batches.map((b) => b[0].index), [0, 3]);
+  assert.equal(batches[0][batches[0].length - 1].index, 2);
+});
+
+test('batchSamplesByGop never cuts a long GOP before the next keyframe', () => {
+  const samples = Array.from({ length: 13 }, (_, index) => ({
+    index,
+    duration: 40_000,
+    keyframe: index === 0 || index === 12,
+  }));
+  const batches = batchSamplesByGop(samples, { targetDurationUs: 120_000 });
+  assert.deepEqual(batches.map((batch) => batch.map((sample) => sample.index)), [
+    Array.from({ length: 12 }, (_, index) => index),
+    [12],
+  ]);
+  assert.ok(batches.every((batch) => batch[0].keyframe));
+});
+
+test('batchSamplesByGop keeps streams with no keyframes unsplit', () => {
+  const samples = Array.from({ length: 10 }, (_, index) => ({ index, duration: 40_000, keyframe: false }));
+  const batches = batchSamplesByGop(samples, { targetDurationUs: 120_000 });
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0].length, samples.length);
+});
+
+test('batchSamplesByGop skips delta samples before the initial random-access point', () => {
+  const samples = [
+    { index: 0, duration: 40_000, keyframe: false },
+    { index: 1, duration: 40_000, keyframe: false },
+    { index: 2, duration: 40_000, keyframe: true },
+    { index: 3, duration: 40_000, keyframe: false },
+  ];
+  const batches = batchSamplesByGop(samples, { targetDurationUs: 1 });
+  assert.deepEqual(batches.map((batch) => batch.map((sample) => sample.index)), [[2, 3]]);
 });
 
 test('remuxDemuxer：端到端 remux 后可被再次解析', async () => {
