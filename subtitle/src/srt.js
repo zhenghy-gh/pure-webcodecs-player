@@ -76,7 +76,9 @@ export function parseSrt(text, options = {}) {
     const lines = block.split('\n').map((line) => line.trim()).filter((line) => line !== '');
     const timingIndexes = [];
     for (let i = 0; i < lines.length; i++) {
-      if (isValidTimingLine(lines[i])) timingIndexes.push(i);
+      const looksLikeTiming = TIMING_RE.test(lines[i]);
+      const followsSequence = i > 0 && /^\d+$/.test(lines[i - 1]);
+      if (isValidTimingLine(lines[i]) || (looksLikeTiming && followsSequence)) timingIndexes.push(i);
     }
     if (timingIndexes.length < 2) return [block];
 

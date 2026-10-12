@@ -1022,4 +1022,32 @@
 - 没有公共 API 变化；未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
 
 ### 下一轮候选
-- 增加正文含似时间行的歧义守卫，并观察运行环境下 Node glob 测试发现数波动是否可重复。
+- 为缺空行的损坏 SRT cue 增加恢复守卫：仅在紧邻数字序号后将疑似时间行作为边界，避免损坏条目隐身。
+
+## Attempt 49：将缺分隔符的损坏 SRT cue 送入错误路径
+
+### 发现
+- 复现条件：有效 cue 后紧接纯数字序号，再跟损坏时间行，且无空白分隔。
+- 根因：Attempt 48 仅按有效时间戳恢复边界；损坏时间行未成为分段边界，于是和序号、错误 cue 文本一起吞入前一个 cue。
+- 用户影响：strict 模式错误地接受损坏字幕，lenient 不增加 skippedBlocks，诊断和错误统计失真。
+
+### 修改
+- subtitle/src/srt.js：检测时间行样式候选时，后接纯数字序号的时间行形态即使时间无效也会用作分界；分段后走已有时间解析错误逻辑，strict 抛错、lenient 跳过损坏块。无序号正文中的有效递增时间行仍可恢复 cue。
+- subtitle/__tests__/subtitle-srt-edge.test.js：覆盖损坏后续块不污染前 cue 正文，lenient 保留前一 cue 并计数跳过一块，strict 抛 PARSE_ERROR。
+
+### 验证
+- 修复前复现：strict/lenient 都只返回一条 cue，正文包含损坏的第二条时间行和台词，skippedBlocks=0。
+- 定向测试：node --test --test-timeout=15000 subtitle/__tests__/subtitle-srt-edge.test.js subtitle/__tests__/srt.test.js，28/28 通过。
+- 全量测试：npm test 3171/3171，0 失败。
+- 静态验证：npm run lint && npm run check 退出码 0；单独重跑 npm run check 确认 3171/3171，lint 检查 547 个 JS 文件；PRD 覆盖摘要 0/565、0/16 为报告性输出，check 结论全部通过。
+- 解析器逻辑变更，无需真实浏览器播放验证。
+
+### 提交和推送
+- 本轮待提交：损坏 SRT cue 边界恢复、回归测试和 progress.md。
+
+### 风险
+- 非空行中的时间行格式与紧随数字的序号组合被视为 cue 边界，因而会将这段正文解释为损坏 cue；此结构与无空行的损坏 SRT 无法在语法上区分。
+- 无公共 API 变化；未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 检查破折号箭头文本、序号形态及相邻 SRT cue 推断边界的兼容性。

@@ -30,6 +30,16 @@ test('SRT：块间无空行 → 根据后续时间行恢复 cue 边界', () => {
   }
 });
 
+test('SRT：缺空行的损坏后续 cue 按坏块处理，不吞入前一条正文', () => {
+  const src = '1\n00:00:01,000 --> 00:00:02,000\nfirst\n2\n00:bad --> 00:00:04,000\ncorrupt next cue\n';
+  const lenient = parseSrt(src);
+  assert.equal(lenient.cues.length, 1);
+  assert.equal(lenient.cues[0].text, 'first');
+  assert.equal(lenient.stats.skippedBlocks, 1);
+  assert.throws(() => parseSrt(src, { strict: true }), (error) =>
+    error instanceof SubtitleError && error.code === 'PARSE_ERROR');
+});
+
 test('SRT：负时间（秒为负）非法 → 跳过', () => {
   const src = '1\n00:00:-1,000 --> 00:00:02,000\n负时间\n';
   const r = parseSrt(src);
