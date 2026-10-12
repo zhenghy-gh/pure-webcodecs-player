@@ -305,6 +305,29 @@ test('ASS：strict 拒绝缺失 Style/Events Format，lenient 沿用默认列序
   assert.equal(parseAss(events).cues[0].text, 'hello');
 });
 
+test('ASS：strict Dialogue Margin 必须为非负安全整数', () => {
+  const format = 'Layer, Start, End, MarginL, MarginR, MarginV, Text';
+  const make = (field, value) => {
+    const margins = { marginl: '0', marginr: '0', marginv: '0', [field]: value };
+    return ['[Events]', 'Format: ' + format,
+      'Dialogue: 0,0:00:01.00,0:00:02.00,' + margins.marginl + ',' + margins.marginr + ',' + margins.marginv + ',cue',
+    ].join('\n');
+  };
+  for (const field of ['marginl', 'marginr', 'marginv']) {
+    for (const value of ['1.5', '-4', '12px', '9007199254740992']) {
+      assert.throws(() => parseAss(make(field, value), { strict: true }), (error) =>
+        error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+        error.detail.field === field && error.detail.value === value);
+    }
+  }
+  const valid = parseAss([
+    '[Events]', 'Format: ' + format,
+    'Dialogue: 0,0:00:01.00,0:00:02.00,10,20,30,cue',
+  ].join('\n'), { strict: true });
+  assert.deepEqual(valid.cues[0].settings, { name: '', effect: '', mL: '10', mR: '20', mV: '30' });
+  assert.equal(parseAss(make('marginl', '12px')).cues[0].settings.mL, '12px');
+});
+
 test('ASS：strict Dialogue Layer 必须是安全整数，lenient 保留前缀兼容', () => {
   const make = (layer) => [
     '[Events]',

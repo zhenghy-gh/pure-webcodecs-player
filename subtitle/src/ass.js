@@ -324,6 +324,14 @@ export function parseAss(text, options = {}) {
           throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Dialogue Layer 必须是安全整数`, { detail: { line: li + 1, field: 'layer', value } });
         }
       }
+      if (strict && isDialogue) {
+        for (const field of ['marginl', 'marginr', 'marginv']) {
+          const value = rec[field] ?? '';
+          if (value !== '' && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) {
+            throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Dialogue ${field} 必须是非负安全整数`, { detail: { line: li + 1, field, value } });
+          }
+        }
+      }
       const markedLayer = /^marked\s*=\s*([01])$/i.exec(rec['marked'] ?? '');
       if (strict && isDialogue && !fmt.includes('layer') && fmt.includes('marked') && !markedLayer) {
         throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 SSA Marked 字段必须是 Marked=0 或 Marked=1`, { detail: { line: li + 1, field: 'marked', value: rec['marked'] ?? '' } });

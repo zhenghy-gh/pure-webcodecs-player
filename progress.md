@@ -913,4 +913,31 @@
 - 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
 
 ### 下一轮候选
-- 继续检查 strict ASS 的空 Dialogue 正文和缺失/空 Style 字段的有效性契约，避免错误拒绝合法内容。
+- 检查 strict ASS 空 Dialogue 正文和缺失/空 Style 字段的有效性契约，避免错误拒绝合法内容。
+
+## Attempt 45：strict 校验 ASS Dialogue Margin 安全整数
+
+### 发现
+- 复现条件：Dialogue 的 `MarginL`、`MarginR` 或 `MarginV` 含 `1.5`、`-4`、`12px` 或超出安全整数范围的值。
+- 根因：事件 Margin 以原始字符串直接传入 cue settings，strict 模式未检查格式或数值范围。
+- 用户影响：strict 解析接受非法/负坐标 margin，可能导致字幕定位异常，并丧失输入校验可靠性。
+
+### 修改
+- subtitle/src/ass.js：strict Dialogue 中存在的 MarginL/R/V 字段必须为空（沿用 ASS 缺省值兼容）或为非负安全十进制整数；空白会被字段解析 trim 成空值。lenient 行为不变。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖三个 margin 字段的负数、小数、尾随字符和超安全整数拒绝，合法值解析及 lenient 兼容。
+
+### 验证
+- 修复前复现：strict 接受 `1.5`、`-4`、`12px` 和 `9007199254740992`。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js subtitle/__tests__/ass.test.js`，62/62 通过。
+- 全量测试：`npm test` 串行通过 3168/3168，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；lint 扫描 547 个 JS 文件，check 内嵌测试 3168/3168；PRD 覆盖摘要 0/565、0/16 为报告性输出，check 结论全部通过。纯 parser 修改，无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：strict Dialogue Margin 校验、回归测试和 progress.md。
+
+### 风险
+- 只在 strict 模式拒绝非法非空 Margin；lenient 与公共 API 保持不变。允许空 Margin 与样式默认语义兼容。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 继续检查空 Dialogue 正文、未知事件 Margin 映射和缺失/空 Style 字段的严格模式契约。
