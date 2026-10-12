@@ -170,7 +170,11 @@ export function parseAss(text, options = {}) {
         /** @type {Record<string,string>} */
         const rec = {};
         styleFormat.forEach((k, i) => { rec[k] = (parts[i] ?? '').trim(); });
-        const st = createDefaultStyle(rec['name'] || `Style${styles.length + 1}`);
+        const styleName = rec['name'] || `Style${styles.length + 1}`;
+        if (strict && styles.some((style) => style.name.toLowerCase() === styleName.toLowerCase())) {
+          throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Style 名称 ${styleName} 重复`, { detail: { line: li + 1, field: 'name', value: styleName } });
+        }
+        const st = createDefaultStyle(styleName);
         try {
           if (strict) {
             const colorFields = ['primarycolour', 'secondarycolour', 'outlinecolour', 'backcolour'];

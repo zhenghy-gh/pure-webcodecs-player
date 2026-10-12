@@ -863,3 +863,30 @@
 
 ### 下一轮候选
 - 检查缺失 Style 字段与空 Dialogue 正文的严格模式兼容语义，避免将合法 fallback 或零内容 cue 误判。
+
+## Attempt 43：strict ASS 拒绝大小写冲突的重复 Style 名
+
+### 发现
+- 复现条件：样式表定义 `Default` 和 `default`，Dialogue 引用 `DEFAULT`。
+- 根因：解析器的样式查找大小写不敏感、始终取首个匹配项，但 strict 未检查样式名称冲突；文件会成功解析，却有第二个无法被 Dialogue 明确引用的 Style。
+- 用户影响：严格模式接受解析歧义，样式选择取决于文件记录顺序，妨碍诊断拼写和字体/颜色意外。
+
+### 修改
+- subtitle/src/ass.js：strict 新增大小写不敏感的重复 Style 名检查；重名时抛带行号、字段和值的 `SubtitleError(PARSE_ERROR)`。lenient 仍保留全部样式并沿用首个匹配行为。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖大小写冲突、strict 错误详情和 lenient 原有顺序/选择行为。
+
+### 验证
+- 修复前复现：`Default`/`default` 两个 Style 在 strict 下均被接受，Dialogue 对 `DEFAULT` 静默选择首项。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/ass.test.js subtitle/__tests__/subtitle-ass-edge.test.js`，60/60 通过。
+- 全量测试：`npm test` 串行通过 3166/3166，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；lint 扫描 547 个 JS 文件，check 内嵌测试 3166/3166。PRD 覆盖门槛摘要 0/565、0/16 为报告值，结论全部通过。纯字幕 parser 变更无浏览器验证需求。
+
+### 提交和推送
+- 本轮待提交：Style 名 strict 唯一性校验、回归测试和 progress.md。
+
+### 风险
+- 只影响显式 strict 模式；lenient 重名样式行为未变。没有公开 API 变化。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 检查缺失 Style 字段与空 Dialogue 正文的严格模式兼容语义，避免将合法 fallback 或零内容 cue 误判。

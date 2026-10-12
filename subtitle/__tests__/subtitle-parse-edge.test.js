@@ -305,6 +305,24 @@ test('ASS：strict 拒绝缺失 Style/Events Format，lenient 沿用默认列序
   assert.equal(parseAss(events).cues[0].text, 'hello');
 });
 
+test('ASS：strict 拒绝大小写冲突的重复 Style 名，lenient 保留顺序', () => {
+  const src = [
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize',
+    'Style: Default,Arial,20',
+    'Style: default,Serif,40',
+    '[Events]',
+    'Format: Layer, Start, End, Style, Text',
+    'Dialogue: 0,0:00:01.00,0:00:02.00,DEFAULT,ambiguous',
+  ].join('\n');
+  assert.throws(() => parseAss(src, { strict: true }), (error) =>
+    error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+    error.detail.line === 4 && error.detail.field === 'name' && error.detail.value === 'default');
+  const lenient = parseAss(src);
+  assert.deepEqual(lenient.styles.map((style) => style.name), ['Default', 'default']);
+  assert.equal(lenient.cues[0].style, 'Default');
+});
+
 test('ASS：strict 拒绝未知 Dialogue Style，lenient 保留首样式回退', () => {
   const src = [
     '[V4+ Styles]',
