@@ -988,7 +988,7 @@
 - 静态验证：npm run lint && npm run check 通过；lint 检查 547 个 JS 文件，check 内嵌测试 3170/3170；PRD 门槛摘要 0/565、0/16 是报告性输出，结论全部通过。纯解析器变更，不需浏览器播放验证。
 
 ### 提交和推送
-- 本轮待提交：Text 按声明列位置切分、回归测试和 progress.md。
+- 已提交并推送：`aa47bf8 fix: parse reordered ass text columns`（Text 按声明列位置切分、回归测试及 progress.md）。
 
 ### 风险
 - 列顺序与 Text 逗号归属按 Format 声明处理；Text 为末列时行为未变，strict 和 lenient 兼容均有回归。无公共 API 变化。
