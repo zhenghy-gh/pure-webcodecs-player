@@ -906,7 +906,7 @@
 - 改动仅限 ASS parser strict 校验，无需浏览器播放验证。
 
 ### 提交和推送
-- 本轮待提交：Dialogue Layer strict 整数校验、回归测试和 progress.md。
+- 已提交并推送：`47b1ec1 fix: validate strict ass dialogue layers`（Dialogue Layer strict 整数校验、回归测试及 progress.md）。
 
 ### 风险
 - 范围只影响 strict 输入；负安全整数保留为合法 layer，lenient 不变。无公共 API 变化。
