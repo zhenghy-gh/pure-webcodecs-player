@@ -120,6 +120,14 @@ export function parseVtt(text, options = {}) {
     }
 
     const tm = TIMING_RE.exec(lines[ti].trim());
+    if (!tm) {
+      skippedBlocks += 1;
+      warnings.push(`第 ${bi + 1} 块时间行格式非法，已跳过`);
+      if (strict) {
+        throw new SubtitleError('PARSE_ERROR', `第 ${bi + 1} 块时间行格式非法`, { detail: { block: first, timing: lines[ti] } });
+      }
+      continue;
+    }
     let startUs = 0;
     let endUs = 0;
     try {

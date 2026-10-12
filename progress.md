@@ -452,3 +452,31 @@
 
 ### 下一轮候选
 - 审计控制 setter 异步拒绝在 destroy 后是否仍派发 error，以及 MSE/WebCodecs pipeline 的 play/pause 状态是否在失败时自洽。
+
+## Attempt 28：修复 WebVTT strict 畸形时间行裸 TypeError
+
+### 发现
+- 复现条件：`parseVtt(text, { strict: true })` 输入类似 `00:01.000 -->`（无结束时间）或 `--> 00:02.000`（无开始时间）。
+- 根因：时间行存在 `-->`，解析器会将它认作 cue 时间行；但 `TIMING_RE.exec()` 失败返回 null，后续直接读取 `tm[1]` 泄漏裸 `TypeError`，不符合模块所有解析错误需使用 `SubtitleError(PARSE_ERROR)` 的约定。
+- 用户影响：strict 消费方不能按统一错误类型/code 分类和展示输入错误；lenient 模式目前会在相同畸形输入上崩溃而不是安全跳过。
+
+### 修改
+- subtitle/src/vtt.js：验证时间行正则结果；无效行增加 skippedBlocks/warning，在 strict 模式抛带 block/timing detail 的 `SubtitleError(PARSE_ERROR)`，lenient 模式跳过该块。
+- subtitle/__tests__/subtitle-vtt-settings.test.js：将已知缺陷守卫升级为类型/code 回归，并覆盖缺起始、缺结束 token 在 strict/lenient 两种模式的行为。
+
+### 验证
+- 修复前复现输出：`TypeError TypeError undefined Cannot read properties of null (reading '1')`。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-vtt-settings.test.js`，15/15 通过。
+- 全量测试：`npm test` 串行通过 3152/3152，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；lint 检查 547 个 JS 文件，check 内嵌测试 3152/3152。
+- 此变更仅影响纯 ESM 字幕解析逻辑，不涉及浏览器媒体管线，故本轮无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：WebVTT parser、strict/lenient 回归测试和 progress.md。
+
+### 风险
+- lenient 模式遇到畸形 timing 行现在有意跳过并计数，而非以前抛出 TypeError；strict 模式使用项目标准 SubtitleError。正常合法 cue 解析无变化。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 审计其他字幕解析器 strict 分支是否也存在裸异常泄漏，或寻找真实媒体数据源/边界处理中的高价值问题。

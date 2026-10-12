@@ -52,12 +52,21 @@ test('VTT：缺少结束时间的 cue（仅 start -->）被跳过', () => {
   assert.equal(r.stats.skippedBlocks, 1);
 });
 
-test('VTT：缺少结束时间（strict 模式）抛错（已知缺陷：泄漏 TypeError 而非 SubtitleError）', () => {
+test('VTT：缺少结束时间（strict 模式）抛 SubtitleError(PARSE_ERROR)', () => {
   const src = 'WEBVTT\n\n00:01.000 --> \n只有开始没有结束\n';
-  // 缺陷回归守卫：当前 TIMING_RE.exec 对「只有 start -->」返回 null，
-  // 代码访问 tm[1] 抛出裸 TypeError 并在 strict 下透传，未包成 SubtitleError(PARSE_ERROR)。
-  // 这里仅断言「会抛错」，避免把缺陷当特性固化；详见汇报 vtt.js:122。
-  assert.throws(() => parseVtt(src, { strict: true }));
+  assert.throws(() => parseVtt(src, { strict: true }), (error) =>
+    error instanceof SubtitleError && error.code === 'PARSE_ERROR');
+});
+
+test('VTT：缺失起始/结束 token 的时间行按 strict/lenient 契约处理', () => {
+  for (const timing of ['--> 00:02.000', '00:01.000 -->']) {
+    const src = 'WEBVTT\n\n' + timing + '\nmalformed cue\n';
+    assert.throws(() => parseVtt(src, { strict: true }), (error) =>
+      error instanceof SubtitleError && error.code === 'PARSE_ERROR');
+    const result = parseVtt(src);
+    assert.equal(result.cues.length, 0);
+    assert.equal(result.stats.skippedBlocks, 1);
+  }
 });
 
 test('VTT：重叠时间戳 start==end 视为非法区间被跳过', () => {
