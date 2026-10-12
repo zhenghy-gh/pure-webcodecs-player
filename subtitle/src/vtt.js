@@ -45,13 +45,47 @@ const TIMING_RE = /^\s*(\S+)\s+-->\s+(\S+)(?:\s+(.*))?$/;
  * @param {string} raw
  * @returns {Record<string,string>}
  */
-function parseSettings(raw) {
+function parseSettings(raw, strict = false, blockNumber = 0) {
   /** @type {Record<string,string>} */
   const out = {};
   if (!raw) return out;
+  const seen = new Set();
+  const fail = (token, key, value) => {
+    throw new SubtitleError('PARSE_ERROR', `第 ${blockNumber} 块 cue setting 非法：「${token}」`, { detail: { block: blockNumber, setting: key, value } });
+  };
+  const isPercentage = (value) => /^(?:\d+(?:\.\d+)?)%$/.test(value) && Number.parseFloat(value) <= 100;
+  const isLineValue = (value) => {
+    const [position, alignment, ...rest] = value.split(',');
+    const validPosition = /^[+-]?\d+$/.test(position) || isPercentage(position);
+    return rest.length === 0 && validPosition && (alignment === undefined || /^(?:start|center|end)$/.test(alignment));
+  };
+  const isPositionValue = (value) => {
+    const [position, alignment, ...rest] = value.split(',');
+    return rest.length === 0 && isPercentage(position) && (alignment === undefined || /^(?:line-left|center|line-right)$/.test(alignment));
+  };
   for (const token of raw.trim().split(/\s+/)) {
     const idx = token.indexOf(':');
-    if (idx > 0) out[token.slice(0, idx)] = token.slice(idx + 1);
+    if (idx <= 0) {
+      if (strict) fail(token, '', token);
+      continue;
+    }
+    const key = token.slice(0, idx);
+    const value = token.slice(idx + 1);
+    if (strict) {
+      if (!['vertical', 'line', 'position', 'size', 'align', 'region'].includes(key) || !value || seen.has(key)) {
+        fail(token, key, value);
+      }
+      let valid = false;
+      if (key === 'vertical') valid = /^(?:rl|lr)$/.test(value);
+      else if (key === 'line') valid = isLineValue(value);
+      else if (key === 'position') valid = isPositionValue(value);
+      else if (key === 'size') valid = isPercentage(value);
+      else if (key === 'align') valid = /^(?:start|center|end|left|right)$/.test(value);
+      else if (key === 'region') valid = !/\s/.test(value);
+      if (!valid) fail(token, key, value);
+      seen.add(key);
+    }
+    out[key] = value;
   }
   return out;
 }
@@ -152,7 +186,7 @@ export function parseVtt(text, options = {}) {
       text: lines.slice(ti + 1).join('\n'),
       raw: blocks[bi],                             // 原始条目（契约 §8 Cue.raw）
       layer: 0,
-      settings: tm[3] ? parseSettings(tm[3]) : undefined,
+      settings: tm[3] ? parseSettings(tm[3], strict, bi + 1) : undefined,
     });
   }
 

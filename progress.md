@@ -1050,4 +1050,32 @@
 - 无公共 API 变化；未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
 
 ### 下一轮候选
-- 检查破折号箭头文本、序号形态及相邻 SRT cue 推断边界的兼容性。
+- 进一步审查字幕严格模式的其他外部 setting 值校验及浏览器无关解析边界。
+
+## Attempt 50：strict 校验 WebVTT cue settings
+
+### 发现
+- 复现条件：cue 时间行携带未知键、重复 align、size/position 大于 100%、非法 vertical 或非法 token。
+- 根因：settings 解析器在 strict 和 lenient 下都只按冒号拆分并覆盖重复键；不识别键白名单或各字段值域。
+- 用户影响：strict 模式仍接受无效/冲突的显示参数，用户难以发现 settings 拼写错误；渲染方可能因错误值产生非预期布局。
+
+### 修改
+- subtitle/src/vtt.js：strict settings 验证允许的键、重复键、空值和裸 token；校验 vertical、line、position、size、align 的枚举/数字/百分比语法及 0–100 范围，region 允许非空不含空白值。解析失败抛带块号、键和值的 PARSE_ERROR。lenient 保留原始宽松覆盖及忽略裸 token 行为。
+- subtitle/__tests__/subtitle-vtt-settings.test.js：覆盖未知/重复/空值/裸 token、非法枚举、越界百分比、有效 strict settings 和 lenient 兼容。
+
+### 验证
+- 修复前复现：strict 接受 pos:50%、重复 align、size/position:150%、vertical:sideways。
+- 定向测试：node --test --test-timeout=15000 subtitle/__tests__/subtitle-vtt-settings.test.js subtitle/__tests__/vtt.test.js subtitle/__tests__/subtitle-vtt-cue.test.js，49/49 通过。
+- 全量测试：npm test 3172/3172，0 失败。
+- 静态验证：npm run lint && npm run check 退出码 0；lint 扫描 547 个 JS 文件，check 内嵌测试 3172/3172，结论全部通过。覆盖摘要 0/565、0/16 为报告性输出。
+- 改动是格式 parser 校验，不涉及播放渲染管线，无需浏览器播放验证。
+
+### 提交和推送
+- 本轮待提交：strict WebVTT setting schema 验证、回归和 progress.md。
+
+### 风险
+- 新约束只作用于 strict；lenient 输出兼容保持。strict 可能拒绝此前未校验的未知/重复 cue-setting 键，符合 strict 输入校验目的。
+- 没有公开 API 变更；未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 审查空白和大小写规范化、未知 cue settings 是否应在 strict 中允许自定义扩展，并选取字幕管线之外的高价值问题。

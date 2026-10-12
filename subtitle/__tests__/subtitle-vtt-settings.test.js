@@ -39,6 +39,29 @@ test('VTT-settings：vertical rl/lr、line:auto、align 全枚举值', () => {
   }
 });
 
+test('VTT-settings：strict 拒绝未知/重复键和不合法值，lenient 保留原始值', () => {
+  const invalid = [
+    'pos:50%',
+    'align:start align:end',
+    'size:150%',
+    'vertical:sideways',
+    'position:150%',
+    'line:auto',
+    'align:middle',
+    'region:',
+    'align:',
+    'align:start plainword',
+  ];
+  for (const settings of invalid) {
+    const src = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000 ' + settings + '\nx\n';
+    assert.throws(() => parseVtt(src, { strict: true }), (error) =>
+      error instanceof SubtitleError && error.code === 'PARSE_ERROR', settings);
+    assert.equal(parseVtt(src).cues.length, 1, settings);
+  }
+  const valid = parseVtt('WEBVTT\n\n00:00:01.000 --> 00:00:02.000 line:-2 position:50%,line-left size:100% align:center vertical:rl\nx\n', { strict: true });
+  assert.equal(valid.cues.length, 1);
+});
+
 test('VTT-settings：缺冒号的 token 被忽略', () => {
   const src = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000 align:start plainword\nx\n';
   const { cues } = parseVtt(src);
