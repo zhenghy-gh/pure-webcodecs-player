@@ -882,7 +882,7 @@
 - 静态验证：`npm run lint && npm run check` 通过；lint 扫描 547 个 JS 文件，check 内嵌测试 3166/3166。PRD 覆盖门槛摘要 0/565、0/16 为报告值，结论全部通过。纯字幕 parser 变更无浏览器验证需求。
 
 ### 提交和推送
-- 本轮待提交：Style 名 strict 唯一性校验、回归测试和 progress.md。
+- 已提交并推送：`76e2cad fix: reject duplicate strict ass style names`（Style 名 strict 唯一性校验、回归测试及 progress.md）。
 
 ### 风险
 - 只影响显式 strict 模式；lenient 重名样式行为未变。没有公开 API 变化。
