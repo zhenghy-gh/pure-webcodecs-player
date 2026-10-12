@@ -252,6 +252,12 @@ export function parseAss(text, options = {}) {
       if (isComment) commentCount += 1; // 作者注释：计数不入轨
 
       const fmt = eventFormat ?? inferEventFormat(section, styleFormat);
+      if (strict && isDialogue) {
+        const missing = ['start', 'end', 'text'].filter((field) => !fmt.includes(field));
+        if (missing.length) {
+          throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Events Format 缺少 Dialogue 必需字段：${missing.join(', ')}`, { detail: { line: li + 1, missing } });
+        }
+      }
       const body = line.slice(line.indexOf(':') + 1);
       const parts = body.split(',');
       if (parts.length < fmt.length) {

@@ -213,6 +213,26 @@ test('ASS：strict 拒绝空列或重复列的 Style/Events Format', () => {
   assert.equal(lenient.styles[0].bold, true);
 });
 
+test('ASS：strict Dialogue Format 缺少 Start/End/Text 时拒绝', () => {
+  const cases = [
+    ['Layer, End, Text', 'Dialogue: 0,0:00:02.00,hello'],
+    ['Layer, Start, Text', 'Dialogue: 0,0:00:01.00,hello'],
+    ['Layer, Start, End, Style', 'Dialogue: 0,0:00:01.00,0:00:02.00,Default'],
+  ];
+  for (const [format, dialogue] of cases) {
+    const src = ['[Events]', 'Format: ' + format, dialogue].join('\n');
+    assert.throws(() => parseAss(src, { strict: true }), (error) =>
+      error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+      error.detail.missing.length === 1);
+  }
+  const valid = parseAss([
+    '[Events]',
+    'Format: Layer, Start, End, Text',
+    'Dialogue: 0,0:00:01.00,0:00:02.00,hello',
+  ].join('\n'), { strict: true });
+  assert.equal(valid.cues[0].text, 'hello');
+});
+
 test('ASS：Dialogue 字段数少于 Format 声明 → lenient 跳过并计数', () => {
   const src = [
     '[Events]',

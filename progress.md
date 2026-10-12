@@ -636,7 +636,7 @@
 - 静态验证：`npm run lint && npm run check` 通过；check 内嵌全量测试 3157/3157，lint 检查 547 个 JS 文件。纯字幕解析变更不触及浏览器播放管线，无需真实浏览器验证。
 
 ### 提交和推送
-- 本轮待提交：strict Format 校验、回归测试和 progress.md。
+- 已提交并推送：`ba1e9ab fix: reject ambiguous strict ass formats`（strict Format 校验、回归测试及 progress.md）。
 
 ### 风险
 - strict 现在拒绝空/重复的 Format 列；lenient 默认兼容行为未改变。未变更公共 API 或运行时依赖。
@@ -644,3 +644,30 @@
 
 ### 下一轮候选
 - 检查 strict Events Format 缺少关键 Start/End/Text/Style 字段时的处理，以及非法 Script Info 数值字段是否有静默 NaN/截断问题。
+
+## Attempt 35：拒绝缺少字幕必需列的 strict Events Format
+
+### 发现
+- 复现条件：`[Events] Format` 声明有足够列数但缺少 `Text`，例如 `Layer, Start, End, Style`，随后 Dialogue 带合法时间码。
+- 根因：strict 只检查行字段数量，不验证 Dialogue 格式必需的 Start/End/Text 字段；缺失 Text 时通过 `rec.text ?? ''` 作为空正文产出 cue。
+- 用户影响：严格解析错误的字幕文件会“成功”返回空字幕 cue，输入故障不易被调用方发现。
+
+### 修改
+- subtitle/src/ass.js：strict Dialogue 记录解析前要求 Events Format 含 Start、End、Text；缺少任一列时抛带行号/缺失字段详情的 `SubtitleError(PARSE_ERROR)`。Comment 仍只计数且不进入字幕轨道，不额外强制其含字幕正文列。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖分别缺少 Start、End、Text 的严格拒绝，并保留合法最小 Format 的正例。
+
+### 验证
+- 修复前复现：strict 模式接受缺 Text 的格式，产出 1 个正文为空、时间有效的 cue。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js`，34/34 通过。
+- 全量测试：`npm test` 串行通过 3158/3158，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；内嵌全量测试 3158/3158，lint 检查 547 个 JS 文件。仅影响字幕文本解析，不涉及浏览器播放管线，无需真实浏览器验证。
+
+### 提交和推送
+- 已提交并推送：`ba1e9ab fix: reject ambiguous strict ass formats`（strict Format 校验、回归测试及 progress.md）。
+
+### 风险
+- strict 模式拒绝不含 Start/End/Text 的 Dialogue Format；合法 ASS 默认列序及 lenient 模式行为保持原样。Comment 行不要求 Text 列。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 检查 strict Script Info PlayResX/Y 是否发生 `parseInt` 截断或 NaN，并确认零/负分辨率语义。
