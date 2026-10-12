@@ -1106,3 +1106,27 @@
 
 ### 下一轮候选
 - 审查未知 cue settings 扩展策略与其他格式的 strict grammar，并寻找媒体管线之外高价值问题。
+
+## Attempt 52：优先按内容位置区分 SRT 与 ASS
+
+### 发现
+- 复现输入是正常 SRT cue，正文含独立的 \[Script Info\] 行及 Dialogue 文本；detectFormat 返回 ass，parseAuto 因而错误分派 ASS parser。
+- 根因：原判定只要任意位置出现 ASS 节头/Dialogue 行就直接认定 ASS，没有将真实 cue 时间行作为强证据，也没有比较两类特征在全文中的先后位置。
+
+### 修改
+- subtitle/src/detect.js：保留 WEBVTT 签名及无签名 VTT 的优先判定；识别独占一行的 SRT 时间模式，与 ASS 结构特征比较在文本中的起点，先出现的特征胜出。SRT cue payload 中后出现的 ASS 外观文本不再覆盖字幕格式；真 ASS 节头先出现时仍按 ASS 分派。
+- subtitle/__tests__/subtitle-detect-edge.test.js：将原已知限制改为回归，验证 detectFormat、probeSubtitleCodec 和 parseAuto 对夹带 ASS section/dialogue 字样的 SRT 一致判为 SRT；另覆盖 ASS 节头先于时间行的歧义输入仍保留 ASS。
+
+### 验证
+- 修复前复现：夹带 [Script Info] 的有效 SRT 被 detectFormat 与 parseAuto 判为 ASS。
+- 定向测试：subtitle-detect-edge、subtitle-detect-track、srt、vtt，55/55 通过。
+- 全量测试：npm test 3174/3174，0 失败。
+- 静态验证：npm run lint && npm run check 退出码 0，lint 扫描 547 个 JS 文件，check 内嵌测试 3174/3174，结论全部通过。
+- 纯格式嗅探 parser 改动，不涉及播放渲染，未需浏览器验证。
+
+### 提交和推送
+- 本轮待提交：detectFormat 优先级修正、ASS/SRT 混合输入回归测试及此 progress 记录。
+
+### 风险
+- 格式特征混合文本本质上有歧义：节头/Dialogue 特征若先于独立 SRT 时间行仍按 ASS 处理，以避免 ASS 文件中示例或正文包含时间箭头时误判。
+- 无公开 API 变化；未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。

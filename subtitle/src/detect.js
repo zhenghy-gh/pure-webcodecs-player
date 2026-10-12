@@ -16,7 +16,7 @@ import { SubtitleError } from './errors.js';
 
 /**
  * 嗅探字幕格式（纯文本特征，无副作用）。
- * 判定顺序：WEBVTT 签名 → ASS 结构 → SRT 时间行特征。
+ * 判定顺序：WEBVTT 签名 → 无签名 VTT 特征 → 按文件中的先后顺序消歧 ASS 结构与 SRT 时间行。
  * @param {string} text 文件内容
  * @returns {SubtitleFormat|null}
  */
@@ -26,19 +26,21 @@ export function detectFormat(text) {
 
   if (/^WEBVTT($|[ \t\n])/.test(t)) return 'vtt';
 
-  const looksAss = /^[ \t]*\[script info\][ \t]*$/im.test(t) ||
-    /^[ \t]*\[v4\+? styles\][ \t]*$/im.test(t) ||
-    /^[ \t]*Dialogue\s*:/m.test(t);
-  if (looksAss) return 'ass';
-
-  // 无签名 VTT（评审建议）：标识符行 + 点毫秒时间行 → 判 vtt
+  // 无签名 VTT（评审建议）：标识符行 + 点毫秒时间行 → 判 vtt。
+  // 先于宽松 SRT 时间特征，以免把带标识符的 VTT cue 误判为 SRT。
   const unsignedVtt = /(^|\n)(?!\d)[^\n\r]+\r?\n(?:\d{1,2}:)?\d{1,2}:\d{2}\.\d{3}\s*-->/.test(t);
   if (unsignedVtt && !/\n\s*\d+\r?\n\d{1,2}:\d{2}:\d{2},\d{3}\s*-->/.test(t)) return 'vtt';
 
-  // SRT：存在 `-->` 且两侧时间码带 ,/. 毫秒分隔
-  if (/\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}\s*-->|\d{1,2}:\d{2}[,.]\d{1,3}\s*-->/.test(t)) {
-    return 'srt';
-  }
+  // SRT 的时间行必须独占一行（可有行首空格）；这比正文中的 ASS 节头/Dialogue 字样
+  // 更有格式辨识力，同时不会把 Dialogue payload 中的时间片段当成 cue。
+  const srtTimingLine = /(?:^|\n)[ \t]*(?:\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}|\d{1,2}:\d{2}[,.]\d{1,3})[ \t]*-->/m;
+  const srtTimingMatch = srtTimingLine.exec(t);
+  const assStructure = /^[ \t]*\[script info\][ \t]*$|^[ \t]*\[v4\+? styles\][ \t]*$|^[ \t]*Dialogue\s*:/im;
+  const assMatch = assStructure.exec(t);
+  // If ASS structure occurs first it remains authoritative; otherwise a standalone timing line
+  // is stronger evidence than ASS-looking text embedded in an SRT cue payload.
+  if (srtTimingMatch && (!assMatch || srtTimingMatch.index < assMatch.index)) return 'srt';
+  if (assMatch) return 'ass';
   return null;
 }
 
