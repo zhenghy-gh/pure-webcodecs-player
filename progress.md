@@ -691,7 +691,7 @@
 - 改动只涉及字幕 parser 元数据校验，不触及媒体播放/渲染管线，无需真实浏览器验证。
 
 ### 提交和推送
-- 本轮待提交：strict PlayRes 校验、回归测试和 progress.md。
+- 已提交并推送：`47d67bd fix: validate strict ass script dimensions`（strict PlayRes 校验、回归测试及 progress.md）。
 
 ### 风险
 - strict 模式拒绝非规范的带符号、带前导零、非整数、非正或不安全范围的 PlayRes；lenient 解析和公共 API 均不变。
