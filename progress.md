@@ -718,7 +718,7 @@
 - 静态验证：`npm run lint && npm run check` 通过；内嵌全量测试 3160/3160，lint 检查 547 个 JS 文件。check 报告性门槛表统计为 0/565、0/16，但脚本结论为全部通过。纯字幕 parser 变更不涉及浏览器播放管线，无需真实浏览器验证。
 
 ### 提交和推送
-- 本轮待提交：Script Info strict duplicate 检查、回归测试和 progress.md。
+- 已提交并推送：`b11678f fix: reject duplicate strict ass metadata`（Script Info strict duplicate 检查、回归测试及 progress.md）。
 
 ### 风险
 - strict 模式现在拒绝任何重复 Script Info key（不只 PlayRes）；lenient 路径与输出对象兼容行为保持不变。
