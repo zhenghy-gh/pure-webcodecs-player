@@ -835,4 +835,31 @@
 - 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
 
 ### 下一轮候选
-- 审查 strict Dialogue 的缺省/未知 Style 引用与空正文兼容语义，或检查多版本 Styles 节混用时 Events 默认列序的选择是否需按 ScriptType 明确判定。
+- 检查缺失 Style 字段在 strict Format 下是否存在默认样式契约歧义，及空 Dialogue 正文是否应保持合法零内容 cue。
+
+## Attempt 42：strict ASS 拒绝未知 Dialogue Style 引用
+
+### 发现
+- 复现条件：文件声明自定义样式 `Custom`，Dialogue 引用未声明的 `Missing`。
+- 根因：解析器未找到引用时静默退回 `styles[0]`，导致 cue 看似成功，却按无关样式渲染；strict 模式也没有指出配置拼写/声明错误。
+- 用户影响：严格校验不能发现无效样式引用，输出字幕视觉属性与输入声明不一致。
+
+### 修改
+- subtitle/src/ass.js：strict 且存在样式表时，Dialogue 未命中大小写不敏感样式名即抛 `SubtitleError(PARSE_ERROR)`，detail 带行号、字段和值。lenient 继续回退首个样式；没有 Styles 节时仍用默认样式。
+- subtitle/__tests__/subtitle-parse-edge.test.js：验证 strict 拒绝未知引用、lenient 保持原回退，且无样式表时 strict 仍能使用默认样式。
+
+### 验证
+- 修复前复现：strict/lenient 均接受 `Missing` 并改用首个样式 `Custom`。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/ass.test.js subtitle/__tests__/subtitle-ass-edge.test.js`，59/59 通过。
+- 全量测试：`npm test` 串行通过 3165/3165，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；lint 检查 547 个 JS 文件，check 内嵌测试 3165/3165。PRD 覆盖门槛摘要 0/565、0/16 为报告性输出，脚本结论全部通过。纯 parser 逻辑未触及浏览器执行管线，无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：Dialogue 样式引用 strict 验证、回归测试和 progress.md。
+
+### 风险
+- strict 模式现在拒绝已声明样式表中的未解析引用；lenient 和无 Styles 节的默认样式行为不变。无公共 API 变更。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 检查缺失 Style 字段与空 Dialogue 正文的严格模式兼容语义，避免将合法 fallback 或零内容 cue 误判。

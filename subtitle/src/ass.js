@@ -339,7 +339,11 @@ export function parseAss(text, options = {}) {
         }
         dialogueCount += 1;
         const styleName = rec['style'] || 'Default';
-        const baseStyle = styles.find((s) => s.name.toLowerCase() === styleName.toLowerCase()) ?? styles[0] ?? createDefaultStyle();
+        const matchingStyle = styles.find((s) => s.name.toLowerCase() === styleName.toLowerCase());
+        if (strict && styles.length && !matchingStyle) {
+          throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Dialogue 引用未定义样式 ${styleName}`, { detail: { line: li + 1, field: 'style', value: styleName } });
+        }
+        const baseStyle = matchingStyle ?? styles[0] ?? createDefaultStyle();
         const { segments, state } = tokenizeDialogue(rec['text'] ?? '', baseStyle);
         const __rawLine = lines[li];  // Dialogue 行原文（未 trim，含标签，契约 Cue.raw 来源）
         const plain = segments.filter((s) => s.type === 'text').map((s) => /** @type {any} */ (s).text).join('');

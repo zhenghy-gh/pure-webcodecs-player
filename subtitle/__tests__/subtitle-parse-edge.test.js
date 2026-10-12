@@ -305,6 +305,30 @@ test('ASS：strict 拒绝缺失 Style/Events Format，lenient 沿用默认列序
   assert.equal(parseAss(events).cues[0].text, 'hello');
 });
 
+test('ASS：strict 拒绝未知 Dialogue Style，lenient 保留首样式回退', () => {
+  const src = [
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize',
+    'Style: Custom,Arial,24',
+    '[Events]',
+    'Format: Layer, Start, End, Style, Text',
+    'Dialogue: 0,0:00:01.00,0:00:02.00,Missing,unknown style',
+  ].join('\n');
+  assert.throws(() => parseAss(src, { strict: true }), (error) =>
+    error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+    error.detail.field === 'style' && error.detail.value === 'Missing');
+  const lenient = parseAss(src);
+  assert.equal(lenient.cues[0].style, 'Custom');
+  assert.equal(lenient.cues[0].text, 'unknown style');
+
+  const noStyles = parseAss([
+    '[Events]',
+    'Format: Layer, Start, End, Style, Text',
+    'Dialogue: 0,0:00:01.00,0:00:02.00,Default,no style section',
+  ].join('\n'), { strict: true });
+  assert.equal(noStyles.cues[0].style, 'Default');
+});
+
 test('ASS：strict Dialogue Format 缺少 Start/End/Text 时拒绝', () => {
   const cases = [
     ['Layer, End, Text', 'Dialogue: 0,0:00:02.00,hello'],
