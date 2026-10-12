@@ -960,7 +960,7 @@
 - 静态验证：`npm run lint && npm run check` 通过；lint 检查 547 个 JS 文件，check 内嵌测试 3169/3169；PRD 门槛摘要 0/565、0/16 为报告性输出，check 结论全部通过。纯 parser 变更无需真实浏览器验证。
 
 ### 提交和推送
-- 本轮待提交：修复缺失/空 Style strict 回退、回归测试和 progress.md。
+- 已提交并推送：`218bd92 fix: preserve strict ass style fallback`（修复缺失/空 Style strict 回退、回归测试及 progress.md）。
 
 ### 风险
 - strict 仍拒绝显式写出的未知非空 Style；只有省略或空值走既有缺省 fallback。lenient 与公共 API 不变。
