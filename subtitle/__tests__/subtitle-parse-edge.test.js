@@ -363,6 +363,34 @@ test('ASS：strict 拒绝大小写冲突的重复 Style 名，lenient 保留顺�
   assert.equal(lenient.cues[0].style, 'Default');
 });
 
+test('ASS：strict Dialogue 缺失或空 Style 时仍回退样式表', () => {
+  const styles = [
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize',
+    'Style: Custom,Arial,24',
+  ];
+  const withoutStyleColumn = parseAss([
+    ...styles, '[Events]', 'Format: Layer, Start, End, Text',
+    'Dialogue: 0,0:00:01.00,0:00:02.00,no style column',
+  ].join('\n'), { strict: true });
+  assert.equal(withoutStyleColumn.cues[0].style, 'Custom');
+  assert.equal(withoutStyleColumn.cues[0].text, 'no style column');
+
+  const emptyStyle = parseAss([
+    ...styles, '[Events]', 'Format: Layer, Start, End, Style, Text',
+    'Dialogue: 0,0:00:01.00,0:00:02.00,,empty style',
+  ].join('\n'), { strict: true });
+  assert.equal(emptyStyle.cues[0].style, 'Custom');
+  assert.equal(emptyStyle.cues[0].text, 'empty style');
+
+  const explicitDefault = parseAss([
+    ...styles, 'Style: Default,Serif,18', '[Events]',
+    'Format: Layer, Start, End, Style, Text',
+    'Dialogue: 0,0:00:01.00,0:00:02.00,,empty style',
+  ].join('\n'), { strict: true });
+  assert.equal(explicitDefault.cues[0].style, 'Default');
+});
+
 test('ASS：strict 拒绝未知 Dialogue Style，lenient 保留首样式回退', () => {
   const src = [
     '[V4+ Styles]',

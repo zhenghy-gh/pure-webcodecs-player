@@ -356,9 +356,10 @@ export function parseAss(text, options = {}) {
           continue;
         }
         dialogueCount += 1;
-        const styleName = rec['style'] || 'Default';
+        const declaredStyleName = rec['style'] ?? '';
+        const styleName = declaredStyleName || 'Default';
         const matchingStyle = styles.find((s) => s.name.toLowerCase() === styleName.toLowerCase());
-        if (strict && styles.length && !matchingStyle) {
+        if (strict && styles.length && declaredStyleName && !matchingStyle) {
           throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Dialogue 引用未定义样式 ${styleName}`, { detail: { line: li + 1, field: 'style', value: styleName } });
         }
         const baseStyle = matchingStyle ?? styles[0] ?? createDefaultStyle();

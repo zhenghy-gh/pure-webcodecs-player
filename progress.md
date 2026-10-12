@@ -940,4 +940,31 @@
 - 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
 
 ### 下一轮候选
-- 继续检查空 Dialogue 正文、未知事件 Margin 映射和缺失/空 Style 字段的严格模式契约。
+- 继续检查空 Dialogue 正文及其他可选字段 strict fallback 契约。
+
+## Attempt 46：保留 strict ASS 缺失/空 Dialogue Style 的 fallback
+
+### 发现
+- 复现条件：样式表仅定义自定义 `Custom`，Events Format 不包含 `Style` 列，或 Style 列值为空。
+- 根因：上一轮 strict 未知 Style 检查将缺省 `Default` 视为显式样式名；自定义样式表并无 Default 定义时，合法的可选字段 fallback 被误判为无效引用。
+- 用户影响：启用 strict 的合法 ASS 文件因省略可选 Style 列/值而失败，与既有 parser 的“匹配不到则首样式 fallback”兼容契约冲突。
+
+### 修改
+- subtitle/src/ass.js：区分原始 Style 是否由输入显式非空给出；strict 只拒绝显式未知名称，缺失或空值继续使用 Default（命中时）或首个已声明样式。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖无 Style 列、空 Style 值自定义样式 fallback，以及存在 Default 样式时的缺省优先级；Attempt 42 的显式未知名称 strict 拒绝仍保留。
+
+### 验证
+- 修复前复现：strict 对无 Style 列和空 Style 值均抛 `PARSE_ERROR`，提示引用未定义 Default。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js subtitle/__tests__/ass.test.js`，63/63 通过。
+- 全量测试：`npm test` 串行通过 3169/3169，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；lint 检查 547 个 JS 文件，check 内嵌测试 3169/3169；PRD 门槛摘要 0/565、0/16 为报告性输出，check 结论全部通过。纯 parser 变更无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：修复缺失/空 Style strict 回退、回归测试和 progress.md。
+
+### 风险
+- strict 仍拒绝显式写出的未知非空 Style；只有省略或空值走既有缺省 fallback。lenient 与公共 API 不变。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 检查空 Dialogue 正文及其他可选事件字段的 strict 合法性契约。
