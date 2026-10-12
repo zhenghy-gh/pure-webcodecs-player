@@ -1099,7 +1099,7 @@
 - 纯测试等待时间稳健性修复，不需浏览器验证。
 
 ### 提交和推送
-- 本轮待提交：仅 webrtc/__tests__/webrtc-stats-backoff.test.js 和本段进度记录。
+- 已提交并推送：`52ebd6c test: stabilize stats sampling timer assertion`（稳健 StatsCollector 计时回归及进度记录）。
 
 ### 风险
 - 测试最多多等待至 500ms；没有生产代码/API 行为变化。
