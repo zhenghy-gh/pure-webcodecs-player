@@ -26,15 +26,16 @@ function makeFragmentedFixture({ samples, tfhdDefaults = {}, trexDefaults = {}, 
   if (trexDefaults.defaultSampleSize !== undefined) initView.setUint32(trex.contentStart + 16, trexDefaults.defaultSampleSize, false);
   if (trexDefaults.defaultSampleFlags !== undefined) initView.setUint32(trex.contentStart + 20, trexDefaults.defaultSampleFlags, false);
 
-  const tfhdFlags = 0x020000 |
+  const tfhdFlags = (tfhdDefaults.baseDataOffset === undefined ? 0x020000 : 0x000001) |
     (tfhdDefaults.defaultSampleDuration === undefined ? 0 : 0x000008) |
     (tfhdDefaults.defaultSampleSize === undefined ? 0 : 0x000010) |
     (tfhdDefaults.defaultSampleFlags === undefined ? 0 : 0x000020);
-  const makeMoof = (dataOffset) => box('moof', (w) => {
+  const makeMoof = (dataOffset, baseDataOffset = tfhdDefaults.baseDataOffset) => box('moof', (w) => {
     w.writeRaw(buildMfhd(0));
     w.writeRaw(box('traf', (tw) => {
       tw.writeRaw(fullBox('tfhd', 0, tfhdFlags, (fw) => {
         fw.writeU32(1);
+        if (tfhdFlags & 0x000001) fw.writeU64(BigInt(baseDataOffset));
         if (tfhdFlags & 0x000008) fw.writeU32(tfhdDefaults.defaultSampleDuration);
         if (tfhdFlags & 0x000010) fw.writeU32(tfhdDefaults.defaultSampleSize);
         if (tfhdFlags & 0x000020) fw.writeU32(tfhdDefaults.defaultSampleFlags);
@@ -126,4 +127,46 @@ test('sample defaults fall back to trex when tfhd and trun omit them', async () 
   assert.deepEqual(samples.map((sample) => sample.size), [3, 3]);
   assert.deepEqual(samples.map((sample) => sample.keyframe), [false, false]);
   assert.deepEqual(samples.map((sample) => [...sample.data]), data.map((payload) => [...payload]));
+});
+
+function makeTwoRunFragmentFixture() {
+  const { bytes: base } = buildFragmentedFixture();
+  const firstMoof = findBoxes(base, 0, base.byteLength, 'moof')[0];
+  const init = base.slice(0, firstMoof.start);
+  const firstData = new Uint8Array([31, 32]);
+  const secondData = new Uint8Array([41, 42, 43]);
+  const makeMoof = (firstDataOffset) => box('moof', (w) => {
+    w.writeRaw(buildMfhd(0));
+    w.writeRaw(box('traf', (tw) => {
+      tw.writeRaw(fullBox('tfhd', 0, 0x020000, (fw) => fw.writeU32(1)));
+      tw.writeRaw(buildTfdt(100));
+      tw.writeRaw(fullBox('trun', 0, 0x000301, (rw) => {
+        rw.writeU32(1);
+        rw.writeI32(firstDataOffset);
+        rw.writeU32(40);
+        rw.writeU32(firstData.length);
+      }));
+      // Without data_offset, ISO-BMFF continues immediately after the preceding run.
+      tw.writeRaw(fullBox('trun', 0, 0x000300, (rw) => {
+        rw.writeU32(1);
+        rw.writeU32(25);
+        rw.writeU32(secondData.length);
+      }));
+    }));
+  });
+  const provisional = makeMoof(0);
+  const moof = makeMoof(provisional.byteLength + 8);
+  const mdat = buildMdat([firstData, secondData]);
+  const bytes = new Uint8Array(init.byteLength + moof.byteLength + mdat.byteLength);
+  bytes.set(init, 0);
+  bytes.set(moof, init.byteLength);
+  bytes.set(mdat, init.byteLength + moof.byteLength);
+  return { bytes, firstData, secondData };
+}
+
+test('multiple truns continue decode time and implicit data offset after prior run', async () => {
+  const { bytes, firstData, secondData } = makeTwoRunFragmentFixture();
+  const samples = await readSamples(bytes);
+  assert.deepEqual(samples.map((sample) => sample.dts), [100_000, 140_000]);
+  assert.deepEqual(samples.map((sample) => [...sample.data]), [[...firstData], [...secondData]]);
 });

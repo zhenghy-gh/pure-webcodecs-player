@@ -1182,3 +1182,28 @@
 
 ### 风险
 - API 不变；未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+## Attempt 55：修复 fMP4 同轨多 trun 时间与 payload 连续性
+
+### 发现
+- 复现条件：一个 traf 包含多个 trun，首个 run 带 tfdt 和 data_offset，后续 run 省略 data_offset。
+- 根因：解析器把同一个 traf 的每个 trun 当成独立片段，均从同一 baseMediaDecodeTime 开始；demuxer 还将省略 data_offset 的 run 默认为偏移 0，覆盖前一个 run 的 payload。
+- 用户影响：合法 fragmented MP4 的同轨后续 run 可能出现重复 DTS、重复/错误数据，导致播放错序或样本损坏。
+
+### 修改
+- mp4/src/demuxer.js：每个 moof 扫描时按 track 累积 decode time 与数据末尾；后续 trun 无 data_offset 时从前 run 结束位置接续。
+- mp4/src/demuxer.js：解析 trun 时保留 data_offset 的 null 与显式 0 差异，并透传 tfhd base_data_offset / default-base-is-moof 及默认 sample 属性。
+- mp4/__tests__/fragment-defaults.test.js：增加同一 traf 两个 trun 的回归，断言 DTS 连续增长且第二 run 读取紧邻的不同 payload。
+
+### 验证
+- 修复前复现：第二个 run 的 sample DTS 重复为 100000µs（预期 140000µs），并由显式 payload 检查覆盖偏移回退风险。
+- 定向 MP4 全套：node --test --test-timeout=15000 mp4/__tests__/*.test.js，167/167 通过。
+- npm run check：fixtures 通过；全量测试 3181/3181；lint 通过（548 个 JS 文件）；check 结论全部通过。
+- 真实浏览器：Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；双轨初始化、视频解码、播放推进、20s seek 至 16.50s 并恢复、buffered 和 destroy 均通过；无 pageerror、console error、网络错误或 unhandled rejection。测试生成截图已还原，不纳入提交。
+- git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- 本轮仅改善同一 traf 多 run 的 decode-time 与隐式数据连续性；未新增公共 API。未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。

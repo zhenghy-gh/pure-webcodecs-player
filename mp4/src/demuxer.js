@@ -370,14 +370,22 @@ export class Mp4Demuxer extends Demuxer {
 
       // moofBytes is an independent slice; sample offsets are relative to its 8-byte box header.
       const frags = parseMoofTracks(moofBytes, 8, moofBytes.byteLength);
+      const decodeTimeByTrack = new Map();
+      const dataEndByTrack = new Map();
       for (const frag of frags) {
         const trackState = this._trackState.get(frag.trackId);
         if (!trackState) continue;
         const track = trackState.track;
         const trex = trackState.trex ?? {};
         const ts = track.timescale || 1000;
-        let dts = frag.baseMediaDecodeTime;
-        let runOffset = 0;
+        let dts = decodeTimeByTrack.get(frag.trackId) ?? frag.baseMediaDecodeTime;
+        const baseOffset = frag.baseDataOffset ?? box.start;
+        let runOffset;
+        if (frag.dataStartOffset !== null) {
+          runOffset = baseOffset - box.start + frag.dataStartOffset;
+        } else {
+          runOffset = dataEndByTrack.get(frag.trackId) ?? (baseOffset - box.start);
+        }
         for (let i = 0; i < frag.samples.length; i++) {
           const rec = frag.samples[i];
           const durationTicks = rec.duration ?? frag.defaultSampleDuration ?? trex.defaultSampleDuration ?? 0;
@@ -394,7 +402,7 @@ export class Mp4Demuxer extends Demuxer {
             keyframe,
             size,
             index: trackState.samples.length,
-            offset: box.start + frag.dataOffset + runOffset,
+            offset: box.start + runOffset,
             data: null,
             dataState: 'lazy',
             dtsRaw: dts,
@@ -406,6 +414,8 @@ export class Mp4Demuxer extends Demuxer {
           dts += durationTicks;
           runOffset += size;
         }
+        decodeTimeByTrack.set(frag.trackId, dts);
+        dataEndByTrack.set(frag.trackId, runOffset);
       }
       return true;
     }
@@ -605,10 +615,7 @@ export function expandSampleTable(stbl) {
   return { samples };
 }
 
-/**
- * 解析一个 moof 内的全部 traf → 每轨分片记录。
- * rec.offsetInRun 为样本相对 trun 数据区起点的偏移（size 累计）。
- */
+/** 解析一个 moof 内的全部 traf → 每个 trun 一条带 track 默认值的 run 记录。 */
 export function parseMoofTracks(moofBytes, contentStart, end) {
   const frags = [];
   iterateBoxes(moofBytes, contentStart, end, (h) => {
@@ -624,21 +631,17 @@ export function parseMoofTracks(moofBytes, contentStart, end) {
     });
     if (!tfhd || truns.length === 0) return;
     for (const trun of truns) {
-      let off = 0;
-      const records = trun.samples.map((rec) => {
-        const o = off;
-        off += rec.size ?? tfhd.defaultSampleSize ?? 0;
-        return { ...rec, offsetInRun: o };
-      });
       frags.push({
         trackId: tfhd.trackId,
         baseMediaDecodeTime,
+        baseDataOffset: tfhd.baseDataOffset,
+        defaultBaseIsMoof: tfhd.defaultBaseIsMoof,
         defaultSampleDuration: tfhd.defaultSampleDuration,
         defaultSampleSize: tfhd.defaultSampleSize,
         defaultSampleFlags: tfhd.defaultSampleFlags,
         firstSampleFlags: trun.firstSampleFlags,
-        dataOffset: trun.dataOffset ?? 0,
-        samples: records,
+        dataStartOffset: trun.dataOffset === null ? null : trun.dataOffset,
+        samples: trun.samples,
       });
     }
   });
