@@ -1061,13 +1061,14 @@
 
 ### 修改
 - subtitle/src/vtt.js：strict settings 验证允许的键、重复键、空值和裸 token；校验 vertical、line、position、size、align 的枚举/数字/百分比语法及 0–100 范围，region 允许非空不含空白值。解析失败抛带块号、键和值的 PARSE_ERROR。lenient 保留原始宽松覆盖及忽略裸 token 行为。
+- 随后对照 WebVTT 规范修正 grammar：百分比允许十进制且范围 0–100；line 仅接受负号行号或百分比（不接受 auto、显式正号）；align 枚举排除 middle；region 标识符允许空字符串，非空时允许任意 token 但排除空格、tab 及 `-->`。严格 token 分隔限定为 ASCII 空格/tab。
 - subtitle/__tests__/subtitle-vtt-settings.test.js：覆盖未知/重复/空值/裸 token、非法枚举、越界百分比、有效 strict settings 和 lenient 兼容。
 
 ### 验证
 - 修复前复现：strict 接受 pos:50%、重复 align、size/position:150%、vertical:sideways。
 - 定向测试：node --test --test-timeout=15000 subtitle/__tests__/subtitle-vtt-settings.test.js subtitle/__tests__/vtt.test.js subtitle/__tests__/subtitle-vtt-cue.test.js，49/49 通过。
 - 全量测试：npm test 3172/3172，0 失败。
-- 静态验证：npm run lint && npm run check 退出码 0；lint 扫描 547 个 JS 文件，check 内嵌测试 3172/3172，结论全部通过。覆盖摘要 0/565、0/16 为报告性输出。
+- 静态验证：npm run lint && npm run check 最终退出码 0；lint 扫描 547 个 JS 文件，check 全量测试 3172/3172，结论全部通过。中间发现 full-check 并行负载会使 WebRTC 统计采样的固定短时延测试偶发少采一轮，已改为最多 500ms 条件等待并通过全量复核。
 - 改动是格式 parser 校验，不涉及播放渲染管线，无需浏览器播放验证。
 
 ### 提交和推送
@@ -1077,5 +1078,10 @@
 - 新约束只作用于 strict；lenient 输出兼容保持。strict 可能拒绝此前未校验的未知/重复 cue-setting 键，符合 strict 输入校验目的。
 - 没有公开 API 变更；未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。
 
+### 后续规范复核（Attempt 50 续）
+- 对照 W3C WebVTT 当前规范发现初始 strict 校验对小数百分比、行号前导正号、align:middle 和空 region ID 的处理有偏差；已修正 grammar，并要求设置之间只以 ASCII 空格/tab 分隔。
+- 扩展回归覆盖边界小数、越界小数、空区域标识符、区域标识符空格/箭头、非 ASCII 空白和非标准枚举。定向 VTT + WebRTC 70/70，全量 3172/3172；lint/check 通过（check 内嵌 3172/3172）。
+- VTT 规范修订代码/测试及本 addendum 待提交推送；纯 parser，无需浏览器验证。
+
 ### 下一轮候选
-- 审查空白和大小写规范化、未知 cue settings 是否应在 strict 中允许自定义扩展，并选取字幕管线之外的高价值问题。
+- 审查未知 cue settings 扩展策略与其他格式的 strict grammar，并寻找媒体管线之外高价值问题。

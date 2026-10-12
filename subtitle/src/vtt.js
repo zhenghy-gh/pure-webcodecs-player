@@ -53,17 +53,19 @@ function parseSettings(raw, strict = false, blockNumber = 0) {
   const fail = (token, key, value) => {
     throw new SubtitleError('PARSE_ERROR', `第 ${blockNumber} 块 cue setting 非法：「${token}」`, { detail: { block: blockNumber, setting: key, value } });
   };
-  const isPercentage = (value) => /^(?:\d+(?:\.\d+)?)%$/.test(value) && Number.parseFloat(value) <= 100;
+  const isPercentage = (value) => /^\d+(?:\.\d+)?%$/.test(value) && Number.parseFloat(value) <= 100;
   const isLineValue = (value) => {
     const [position, alignment, ...rest] = value.split(',');
-    const validPosition = /^[+-]?\d+$/.test(position) || isPercentage(position);
+    const validPosition = /^-?\d+$/.test(position) || isPercentage(position);
     return rest.length === 0 && validPosition && (alignment === undefined || /^(?:start|center|end)$/.test(alignment));
   };
   const isPositionValue = (value) => {
     const [position, alignment, ...rest] = value.split(',');
     return rest.length === 0 && isPercentage(position) && (alignment === undefined || /^(?:line-left|center|line-right)$/.test(alignment));
   };
-  for (const token of raw.trim().split(/\s+/)) {
+  const settingsText = strict ? raw.replace(/^[ \t]+|[ \t]+$/g, '') : raw.trim();
+  const tokens = settingsText ? settingsText.split(strict ? /[ \t]+/ : /\s+/) : [];
+  for (const token of tokens) {
     const idx = token.indexOf(':');
     if (idx <= 0) {
       if (strict) fail(token, '', token);
@@ -72,7 +74,7 @@ function parseSettings(raw, strict = false, blockNumber = 0) {
     const key = token.slice(0, idx);
     const value = token.slice(idx + 1);
     if (strict) {
-      if (!['vertical', 'line', 'position', 'size', 'align', 'region'].includes(key) || !value || seen.has(key)) {
+      if (!['vertical', 'line', 'position', 'size', 'align', 'region'].includes(key) || seen.has(key)) {
         fail(token, key, value);
       }
       let valid = false;
@@ -81,7 +83,7 @@ function parseSettings(raw, strict = false, blockNumber = 0) {
       else if (key === 'position') valid = isPositionValue(value);
       else if (key === 'size') valid = isPercentage(value);
       else if (key === 'align') valid = /^(?:start|center|end|left|right)$/.test(value);
-      else if (key === 'region') valid = !/\s/.test(value);
+      else if (key === 'region') valid = !/[ \t]|-->/.test(value);
       if (!valid) fail(token, key, value);
       seen.add(key);
     }

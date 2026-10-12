@@ -46,9 +46,18 @@ test('VTT-settings：strict 拒绝未知/重复键和不合法值，lenient 保�
     'size:150%',
     'vertical:sideways',
     'position:150%',
+    'size:101%',
+    'position:100.1%',
+    'line:101%',
+    'position:50%,bad-align',
     'line:auto',
     'align:middle',
-    'region:',
+    'line:+2',
+    'align:middle-ish',
+    'region: bad',
+    'region:bad id',
+    'align:start　line:0',
+    'region:bad-->id',
     'align:',
     'align:start plainword',
   ];
@@ -58,8 +67,12 @@ test('VTT-settings：strict 拒绝未知/重复键和不合法值，lenient 保�
       error instanceof SubtitleError && error.code === 'PARSE_ERROR', settings);
     assert.equal(parseVtt(src).cues.length, 1, settings);
   }
-  const valid = parseVtt('WEBVTT\n\n00:00:01.000 --> 00:00:02.000 line:-2 position:50%,line-left size:100% align:center vertical:rl\nx\n', { strict: true });
+  const valid = parseVtt('WEBVTT\n\n00:00:01.000 --> 00:00:02.000 line:-2,end position:50%,line-left size:99.5% align:center vertical:rl region:chapter_1\nx\n', { strict: true });
   assert.equal(valid.cues.length, 1);
+  const emptyRegion = parseVtt('WEBVTT\n\n00:00:01.000 --> 00:00:02.000 region:\nx\n', { strict: true });
+  assert.equal(emptyRegion.cues[0].settings.region, '');
+  const boundaries = parseVtt('WEBVTT\n\n00:00:01.000 --> 00:00:02.000 line:100% position:0%,line-right size:0% align:left vertical:lr\nx\n', { strict: true });
+  assert.equal(boundaries.cues.length, 1);
 });
 
 test('VTT-settings：缺冒号的 token 被忽略', () => {
