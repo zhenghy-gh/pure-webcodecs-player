@@ -117,8 +117,14 @@ export function parseAss(text, options = {}) {
         const key = kv[1].trim().toLowerCase();
         const val = kv[2].trim();
         info[key] = val;
-        if (key === 'playresx') info.playResX = Number.parseInt(val, 10);
-        if (key === 'playresy') info.playResY = Number.parseInt(val, 10);
+        if (key === 'playresx' || key === 'playresy') {
+          const dimension = Number(val);
+          if (strict && (!/^[1-9]\d*$/.test(val) || !Number.isSafeInteger(dimension))) {
+            throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 ${key} 必须是正安全整数`, { detail: { line: li + 1, field: key, value: val } });
+          }
+          if (key === 'playresx') info.playResX = Number.parseInt(val, 10);
+          else info.playResY = Number.parseInt(val, 10);
+        }
       }
       continue;
     }

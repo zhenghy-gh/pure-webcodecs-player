@@ -671,3 +671,31 @@
 
 ### 下一轮候选
 - 检查 strict Script Info PlayResX/Y 是否发生 `parseInt` 截断或 NaN，并确认零/负分辨率语义。
+
+## Attempt 36：严格验证 ASS PlayRes 尺寸
+
+### 发现
+- 复现条件：strict 模式在 `[Script Info]` 中使用 `PlayResX: 640px`、非数字、零/负值或超出安全整数的分辨率。
+- 根因：PlayResX/Y 使用 `parseInt` 而无严格校验，导致前缀数字被截断、非法内容产生 `NaN`，零/负尺寸也被作为有效输出。Renderer 会使用 PlayRes 尺寸决定坐标缩放；非法值可能造成不合理布局或 fallback。
+- 用户影响：strict 模式放过损坏的坐标系元数据，无法保证解析结果中的分辨率可作为合法尺寸使用。
+
+### 修改
+- subtitle/src/ass.js：strict 下 PlayResX/Y 必须为正安全整数的纯十进制形式；解析失败以 `SubtitleError(PARSE_ERROR)` 给出行号、字段和值。lenient 继续保留既有 parseInt 前缀容忍。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖两个方向的前缀/非数字/零/负/溢出拒绝、合法尺寸，以及 lenient 旧行为。
+
+### 验证
+- 修复前复现：`640px` 被接受为 640，非数字产生 NaN，负数和 0 同样被接受。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js`，35/35 通过。
+- 全量测试：`npm test` 串行通过 3159/3159，0 失败。
+- 阶段验证（第 10 轮）：`npm run lint && npm run check` 通过；内嵌全量测试 3159/3159，lint 检查 547 个 JS 文件。check 的 PRD 门槛摘要仍报告覆盖计数 0/565、0/16 模块达门槛，但脚本结论为全部通过（该摘要是报告性输出）；并非本次回归失败。
+- 改动只涉及字幕 parser 元数据校验，不触及媒体播放/渲染管线，无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：strict PlayRes 校验、回归测试和 progress.md。
+
+### 风险
+- strict 模式拒绝非规范的带符号、带前导零、非整数、非正或不安全范围的 PlayRes；lenient 解析和公共 API 均不变。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 审查 Script Info 重复关键键、Style/Events 缺失 Format 时 strict 的默认列回退契约，以及 PlayRes 安全范围是否需上限。

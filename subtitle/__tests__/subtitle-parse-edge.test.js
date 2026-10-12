@@ -68,6 +68,21 @@ test('SRT：非数字序号行记警告但仍解析', () => {
 
 /* ---------------- ASS 边界 ---------------- */
 
+test('ASS：strict 校验 PlayResX/Y 为正安全整数，lenient 保留宽松解析', () => {
+  for (const field of ['PlayResX', 'PlayResY']) {
+    for (const value of ['640px', 'oops', '0', '-10', '9007199254740992']) {
+      const src = ['[Script Info]', field + ': ' + value].join('\n');
+      assert.throws(() => parseAss(src, { strict: true }), (error) =>
+        error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+        error.detail.field === field.toLowerCase());
+    }
+  }
+  const valid = parseAss('[Script Info]\nPlayResX: 640\nPlayResY: 360', { strict: true });
+  assert.equal(valid.info.playResX, 640);
+  assert.equal(valid.info.playResY, 360);
+  assert.equal(parseAss('[Script Info]\nPlayResX: 640px').info.playResX, 640);
+});
+
 test('ASS：空输入抛 PARSE_ERROR', () => {
   assert.throws(() => parseAss(''), (e) => e instanceof SubtitleError && e.code === 'PARSE_ERROR');
 });
