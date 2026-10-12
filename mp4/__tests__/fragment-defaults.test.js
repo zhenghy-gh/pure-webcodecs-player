@@ -170,3 +170,57 @@ test('multiple truns continue decode time and implicit data offset after prior r
   assert.deepEqual(samples.map((sample) => sample.dts), [100_000, 140_000]);
   assert.deepEqual(samples.map((sample) => [...sample.data]), [[...firstData], [...secondData]]);
 });
+
+function makeSplitMdatFixture() {
+  const { bytes: base } = buildFragmentedFixture();
+  const firstMoof = findBoxes(base, 0, base.byteLength, 'moof')[0];
+  const init = base.slice(0, firstMoof.start);
+  const firstData = new Uint8Array([71, 72]);
+  const secondData = new Uint8Array([81, 82, 83]);
+  const makeMoof = (firstOffset, secondOffset) => box('moof', (w) => {
+    w.writeRaw(buildMfhd(0));
+    w.writeRaw(box('traf', (tw) => {
+      tw.writeRaw(fullBox('tfhd', 0, 0x020000, (fw) => fw.writeU32(1)));
+      tw.writeRaw(buildTfdt(0));
+      for (const [offset, payload] of [[firstOffset, firstData], [secondOffset, secondData]]) {
+        tw.writeRaw(fullBox('trun', 0, 0x000301, (rw) => {
+          rw.writeU32(1); rw.writeI32(offset); rw.writeU32(40); rw.writeU32(payload.length);
+        }));
+      }
+    }));
+  });
+  const provisional = makeMoof(0, 0);
+  const firstOffset = provisional.byteLength + 8;
+  const secondOffset = firstOffset + firstData.length + 8;
+  const moof = makeMoof(firstOffset, secondOffset);
+  const mdat1 = buildMdat([firstData]);
+  const mdat2 = buildMdat([secondData]);
+  const bytes = new Uint8Array(init.byteLength + moof.byteLength + mdat1.byteLength + mdat2.byteLength);
+  bytes.set(init, 0);
+  bytes.set(moof, init.byteLength);
+  bytes.set(mdat1, init.byteLength + moof.byteLength);
+  bytes.set(mdat2, init.byteLength + moof.byteLength + mdat1.byteLength);
+  return { bytes, firstData, secondData };
+}
+
+test('fragment samples may target any following mdat payload', async () => {
+  const { bytes, firstData, secondData } = makeSplitMdatFixture();
+  const samples = await readSamples(bytes);
+  assert.deepEqual(samples.map((sample) => [...sample.data]), [[...firstData], [...secondData]]);
+});
+
+test('reject fragment sample ranges that point outside the associated mdat payload', async () => {
+  const { bytes } = makeTwoRunFragmentFixture();
+  const moof = findBoxes(bytes, 0, bytes.byteLength, 'moof')[0];
+  const traf = findBoxes(bytes, moof.contentStart, moof.end, 'traf')[0];
+  const truns = findBoxes(bytes, traf.contentStart, traf.end, 'trun');
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  view.setInt32(truns[0].contentStart + 8, moof.end + 32, false);
+  const demuxer = new Mp4Demuxer(new MemoryDataSource(bytes));
+  await demuxer.open();
+  await assert.rejects(
+    demuxer.readSample(1),
+    (error) => error.code === 'PARSE_ERROR' && /outside following mdat payloads/.test(error.message),
+  );
+  await demuxer.destroy();
+});

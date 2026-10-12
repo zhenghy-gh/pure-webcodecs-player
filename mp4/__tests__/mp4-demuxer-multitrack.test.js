@@ -11,6 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MemoryDataSource, ticksToUs } from '../../core/src/index.js';
 import { Mp4Demuxer } from '../src/demuxer.js';
+import { iterateBoxes } from '../src/box-parser.js';
 import {
   buildFtyp,
   buildMdat,
@@ -25,6 +26,9 @@ import {
   buildDinf,
   buildStsd,
   buildMoofMdat,
+  buildMfhd,
+  buildTfdt,
+  fullBox,
   box,
 } from '../src/box-builder.js';
 import { makeAvcCFixture, makeAscFixture } from './fixtures.js';
@@ -192,6 +196,42 @@ function buildTwoTrackFixture() {
   return { bytes, expectedVideo, expectedAudio, avcC, asc, videoChunkOffsets, audioChunkOffsets };
 }
 
+function buildImplicitBaseMultiTrackFixture() {
+  const { bytes: base } = buildFragmentedMultiTrackFixture();
+  const firstMoof = (() => {
+    let found;
+    iterateBoxes(base, 0, base.byteLength, (header) => { if (!found && header.type === 'moof') found = header; });
+    return found;
+  })();
+  const init = base.slice(0, firstMoof.start);
+  const videoData = new Uint8Array([0xa1, 0xa2]);
+  const audioData = new Uint8Array([0xb1, 0xb2, 0xb3]);
+  const makeMoof = (videoOffset) => box('moof', (w) => {
+    w.writeRaw(buildMfhd(1));
+    w.writeRaw(box('traf', (tw) => {
+      tw.writeRaw(fullBox('tfhd', 0, 0x020000, (fw) => fw.writeU32(1)));
+      tw.writeRaw(buildTfdt(0));
+      tw.writeRaw(fullBox('trun', 0, 0x000301, (rw) => {
+        rw.writeU32(1); rw.writeI32(videoOffset); rw.writeU32(40); rw.writeU32(videoData.length);
+      }));
+    }));
+    w.writeRaw(box('traf', (tw) => {
+      // Implicit base for this traf is the end of the preceding traf's data.
+      tw.writeRaw(fullBox('tfhd', 0, 0, (fw) => fw.writeU32(2)));
+      tw.writeRaw(buildTfdt(0));
+      tw.writeRaw(fullBox('trun', 0, 0x000300, (rw) => {
+        rw.writeU32(1); rw.writeU32(1024); rw.writeU32(audioData.length);
+      }));
+    }));
+  });
+  const provisional = makeMoof(0);
+  const moof = makeMoof(provisional.byteLength + 8);
+  const mdat = buildMdat([videoData, audioData]);
+  const bytes = new Uint8Array(init.byteLength + moof.byteLength + mdat.byteLength);
+  bytes.set(init, 0); bytes.set(moof, init.byteLength); bytes.set(mdat, init.byteLength + moof.byteLength);
+  return { bytes, videoData, audioData };
+}
+
 test('分片双轨交错读取：共享扫描保留未请求轨道与各 fragment 样本', async () => {
   const { bytes, videoData, audioData } = buildFragmentedMultiTrackFixture();
   const d = new Mp4Demuxer(new MemoryDataSource(bytes));
@@ -225,6 +265,18 @@ test('分片双轨交错读取：共享扫描保留未请求轨道与各 fragmen
   assert.deepEqual(videoIndices, [1, 2]);
   assert.deepEqual(audioIndices, [1, 2]);
   await concurrent.destroy();
+});
+
+test('same-moof audio traf inherits media-data end from preceding video traf', async () => {
+  const { bytes, videoData, audioData } = buildImplicitBaseMultiTrackFixture();
+  const demuxer = new Mp4Demuxer(new MemoryDataSource(bytes));
+  await demuxer.open();
+  const video = await demuxer.readSample(1);
+  const audio = await demuxer.readSample(2);
+  assert.deepEqual([...video.data], [...videoData]);
+  assert.deepEqual([...audio.data], [...audioData]);
+  assert.equal(audio.offset, video.offset + video.size);
+  await demuxer.destroy();
 });
 
 test('双轨 open：视频 avc1 + 音频 mp4a 契约字段各就各位', async () => {

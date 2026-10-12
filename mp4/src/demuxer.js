@@ -365,57 +365,73 @@ export class Mp4Demuxer extends Demuxer {
         max: this.maxMoovBytes,
         what: 'MP4 moof',
       });
-      const mdatBox = this._findMdatAfter(this._fragCursorIndex);
-      if (!mdatBox) throw parseError('moof at ' + box.start + ': no following mdat');
+      const mdatBoxes = this._findMdatsAfter(this._fragCursorIndex);
+      if (mdatBoxes.length === 0) throw parseError('moof at ' + box.start + ': no following mdat');
 
       // moofBytes is an independent slice; sample offsets are relative to its 8-byte box header.
       const frags = parseMoofTracks(moofBytes, 8, moofBytes.byteLength);
-      const decodeTimeByTrack = new Map();
-      const dataEndByTrack = new Map();
+      const decodeTimeByTraf = new Map();
+      const dataEndByTraf = new Map();
+      let previousTrafEnd = box.start;
+      let activeTrafIndex = -1;
       for (const frag of frags) {
+        if (frag.trafIndex !== activeTrafIndex) {
+          if (activeTrafIndex !== -1) previousTrafEnd = dataEndByTraf.get(activeTrafIndex) ?? previousTrafEnd;
+          activeTrafIndex = frag.trafIndex;
+        }
         const trackState = this._trackState.get(frag.trackId);
-        if (!trackState) continue;
-        const track = trackState.track;
-        const trex = trackState.trex ?? {};
-        const ts = track.timescale || 1000;
-        let dts = decodeTimeByTrack.get(frag.trackId) ?? frag.baseMediaDecodeTime;
-        const baseOffset = frag.baseDataOffset ?? box.start;
+        const track = trackState?.track;
+        const trex = trackState?.trex ?? this._moov.mvex?.trexByTrack?.[frag.trackId] ?? {};
+        const ts = track?.timescale || 1000;
+        let dts = decodeTimeByTraf.get(frag.trafIndex) ?? frag.baseMediaDecodeTime;
+        const baseOffset = frag.baseDataOffset ??
+          (frag.defaultBaseIsMoof || frag.trafIndex === 0 ? box.start : previousTrafEnd);
         let runOffset;
         if (frag.dataStartOffset !== null) {
           runOffset = baseOffset - box.start + frag.dataStartOffset;
         } else {
-          runOffset = dataEndByTrack.get(frag.trackId) ?? (baseOffset - box.start);
+          runOffset = (dataEndByTraf.get(frag.trafIndex) ?? baseOffset) - box.start;
         }
         for (let i = 0; i < frag.samples.length; i++) {
           const rec = frag.samples[i];
           const durationTicks = rec.duration ?? frag.defaultSampleDuration ?? trex.defaultSampleDuration ?? 0;
           const size = rec.size ?? frag.defaultSampleSize ?? trex.defaultSampleSize ?? 0;
+          const sampleOffset = box.start + runOffset;
+          const sampleEnd = sampleOffset + size;
+          const sampleMdat = mdatBoxes.find((mdat) =>
+            sampleOffset >= mdat.contentStart && sampleEnd <= mdat.end
+          );
+          if (!sampleMdat) {
+            throw parseError(
+              'fragment sample(track ' + frag.trackId + ') range [' + sampleOffset + ', ' + sampleEnd + ') is outside following mdat payloads',
+            );
+          }
           const flags = rec.flags ?? (i === 0 ? frag.firstSampleFlags : undefined) ?? frag.defaultSampleFlags ?? trex.defaultSampleFlags ?? 0;
           const keyframe = (flags & 0x00010000) === 0;
           const cts = rec.cts ?? 0;
           const sample = createSample({
             trackId: frag.trackId,
-            codec: track.codec ?? '',
+            codec: track?.codec ?? '',
             timestamp: ticksToUs(dts + cts, ts),
             duration: ticksToUs(durationTicks, ts),
             dts: ticksToUs(dts, ts),
             keyframe,
             size,
-            index: trackState.samples.length,
-            offset: box.start + runOffset,
+            index: trackState?.samples.length ?? i,
+            offset: sampleOffset,
             data: null,
             dataState: 'lazy',
             dtsRaw: dts,
           });
-          if (trackState.keyframes) {
+          if (trackState?.keyframes) {
             trackState.samples.push(sample);
             if (keyframe) trackState.keyframes.push(sample.index);
           }
           dts += durationTicks;
           runOffset += size;
         }
-        decodeTimeByTrack.set(frag.trackId, dts);
-        dataEndByTrack.set(frag.trackId, runOffset);
+        decodeTimeByTraf.set(frag.trafIndex, dts);
+        dataEndByTraf.set(frag.trafIndex, box.start + runOffset);
       }
       return true;
     }
@@ -423,13 +439,14 @@ export class Mp4Demuxer extends Demuxer {
   }
 
 
-  _findMdatAfter(index) {
+  _findMdatsAfter(index) {
+    const mdats = [];
     for (let i = index; i < this._topLevelBoxes.length; i++) {
       const b = this._topLevelBoxes[i];
       if (b.type === 'moof') break;
-      if (b.type === 'mdat') return b;
+      if (b.type === 'mdat') mdats.push(b);
     }
-    return null;
+    return mdats;
   }
 
   /* ------------------------------ seek ------------------------------ */
@@ -618,8 +635,10 @@ export function expandSampleTable(stbl) {
 /** 解析一个 moof 内的全部 traf → 每个 trun 一条带 track 默认值的 run 记录。 */
 export function parseMoofTracks(moofBytes, contentStart, end) {
   const frags = [];
+  let trafIndex = -1;
   iterateBoxes(moofBytes, contentStart, end, (h) => {
     if (h.type !== 'traf') return;
+    const currentTrafIndex = ++trafIndex;
     let tfhd = null;
     let baseMediaDecodeTime = 0;
     const truns = [];
@@ -633,6 +652,7 @@ export function parseMoofTracks(moofBytes, contentStart, end) {
     for (const trun of truns) {
       frags.push({
         trackId: tfhd.trackId,
+        trafIndex: currentTrafIndex,
         baseMediaDecodeTime,
         baseDataOffset: tfhd.baseDataOffset,
         defaultBaseIsMoof: tfhd.defaultBaseIsMoof,

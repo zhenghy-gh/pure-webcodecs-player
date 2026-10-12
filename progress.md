@@ -1207,3 +1207,28 @@
 
 ### 风险
 - 本轮仅改善同一 traf 多 run 的 decode-time 与隐式数据连续性；未新增公共 API。未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+## Attempt 56：修复 fMP4 隐式 traf 基址和 mdat 样本边界
+
+### 发现
+- 分片多轨若省略 tfhd.base_data_offset / default-base-is-moof，后续 traf 的默认数据基址承接前一个 traf 的媒体数据结束位置，而不是重置到 moof 或沿用 track 的上次状态。
+- 扫描器未验证 trun 解出的样本范围是否落入该 moof 后的 mdat payload；损坏 offset 会被记录为 lazy sample，直到后续读数据才暴露错误。
+- 同一 fragment segment 可以包含多个 mdat；样本 offset 可能合法指向后续 mdat，检查需覆盖 moof 后、下一 moof 前的所有 mdat，而非仅首个。
+
+### 修改
+- mp4/src/demuxer.js：解析每个 trun 的 traf 序号；保留各 traf 的隐式数据结束位置，后续隐式 traf 基址承接先前 traf 的媒体数据末尾。decode time 仅在同 traf 的多个 trun 间连续。
+- mp4/src/demuxer.js：同一 moof 下收集所有 mdat；样本 [offset, offset+size) 必须完整落入至少一个 mdat payload，否则立即抛 PARSE_ERROR。未选择的 track 仍参与数据布局推导。
+- mp4/__tests__/mp4-demuxer-multitrack.test.js：新增省略后续音频 traf 基址和 trun data_offset 的双轨同 moof fixture，断言两路 payload 与连续偏移正确。
+- mp4/__tests__/fragment-defaults.test.js：增加跨多个 mdat 的显式 run offset 读取回归，及越界 run offset 立即失败回归。
+
+### 验证
+- 定向回归（fragment-defaults、mp4-demuxer-multitrack、demuxer-gaps）：28/28 通过；MP4 全套 169/169 通过。
+- npm run check：fixtures 通过；全量测试 3184/3184；lint 通过（548 个 JS 文件）；check 结论全部通过。
+- 真实浏览器：Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；双轨解析/初始化、真实视频解码、播放时钟推进、seek 后恢复、buffered 和资源释放均通过。
+- 浏览器生成的截图已还原；git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- 本轮仅修复 fragmented MP4 的 traf 基址、mdat 样本边界校验；未新增公共 API。未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。
