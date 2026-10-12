@@ -193,6 +193,26 @@ test('ASS：Style strict 拒绝越界 Alignment 和非标准 BorderStyle，保�
   assert.equal(legacy.styles[0].alignment, 6, 'SSA V4 alignment 11 maps to ASS middle-right');
 });
 
+test('ASS：strict 拒绝空列或重复列的 Style/Events Format', () => {
+  const cases = [
+    ['[V4+ Styles]', 'Format: Name, Fontname, Fontsize, Bold, Bold', 'Style: A,Arial,20,0,1'],
+    ['[V4+ Styles]', 'Format: Name, , Fontsize, Bold', 'Style: A,Arial,20,1'],
+    ['[Events]', 'Format: Layer, Start, Start, End, Style, Text', 'Dialogue: 0,0:00:01.00,0:00:02.00,0:00:03.00,Default,hello'],
+    ['[Events]', 'Format: Layer, Start, End, , Style, Text', 'Dialogue: 0,0:00:01.00,0:00:02.00,,Default,hello'],
+  ];
+  for (const [section, format, record] of cases) {
+    const src = [section, format, record].join('\n');
+    assert.throws(() => parseAss(src, { strict: true }), (error) =>
+      error instanceof SubtitleError && error.code === 'PARSE_ERROR' && error.detail.line === 2);
+  }
+  const lenient = parseAss([
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize, Bold, Bold',
+    'Style: A,Arial,20,0,1',
+  ].join('\n'));
+  assert.equal(lenient.styles[0].bold, true);
+});
+
 test('ASS：Dialogue 字段数少于 Format 声明 → lenient 跳过并计数', () => {
   const src = [
     '[Events]',

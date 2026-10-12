@@ -126,7 +126,11 @@ export function parseAss(text, options = {}) {
     // —— 样式节：Format / Style ——
     if (section && section.startsWith('v4')) {
       if (/^format\s*:/i.test(line)) {
-        styleFormat = line.slice(line.indexOf(':') + 1).split(',').map((s) => s.trim().toLowerCase());
+        const columns = line.slice(line.indexOf(':') + 1).split(',').map((s) => s.trim().toLowerCase());
+        if (strict && (columns.some((column) => !column) || new Set(columns).size !== columns.length)) {
+          throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Style Format 含空列或重复列`, { detail: { line: li + 1, columns } });
+        }
+        styleFormat = columns;
         continue;
       }
       if (/^style\s*:/i.test(line)) {
@@ -234,7 +238,11 @@ export function parseAss(text, options = {}) {
     // —— 事件节：Format / Dialogue / Comment ——
     if (section === 'events') {
       if (/^format\s*:/i.test(line)) {
-        eventFormat = line.slice(line.indexOf(':') + 1).split(',').map((s) => s.trim().toLowerCase());
+        const columns = line.slice(line.indexOf(':') + 1).split(',').map((s) => s.trim().toLowerCase());
+        if (strict && (columns.some((column) => !column) || new Set(columns).size !== columns.length)) {
+          throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Events Format 含空列或重复列`, { detail: { line: li + 1, columns } });
+        }
+        eventFormat = columns;
         continue;
       }
       const isDialogue = /^dialogue\s*:/i.test(line);

@@ -590,3 +590,57 @@
 
 ### 下一轮候选
 - 继续审计 ASS strict 时间字段与 Comment/Format 列配置边界，重点验证 parser 消费的默认列与 strict 校验覆盖一致。
+
+## Attempt 33：校验 ASS 对齐/边框样式枚举
+
+### 发现
+- 复现条件：strict 模式 ASS 样式将 `Alignment` 设为 0/10/99，或将 `BorderStyle` 设为 2。
+- 根因：上一轮严格校验只限制字段为整数；样式构造器随后把非法 alignment 静默钳到 1–9，而 BorderStyle=2 虽可被 parser 接受但 renderer 不支持。
+- 用户影响：严格解析调用方无法识别布局设置错误，文件请求的对齐效果被改变或边框样式无法正确渲染。
+
+### 修改
+- subtitle/src/ass.js：strict 模式验证 ASS Alignment 为 1–9、SSA V4 legacy Alignment 仅接受 1/2/3/5/6/7/9/10/11；BorderStyle 仅接受当前 renderer 支持的 1 或 3。将 SSA V4 legacy 编号转换到统一 ASS numpad 锚点（例如旧值 11 → 6）。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖非法/边界 enum 拒绝、BorderStyle=3 和 Alignment=9 的有效边界，以及 SSA V4 旧值转换。
+
+### 验证
+- 修复前复现：Alignment 0/99 和 BorderStyle 2 均 strict 成功；alignment 被静默钳到 1/9，borderStyle 2 原样进入结果。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js`，32/32 通过。
+- 全量测试：`npm test` 串行通过 3156/3156，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；check 内嵌测试 3156/3156，lint 检查 547 个 JS 文件。变更仅涉及纯 ESM 字幕解析，无需真实浏览器验证。
+
+### 提交和推送
+- 已提交并推送：`e2d3b34 fix: validate strict ass style enums`（ASS strict enum 校验、SSA V4 映射、回归测试和 progress.md）。
+
+### 风险
+- strict 模式将拒绝非标准 alignment/borderStyle 值；lenient 模式沿用现有宽容策略，合法 SSA V4 旧编号保留并映射。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 继续审计 strict ASS 时间码与 `[Events] Format` 列表，确认 missing 列不会让严格输入静默错映射。
+
+## Attempt 34：拒绝 strict ASS Format 空列和重复列
+
+### 发现
+- 复现条件：strict 模式的 Style Format 声明 `Bold, Bold` 等重复列，或 `Name, , Fontsize` 等空列；Events Format 同样可出现重复/空列。
+- 根因：Format 字段名被直接转成索引映射；重复字段会让后一个值覆盖前一个，空字段名则生成无法访问的记录键。strict 模式未检查这些结构错误，仍可能成功返回，但结果取值已歧义。
+- 用户影响：strict 调用者会收到表面成功但字段静默错映射的样式/字幕数据。
+
+### 修改
+- subtitle/src/ass.js：strict 模式在 Style 和 Events Format 解析时拒绝空字段名及大小写归一后的重复字段名，抛出带行号/列详情的 `SubtitleError(PARSE_ERROR)`；lenient 保持旧的兼容映射行为。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖 Style/Events 两种 Format 的空列和重复列，并验证 lenient duplicate 列继续兼容。
+
+### 验证
+- 修复前复现：strict 接受 `Bold, Bold` 和空列格式，重复 Bold 时后一值覆盖前值。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js`，33/33 通过。
+- 全量测试：`npm test` 串行通过 3157/3157，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；check 内嵌全量测试 3157/3157，lint 检查 547 个 JS 文件。纯字幕解析变更不触及浏览器播放管线，无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：strict Format 校验、回归测试和 progress.md。
+
+### 风险
+- strict 现在拒绝空/重复的 Format 列；lenient 默认兼容行为未改变。未变更公共 API 或运行时依赖。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 检查 strict Events Format 缺少关键 Start/End/Text/Style 字段时的处理，以及非法 Script Info 数值字段是否有静默 NaN/截断问题。
