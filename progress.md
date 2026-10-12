@@ -1015,7 +1015,7 @@
 - 静态验证：`npm run lint && npm run check` 和单独重跑 `npm run check` 均退出码 0；lint 检查 547 个 JS 文件；check 内嵌全量测试 3170/3170，0 失败。PRD 门槛摘要 0/565、0/16 是报告性输出，check 结论全部通过。本轮定向 SRT 测试稳定为 27/27。纯 parser 修改，不需浏览器播放验证。
 
 ### 提交和推送
-- 本轮待提交：SRT cue 边界恢复、回归测试和 progress.md。
+- 已提交并推送：`6059627 fix: recover adjacent srt cues`（SRT cue 边界恢复、回归测试及 progress.md）。
 
 ### 风险
 - 合并块内可解析且递增的后续时间行被视为 cue 起点；若正文刻意包含独立成行、形似合法 SRT 时间行的文本，该行可能被视为新 cue 边界。缺少 separator 的格式本身存在歧义。
