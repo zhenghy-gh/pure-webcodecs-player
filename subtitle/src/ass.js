@@ -144,6 +144,19 @@ export function parseAss(text, options = {}) {
         const st = createDefaultStyle(rec['name'] || `Style${styles.length + 1}`);
         try {
           if (strict) {
+            const colorFields = ['primarycolour', 'secondarycolour', 'outlinecolour', 'backcolour'];
+            for (const field of colorFields) {
+              const value = rec[field] ?? '';
+              if (value === '') continue;
+              const hex = /^&H([0-9a-f]+)&?$/i.exec(value);
+              const decimal = /^\d+$/.test(value);
+              const validHex = hex && hex[1].length <= 8 && (hex[1].length <= 6 || hex[1].length === 8);
+              const decimalValue = decimal ? Number(value) : NaN;
+              const validDecimal = decimal && Number.isSafeInteger(decimalValue) && decimalValue <= 0xffffff;
+              if (!validHex && !validDecimal) {
+                throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段 ${field} 颜色超出合法格式/范围`, { detail: { field, value } });
+              }
+            }
             const numericFields = ['fontsize', 'scalex', 'scaley', 'spacing', 'angle', 'borderstyle', 'outline', 'shadow', 'alignment', 'marginl', 'marginr', 'marginv'];
             const booleanFields = ['bold', 'italic', 'underline', 'strikeout'];
             const decimalPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;

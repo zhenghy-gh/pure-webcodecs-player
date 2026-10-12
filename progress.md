@@ -536,3 +536,30 @@
 
 ### 下一轮候选
 - 审计 ASS strict 时间码/Comment 字段覆盖，或探索容器/字幕公共入口把编码与 parse 错误统一映射为项目错误码的边界。
+
+## Attempt 31：修复 ASS strict 超宽颜色截断
+
+### 发现
+- 复现条件：strict 解析 ASS Style 中超宽十六进制颜色（`&H123456789ABC&`）、超过 24 位的十进制颜色（`16777216`）或超出安全整数范围的长数字。
+- 根因：`parseAssColor()` 为兼容既有输入会对十六进制高位截断、对十进制使用位运算掩码；strict Style 校验此前只检查颜色是否可解析，未检查有效位宽/数值范围。
+- 用户影响：strict 模式对严重溢出/越界颜色静默截断，产出与源文件不符的颜色。
+
+### 修改
+- subtitle/src/ass.js：strict 模式下颜色字段仅接受 1–6 位（补零至 BGR）或 8 位 AA-BBGGRR 十六进制，以及 0..0xFFFFFF 的安全十进制；非法值纳入标准 `SubtitleError(PARSE_ERROR)`。lenient 路径仍保持既有掩码/截断行为。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖超宽十六进制、24 位十进制越界、超过安全整数的十进制拒绝；增加 lenient 超宽颜色仍兼容的对照。
+
+### 验证
+- 修复前复现：上述三个颜色均在 strict 下成功解析，产生截断颜色。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js`，31/31 通过。
+- 全量测试：`npm test` 串行通过 3155/3155，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；内嵌全量测试 3155/3155，lint 检查 547 个 JS 文件。纯字幕 parser 变更无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：ASS strict color bounds、回归测试和 progress.md。
+
+### 风险
+- strict 新增标准颜色宽度/范围校验；默认 lenient 的既有容错行为保持不变。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 继续检查 ASS strict 时间字段与 Comment、Format 列配置的边界；核对 strict 校验与解析器实际消费字段是否一致。

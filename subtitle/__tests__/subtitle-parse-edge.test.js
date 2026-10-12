@@ -145,6 +145,25 @@ test('ASS：Style strict 拒绝带尾随字符的数字/布尔字段，lenient �
   assert.equal(lenient.stats.warnings.length, 0);
 });
 
+test('ASS：Style strict 拒绝超宽/越界颜色；lenient 保留既有掩码兼容', () => {
+  for (const value of ['&H123456789ABC&', '16777216', '999999999999999999999999999']) {
+    const src = [
+      '[V4+ Styles]',
+      'Format: Name, Fontname, Fontsize, PrimaryColour',
+      'Style: Bad,Arial,20,' + value,
+    ].join('\n');
+    assert.throws(() => parseAss(src, { strict: true }), (error) =>
+      error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+      error.cause?.detail?.field === 'primarycolour');
+  }
+  const lenient = parseAss([
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize, PrimaryColour',
+    'Style: Bad,Arial,20,&H123456789ABC&',
+  ].join('\n'));
+  assert.equal(lenient.styles[0].primary.r, 0xbc);
+});
+
 test('ASS：Dialogue 字段数少于 Format 声明 → lenient 跳过并计数', () => {
   const src = [
     '[Events]',
