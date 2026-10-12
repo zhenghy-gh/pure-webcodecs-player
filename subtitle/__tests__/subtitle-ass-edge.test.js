@@ -189,25 +189,28 @@ test('ASS：正文 `;` 注释行被忽略', () => {
   assert.equal(r.cues[0].text, '带分号注释行');
 });
 
-test('ASS：SSA Marked 字段当前未被解析为 layer（已知缺陷回归守卫）', () => {
-  const src = [
-    '[Script Info]',
-    '',
-    '[V4 Styles]',
-    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, TertiaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, AlphaLevel, Encoding',
-    'Style: Default,Arial,20,&HFFFFFF,&H0000FF,&H0,&H0,0,0,1,1,0,2,10,10,10,0,1',
-    '',
+test('ASS：SSA Marked=0/1 映射为 layer，strict 拒绝非法标记', () => {
+  const make = (marked) => [
     '[Events]',
     'Format: Marked, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
-    'Dialogue: Marked=1,0:00:01.00,0:00:02.00,Default,,0,0,0,,SSA 层1',
-    '',
+    `Dialogue: ${marked},0:00:01.00,0:00:02.00,Default,,0,0,0,,SSA cue`,
   ].join('\n');
-  const r = parseAss(src);
-  assert.equal(r.cues.length, 1);
-  // 缺陷：ass.js:232 用 intOr(rec['marked'], 0)，但 rec['marked'] 是原始串 "Marked=1"，
-  // parseInt 解析为 NaN → 恒为 0；SSA Marked 数值从未转换成 layer（应 = 1）。
-  // 此处仅守护「当前实现行为」，详见汇报 ass.js:232。
-  assert.equal(r.cues[0].layer, 0);
+  for (const marked of ['Marked=0', 'Marked=1']) {
+    const result = parseAss(make(marked));
+    assert.equal(result.cues.length, 1);
+    assert.equal(result.cues[0].layer, Number(marked.at(-1)));
+    assert.equal(parseAss(make(marked), { strict: true }).cues[0].layer, Number(marked.at(-1)));
+  }
+  assert.throws(() => parseAss(make('Marked=2'), { strict: true }), (error) =>
+    error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+    error.detail.field === 'marked' && error.detail.value === 'Marked=2');
+
+  const layered = parseAss([
+    '[Events]',
+    'Format: Layer, Marked, Start, End, Text',
+    'Dialogue: 5,Marked=1,0:00:01.00,0:00:02.00,layer wins',
+  ].join('\n'), { strict: true });
+  assert.equal(layered.cues[0].layer, 5);
 });
 
 test('ASS：Style 字段尾随空值（多逗号）被安全填默认', () => {

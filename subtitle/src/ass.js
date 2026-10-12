@@ -311,6 +311,10 @@ export function parseAss(text, options = {}) {
       /** @type {Record<string,string>} */
       const rec = {};
       fmt.forEach((k, i) => { rec[k] = i < fmt.length - 1 ? parts[i].trim() : parts.slice(fmt.length - 1).join(',').trim(); });
+      const markedLayer = /^marked\s*=\s*([01])$/i.exec(rec['marked'] ?? '');
+      if (strict && isDialogue && !fmt.includes('layer') && fmt.includes('marked') && !markedLayer) {
+        throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 SSA Marked 字段必须是 Marked=0 或 Marked=1`, { detail: { line: li + 1, field: 'marked', value: rec['marked'] ?? '' } });
+      }
 
       let startUs = 0;
       let endUs = 0;
@@ -343,7 +347,7 @@ export function parseAss(text, options = {}) {
           endUs,
           text: plain,
           raw: new TextEncoder().encode(__rawLine),
-          layer: intOr(rec['layer'], intOr(rec['marked'], 0)),
+          layer: intOr(rec['layer'], intOr(markedLayer?.[1], 0)),
           style: baseStyle.name,
           settings: {
             name: rec['name'] ?? '',

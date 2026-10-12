@@ -782,3 +782,30 @@
 
 ### 下一轮候选
 - 继续审查 strict Dialogue 的 Style 字段缺省/未知样式引用，以及空正文是否属于合法零内容 cue，避免把有效 fallback 误判为结构错误。
+
+## Attempt 40：修复 SSA Marked 层级映射
+
+### 发现
+- 复现条件：SSA `[Events]` 使用 `Format: Marked, ...`，Dialogue 的首字段是 `Marked=1`。
+- 根因：解析器把 `Marked=1` 原样传给 `parseInt`，解析失败后静默退为 layer 0；SSA 的二态标记信息因此丢失。
+- 用户影响：旧式 SSA 字幕的事件层级/绘制顺序错误。
+
+### 修改
+- subtitle/src/ass.js：识别 `Marked=0` / `Marked=1` 并映射至相应 layer；strict 模式中 Marked 存在且无 Layer 字段时拒绝非法标记；显式 Layer 仍优先于 Marked。lenient 对无效标记保持 layer 0 fallback。
+- subtitle/__tests__/subtitle-ass-edge.test.js：将原先“当前缺陷”的守卫改为回归测试，覆盖两种合法 Marked 值、strict/lenient 解析、非法严格输入和显式 Layer 优先级。
+
+### 验证
+- 修复前复现：Marked=1 输入成功解析但 cue.layer 错误为 0。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-ass-edge.test.js subtitle/__tests__/ass.test.js subtitle/__tests__/subtitle-parse-edge.test.js`，57/57 通过。
+- 全量测试：`npm test` 串行通过 3163/3163，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；内嵌全量测试 3163/3163，lint 检查 547 个 JS 文件。check 的报告性门槛表显示 0/565、0/16，脚本结论全部通过。只涉及 ASS/SSA parser，不改播放/渲染管线，无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：SSA Marked layer 映射、回归测试和 progress.md。
+
+### 风险
+- `Marked=0/1` 到 layer 0/1 的映射只作用于 SSA Marked 格式；正常 V4+ `Layer` 字段优先。strict 新增非法 Marked 拒绝，lenient 行为兼容。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 审查 strict Dialogue 中缺省/未知 Style 引用与空正文的兼容语义，寻找高价值且可验证的解析问题。
