@@ -933,7 +933,7 @@
 - 静态验证：`npm run lint && npm run check` 通过；lint 扫描 547 个 JS 文件，check 内嵌测试 3168/3168；PRD 覆盖摘要 0/565、0/16 为报告性输出，check 结论全部通过。纯 parser 修改，无需真实浏览器验证。
 
 ### 提交和推送
-- 本轮待提交：strict Dialogue Margin 校验、回归测试和 progress.md。
+- 已提交并推送：`0e2be2b fix: validate strict ass event margins`（strict Dialogue Margin 校验、回归测试及 progress.md）。
 
 ### 风险
 - 只在 strict 模式拒绝非法非空 Margin；lenient 与公共 API 保持不变。允许空 Margin 与样式默认语义兼容。
