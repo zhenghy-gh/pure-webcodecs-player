@@ -726,3 +726,31 @@
 
 ### 下一轮候选
 - 检查 strict 时缺少 Style/Events Format 是否仍静默启用默认列序，并确认该 fallback 与既有项目契约一致。
+
+## Attempt 38：隔离 ASS 节 Format 状态并严格要求声明
+
+### 发现
+- 复现条件：`[Events]` 下无 `Format:` 时 strict Dialogue 会按默认列序成功解析，缺少明确列定义；另一情况是重复 Events/Styles 节在省略新 `Format:` 后错误继承前一节的列序。
+- 根因：Style 默认列和 Events Format 状态保留为跨节局部变量；进入重复节不重置列序。strict 还对缺失 Format 静默使用 V4+ 默认列，可能把自定义/畸形布局误映射。
+- 用户影响：strict 模式下记录内容可能按错误的字段布局解释，给出时间/正文/样式错误却表面成功的结果。
+
+### 修改
+- subtitle/src/ass.js：进入 V4/V4+ Styles 节时恢复独立的默认 Style 列序并清除显式声明标记；进入 Events 节时清空该节 eventFormat，避免跨节泄漏。strict Style 行与 Dialogue 行要求当前节已有显式 Format 声明；lenient 仍按既有默认列序兜底。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖严格模式缺 Style/Events Format 拒绝、lenient 默认列序兼容，以及重复 Events/Styles 节不继承前节列序。
+
+### 验证
+- 修复前复现：strict Events 在没有 `Format:` 时成功产出 1 个 cue。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js subtitle/__tests__/ass.test.js`，56/56 通过。
+- 全量测试：`npm test` 串行通过 3162/3162，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；内嵌测试 3162/3162，lint 检查 547 个 JS 文件。check 中覆盖门槛汇总仍显示报告值 0/565、0/16，脚本结论为全部通过。
+- 改动仅限 ASS parser 的结构/列映射，不触及浏览器播放管线，无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：ASS 节 Format 状态隔离、strict 显式声明要求、回归测试和 progress.md。
+
+### 风险
+- strict 输入缺 Format 时现在会抛 `PARSE_ERROR`，属于严格模式契约；lenient 行为保持兼容。默认公共 API 没变化。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 继续审查 strict 对空 Dialogue 文本、缺少 Style 列/引用不存在样式的约束，判断哪些应为语法错误、哪些保留有效 fallback。

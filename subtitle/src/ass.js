@@ -51,7 +51,8 @@ import { tokenizeDialogue } from './tags.js';
  * @property {boolean} [strict=false]
  */
 
-/** 无 Format 行时的默认列序（V4+） */
+/** 无 Format 行时的默认列序 */
+const DEFAULT_STYLE_FORMAT = ['name', 'fontname', 'fontsize', 'primarycolour', 'secondarycolour', 'outlinecolour', 'backcolour', 'bold', 'italic', 'underline', 'strikeout', 'scalex', 'scaley', 'spacing', 'angle', 'borderstyle', 'outline', 'shadow', 'alignment', 'marginl', 'marginr', 'marginv', 'encoding'];
 const DEFAULT_EVENT_FORMAT = ['layer', 'start', 'end', 'style', 'name', 'marginl', 'marginr', 'marginv', 'effect', 'text'];
 
 /**
@@ -93,7 +94,8 @@ export function parseAss(text, options = {}) {
   let skippedBlocks = 0;
 
   /** 当前节的 Format 列序 */
-  let styleFormat = ['name', 'fontname', 'fontsize', 'primarycolour', 'secondarycolour', 'outlinecolour', 'backcolour', 'bold', 'italic', 'underline', 'strikeout', 'scalex', 'scaley', 'spacing', 'angle', 'borderstyle', 'outline', 'shadow', 'alignment', 'marginl', 'marginr', 'marginv', 'encoding'];
+  let styleFormat = DEFAULT_STYLE_FORMAT.slice();
+  let styleFormatDeclared = false;
   let eventFormat = null;
 
   /** @type {string|null} */
@@ -108,6 +110,11 @@ export function parseAss(text, options = {}) {
     const secM = /^\[([^\]]+)\]$/.exec(line);
     if (secM) {
       section = secM[1].trim().toLowerCase();
+      if (section.startsWith('v4')) {
+        styleFormat = DEFAULT_STYLE_FORMAT.slice();
+        styleFormatDeclared = false;
+      }
+      if (section === 'events') eventFormat = null;
       continue;
     }
 
@@ -142,9 +149,13 @@ export function parseAss(text, options = {}) {
           throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Style Format 含空列或重复列`, { detail: { line: li + 1, columns } });
         }
         styleFormat = columns;
+        styleFormatDeclared = true;
         continue;
       }
       if (/^style\s*:/i.test(line)) {
+        if (strict && !styleFormatDeclared) {
+          throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Style 缺少 Format 声明`, { detail: { line: li + 1, section } });
+        }
         const body = line.slice(line.indexOf(':') + 1);
         const parts = body.split(',');
         if (parts.length < styleFormat.length) {
@@ -262,6 +273,9 @@ export function parseAss(text, options = {}) {
 
       if (isComment) commentCount += 1; // 作者注释：计数不入轨
 
+      if (strict && isDialogue && eventFormat === null) {
+        throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Dialogue 缺少 Events Format 声明`, { detail: { line: li + 1, section } });
+      }
       const fmt = eventFormat ?? inferEventFormat(section, styleFormat);
       if (strict && isDialogue) {
         const missing = ['start', 'end', 'text'].filter((field) => !fmt.includes(field));

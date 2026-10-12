@@ -238,6 +238,44 @@ test('ASS：strict 拒绝空列或重复列的 Style/Events Format', () => {
   assert.equal(lenient.styles[0].bold, true);
 });
 
+test('ASS：重复节不会继承前一节的 Format 列序', () => {
+  const events = [
+    '[Events]',
+    'Format: Text, Start, End',
+    'Dialogue: first,0:00:01.00,0:00:02.00',
+    '[Events]',
+    'Dialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,second',
+  ].join('\n');
+  const parsedEvents = parseAss(events);
+  assert.deepEqual(parsedEvents.cues.map((cue) => cue.text), ['first', 'second']);
+
+  const styles = [
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize',
+    'Style: Compact,Arial,20',
+    '[V4+ Styles]',
+    'Style: Full,Arial,24,&H000000FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1',
+  ].join('\n');
+  const parsedStyles = parseAss(styles);
+  assert.equal(parsedStyles.styles[1].name, 'Full');
+  assert.equal(parsedStyles.styles[1].primary.r, 255);
+  assert.equal(parsedStyles.styles[1].primary.g, 0);
+});
+
+test('ASS：strict 拒绝缺失 Style/Events Format，lenient 沿用默认列序', () => {
+  const style = [
+    '[V4+ Styles]',
+    'Style: Default,Arial,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1',
+  ].join('\n');
+  const events = ['[Events]', 'Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,hello'].join('\n');
+  assert.throws(() => parseAss(style, { strict: true }), (error) =>
+    error instanceof SubtitleError && error.code === 'PARSE_ERROR' && error.detail.line === 2);
+  assert.throws(() => parseAss(events, { strict: true }), (error) =>
+    error instanceof SubtitleError && error.code === 'PARSE_ERROR' && error.detail.line === 2);
+  assert.equal(parseAss(style).styles.length, 1);
+  assert.equal(parseAss(events).cues[0].text, 'hello');
+});
+
 test('ASS：strict Dialogue Format 缺少 Start/End/Text 时拒绝', () => {
   const cases = [
     ['Layer, End, Text', 'Dialogue: 0,0:00:02.00,hello'],
