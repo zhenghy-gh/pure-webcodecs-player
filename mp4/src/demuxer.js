@@ -11,7 +11,7 @@
  * （ticksToUs 就近取整）；Track.timescale 仅诊断保留。
  *
  * 约束：
- * - 分片模式的多轨迭代共享同一游标（按文件序单遍），交错拉取两轨请先缓存样本或另建实例；
+ * - 分片模式共享 moof 扫描结果，但各轨独立消费样本游标，支持交错或并发读取；
  * - 不解密：加密 sample entry（encv/enca）直接抛 NOT_SUPPORTED。
  */
 import {
@@ -377,12 +377,13 @@ export class Mp4Demuxer extends Demuxer {
         const trex = trackState.trex ?? {};
         const ts = track.timescale || 1000;
         let dts = frag.baseMediaDecodeTime;
+        let runOffset = 0;
         for (let i = 0; i < frag.samples.length; i++) {
           const rec = frag.samples[i];
-          const durationTicks = rec.duration ?? trex.defaultSampleDuration ?? 0;
-          const size = rec.size ?? trex.defaultSampleSize ?? 0;
-          const flags = rec.flags ?? trex.defaultSampleFlags ?? 0;
-          const keyframe = (flags & 0x01000000) === 0;
+          const durationTicks = rec.duration ?? frag.defaultSampleDuration ?? trex.defaultSampleDuration ?? 0;
+          const size = rec.size ?? frag.defaultSampleSize ?? trex.defaultSampleSize ?? 0;
+          const flags = rec.flags ?? (i === 0 ? frag.firstSampleFlags : undefined) ?? frag.defaultSampleFlags ?? trex.defaultSampleFlags ?? 0;
+          const keyframe = (flags & 0x00010000) === 0;
           const cts = rec.cts ?? 0;
           const sample = createSample({
             trackId: frag.trackId,
@@ -393,7 +394,7 @@ export class Mp4Demuxer extends Demuxer {
             keyframe,
             size,
             index: trackState.samples.length,
-            offset: box.start + frag.dataOffset + rec.offsetInRun,
+            offset: box.start + frag.dataOffset + runOffset,
             data: null,
             dataState: 'lazy',
             dtsRaw: dts,
@@ -403,6 +404,7 @@ export class Mp4Demuxer extends Demuxer {
             if (keyframe) trackState.keyframes.push(sample.index);
           }
           dts += durationTicks;
+          runOffset += size;
         }
       }
       return true;
@@ -631,6 +633,10 @@ export function parseMoofTracks(moofBytes, contentStart, end) {
       frags.push({
         trackId: tfhd.trackId,
         baseMediaDecodeTime,
+        defaultSampleDuration: tfhd.defaultSampleDuration,
+        defaultSampleSize: tfhd.defaultSampleSize,
+        defaultSampleFlags: tfhd.defaultSampleFlags,
+        firstSampleFlags: trun.firstSampleFlags,
         dataOffset: trun.dataOffset ?? 0,
         samples: records,
       });

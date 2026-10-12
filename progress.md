@@ -1157,3 +1157,28 @@
 ### 风险
 - 分片样本索引表会保存每条 track 已扫描过 fragment 的轻量样本元数据；样本 payload 仍按读取方式加载或保持 lazy，支持 seek 与跨轨重放所需的元数据随扫描量增长。
 - 本轮未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+## Attempt 54：修复 fMP4 sample flags 与 track 默认值继承
+
+### 发现
+- 复现条件：分片 trun 中省略样本字段、依赖 tfhd/trex 默认值，或使用 first_sample_flags。
+- 根因：sample_is_non_sync_sample 位于 sample flags 的第 16 位，旧实现却检查了 sample_depends_on 字段；first_sample_flags 虽由 box parser 解出却未传入 demuxer。tfhd 默认 duration/size/flags 也被忽略；继承 sample size 未正确用于数据偏移时会读错 payload。
+- 用户影响：非同步 H.264/H.265 样本可能被误认为关键帧，导致 seek 缺参考帧；未重复声明样本字段的合法 fragmented MP4 可能出现错误时长、关键帧判断或 payload。
+
+### 修改
+- mp4/src/demuxer.js：依据 bit 16 判定 sample_is_non_sync_sample；按每样本 → trun.first_sample_flags（仅首样本）→ tfhd → trex 的优先级解析 flags、duration、size；用最终解析出的 sample size 累计 payload 偏移。
+- mp4/src/demuxer.js：parseMoofTracks 向调用方传递 tfhd 默认字段及 trun 首样本 flags。
+- mp4/__tests__/fragment-defaults.test.js：新增端到端 fMP4 回归，覆盖非同步标志、first_sample_flags、tfhd/trex 的 duration/size/flags defaults 及 payload offsets。
+
+### 验证
+- 修复前复现：第二个样本只有 sample_is_non_sync_sample=1 且 sample_depends_on 未设置时，错误地回报 keyframe=true。
+- 定向 MP4 全套：node --test --test-timeout=15000 mp4/__tests__/*.test.js，166/166 通过。
+- npm run check：fixtures 通过；全量测试 3180/3180；lint 通过（548 个 JS 文件）；check 结论全部通过。
+- 真实浏览器：Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；双轨初始化、首帧与分辨率、播放推进、20s seek 对齐至 16.50s 并继续播放、buffered 与释放均正常；无 console/pageerror/network error/unhandled rejection。脚本生成的截图已还原，不纳入提交。
+- git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- API 不变；未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。
