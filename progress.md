@@ -855,7 +855,7 @@
 - 静态验证：`npm run lint && npm run check` 通过；lint 检查 547 个 JS 文件，check 内嵌测试 3165/3165。PRD 覆盖门槛摘要 0/565、0/16 为报告性输出，脚本结论全部通过。纯 parser 逻辑未触及浏览器执行管线，无需真实浏览器验证。
 
 ### 提交和推送
-- 本轮待提交：Dialogue 样式引用 strict 验证、回归测试和 progress.md。
+- 已提交并推送：`b23a20f fix: reject unknown strict ass styles`（Dialogue 样式引用 strict 验证、回归测试及 progress.md）。
 
 ### 风险
 - strict 模式现在拒绝已声明样式表中的未解析引用；lenient 和无 Styles 节的默认样式行为不变。无公共 API 变更。
