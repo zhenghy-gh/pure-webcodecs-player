@@ -267,6 +267,28 @@ test('ASS：strict 拒绝空列或重复列的 Style/Events Format', () => {
   assert.equal(lenient.styles[0].bold, true);
 });
 
+test('ASS：Text 在末列前仍保留逗号并按尾部列解析', () => {
+  const src = [
+    '[Events]',
+    'Format: Layer, Text, Start, End, Style',
+    'Dialogue: 0,Hello, world,0:00:01.00,0:00:02.00,Default',
+  ].join('\n');
+  for (const strict of [false, true]) {
+    const cue = parseAss(src, { strict }).cues[0];
+    assert.equal(cue.text, 'Hello, world');
+    assert.equal(cue.startUs, 1_000_000);
+    assert.equal(cue.endUs, 2_000_000);
+    assert.equal(cue.style, 'Default');
+  }
+  const emptyText = parseAss([
+    '[Events]',
+    'Format: Layer, Text, Start, End, Style',
+    'Dialogue: 0,,0:00:01.00,0:00:02.00,Default',
+  ].join('\n'), { strict: true }).cues[0];
+  assert.equal(emptyText.text, '');
+  assert.equal(emptyText.startUs, 1_000_000);
+});
+
 test('ASS：重复节不会继承前一节的 Format 列序', () => {
   const events = [
     '[Events]',

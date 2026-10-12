@@ -317,7 +317,17 @@ export function parseAss(text, options = {}) {
       }
       /** @type {Record<string,string>} */
       const rec = {};
-      fmt.forEach((k, i) => { rec[k] = i < fmt.length - 1 ? parts[i].trim() : parts.slice(fmt.length - 1).join(',').trim(); });
+      const textIndex = fmt.indexOf('text');
+      if (textIndex >= 0 && textIndex < fmt.length - 1 && fmt.lastIndexOf('text') === textIndex) {
+        // Text may contain commas even when its declared column precedes other event fields.
+        fmt.forEach((key, i) => {
+          if (i < textIndex) rec[key] = parts[i].trim();
+          else if (i === textIndex) rec[key] = parts.slice(i, parts.length - (fmt.length - i - 1)).join(',').trim();
+          else rec[key] = parts[parts.length - (fmt.length - i)].trim();
+        });
+      } else {
+        fmt.forEach((key, i) => { rec[key] = i < fmt.length - 1 ? parts[i].trim() : parts.slice(fmt.length - 1).join(',').trim(); });
+      }
       if (strict && isDialogue && fmt.includes('layer')) {
         const value = rec['layer'] ?? '';
         if (!/^[+-]?\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {

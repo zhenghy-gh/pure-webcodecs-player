@@ -967,4 +967,32 @@
 - 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
 
 ### 下一轮候选
-- 检查空 Dialogue 正文及其他可选事件字段的 strict 合法性契约。
+- 继续检查空 Dialogue 正文及其他可选事件字段的 strict 合法性契约。
+
+## Attempt 47：支持 Text 不在末列的 ASS Events Format
+
+### 发现
+- 复现条件：Events Format 声明 Text 后还有 Start、End、Style 等列，Dialogue 的 Text 正文包含逗号。
+- 根因：事件解析一律将最后一列当作逗号承载列，忽略 Text 的列位置；Text 非末列时，逗号文本泄漏至时间码/其他字段，strict 抛错或 lenient 跳过 cue。
+- 用户影响：按自定义列序的 ASS Events 无法解析带逗号的对白，或事件字段错位。
+
+### 修改
+- subtitle/src/ass.js：唯一 Text 列前面的字段从左侧按序切分，Text 收集剩余字段中为其保留末尾列后缀后的逗号片段，后续字段从右侧按序映射。Text 位于末列仍走既有逻辑；重复 Text 在 strict 已被 Format 校验拒绝，lenient 保持旧路径。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖 Layer, Text, Start, End, Style 中含逗号对白在 strict/lenient 下的文本/时间/样式映射，及非末列空 Text。
+
+### 验证
+- 修复前复现：Format: Layer, Text, Start, End, Style + Hello, world 在 strict 因 Start="world" 抛 PARSE_ERROR，lenient 将 cue 跳过。
+- 修复后独立复现：strict/lenient 均完整返回 Hello, world，Start=1s、End=2s、Style=Default。
+- 定向测试：node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js subtitle/__tests__/ass.test.js，64/64 通过。
+- 全量测试：npm test 串行通过 3170/3170，0 失败。
+- 静态验证：npm run lint && npm run check 通过；lint 检查 547 个 JS 文件，check 内嵌测试 3170/3170；PRD 门槛摘要 0/565、0/16 是报告性输出，结论全部通过。纯解析器变更，不需浏览器播放验证。
+
+### 提交和推送
+- 本轮待提交：Text 按声明列位置切分、回归测试和 progress.md。
+
+### 风险
+- 列顺序与 Text 逗号归属按 Format 声明处理；Text 为末列时行为未变，strict 和 lenient 兼容均有回归。无公共 API 变化。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 检查空 Dialogue 正文及其他可选事件字段 strict 合法性；关注非末列 Text 与逗号小数时间戳等边界的无歧义解析。
