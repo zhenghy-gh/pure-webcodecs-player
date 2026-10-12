@@ -1071,7 +1071,7 @@
 - 改动是格式 parser 校验，不涉及播放渲染管线，无需浏览器播放验证。
 
 ### 提交和推送
-- 本轮待提交：strict WebVTT setting schema 验证、回归和 progress.md。
+- 已提交并推送：`84f06ef fix: validate strict webvtt cue settings`（strict WebVTT setting schema 验证、回归和 progress.md）。
 
 ### 风险
 - 新约束只作用于 strict；lenient 输出兼容保持。strict 可能拒绝此前未校验的未知/重复 cue-setting 键，符合 strict 输入校验目的。
