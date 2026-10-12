@@ -563,3 +563,30 @@
 
 ### 下一轮候选
 - 继续检查 ASS strict 时间字段与 Comment、Format 列配置的边界；核对 strict 校验与解析器实际消费字段是否一致。
+
+## Attempt 32：严格拒绝 ASS 非法枚举样式
+
+### 发现
+- 复现条件：strict ASS Style 使用 `Alignment=0/10/99` 或 `BorderStyle=2`。
+- 根因：数值类型检查只验证整数；实际样式构造对 alignment 静默 clamp 至 1–9，而 renderer 只实现 BorderStyle 1/3。非法枚举因此被悄悄改值，或进入未支持渲染分支。
+- 用户影响：strict 调用方无法检测非法布局值；ASS 输入声明的对齐/边框效果与最终渲染不一致。
+
+### 修改
+- subtitle/src/ass.js：strict 校验 ASS alignment 为 1–9、SSA V4 采用有效旧编号集合 `{1,2,3,5,6,7,9,10,11}`，以及 BorderStyle 限制为 1/3；SSA V4 旧 alignment 编号转换为对应的 ASS numpad alignment，lenient 的既有行为不变。
+- subtitle/__tests__/subtitle-parse-edge.test.js：新增越界 alignment、非标准 BorderStyle 拒绝；覆盖合法 ASS 上界与 SSA V4 alignment 11 转换兼容。
+
+### 验证
+- 修复前复现：Alignment 0/99 和 BorderStyle 2 均 strict 成功；alignment 被钳制到 1/9，borderStyle 2 原样进入样式。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js`，32/32 通过。
+- 全量测试：`npm test` 串行通过 3156/3156，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；check 内嵌测试 3156/3156，lint 检查 547 个 JS 文件。字幕解析纯代码变更无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：ASS strict enum 校验、SSA V4 alignment 映射、回归测试和 progress.md。
+
+### 风险
+- strict 模式现在拒绝不合法的 ASS/SSA enum 输入；lenient 模式仍保持宽容，SSA V4 合法旧值映射到统一的 ASS 1–9 呈现锚点。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 继续审计 ASS strict 时间字段与 Comment/Format 列配置边界，重点验证 parser 消费的默认列与 strict 校验覆盖一致。

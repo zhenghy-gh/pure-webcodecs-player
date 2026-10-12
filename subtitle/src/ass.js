@@ -173,6 +173,16 @@ export function parseAss(text, options = {}) {
                 throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段 ${field} 不是合法整数`, { detail: { field, value } });
               }
             }
+            const alignment = Number(rec['alignment']);
+            const validAlignment = section === 'v4 styles'
+              ? [1, 2, 3, 5, 6, 7, 9, 10, 11].includes(alignment)
+              : Number.isInteger(alignment) && alignment >= 1 && alignment <= 9;
+            if (rec['alignment'] !== '' && rec['alignment'] !== undefined && !validAlignment) {
+              throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段 alignment 非法`, { detail: { field: 'alignment', value: rec['alignment'] } });
+            }
+            if (rec['borderstyle'] !== '' && rec['borderstyle'] !== undefined && ![1, 3].includes(Number(rec['borderstyle']))) {
+              throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段 borderstyle 非法`, { detail: { field: 'borderstyle', value: rec['borderstyle'] } });
+            }
             for (const field of booleanFields) {
               const value = rec[field] ?? '';
               if (value !== '' && (!/^[+-]?\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) {
@@ -197,7 +207,13 @@ export function parseAss(text, options = {}) {
           st.borderStyle = numOr(rec['borderstyle'], st.borderStyle);
           st.outlineWidth = numOr(rec['outline'], st.outlineWidth);
           st.shadow = numOr(rec['shadow'], st.shadow);
-          st.alignment = Math.min(9, Math.max(1, numOr(rec['alignment'], st.alignment)));
+          const parsedAlignment = numOr(rec['alignment'], st.alignment);
+          if (section === 'v4 styles') {
+            const legacyAlignmentMap = new Map([[1, 1], [2, 2], [3, 3], [5, 7], [6, 8], [7, 9], [9, 4], [10, 5], [11, 6]]);
+            st.alignment = legacyAlignmentMap.get(parsedAlignment) ?? Math.min(9, Math.max(1, parsedAlignment));
+          } else {
+            st.alignment = Math.min(9, Math.max(1, parsedAlignment));
+          }
           st.marginL = numOr(rec['marginl'], st.marginL);
           st.marginR = numOr(rec['marginr'], st.marginR);
           st.marginV = numOr(rec['marginv'], st.marginV);

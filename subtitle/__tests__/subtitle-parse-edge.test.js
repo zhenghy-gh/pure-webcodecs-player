@@ -164,6 +164,35 @@ test('ASS：Style strict 拒绝超宽/越界颜色；lenient 保留既有掩码�
   assert.equal(lenient.styles[0].primary.r, 0xbc);
 });
 
+test('ASS：Style strict 拒绝越界 Alignment 和非标准 BorderStyle，保留 SSA 11', () => {
+  for (const [field, value] of [['Alignment', '0'], ['Alignment', '10'], ['BorderStyle', '2']]) {
+    const src = [
+      '[V4+ Styles]',
+      'Format: Name, Fontname, Fontsize, BorderStyle, Alignment',
+      'Style: Bad,Arial,20,1,2',
+    ];
+    const columns = src[1].slice(src[1].indexOf(':') + 1).split(',').map((name) => name.trim());
+    const values = src[2].slice(src[2].indexOf(':') + 1).split(',');
+    values[columns.indexOf(field)] = value;
+    src[2] = 'Style:' + values.join(',');
+    assert.throws(() => parseAss(src.join('\n'), { strict: true }), (error) =>
+      error instanceof SubtitleError && error.code === 'PARSE_ERROR');
+  }
+  const accepted = parseAss([
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize, BorderStyle, Alignment',
+    'Style: Good,Arial,20,3,9',
+  ].join('\n'), { strict: true });
+  assert.equal(accepted.styles[0].borderStyle, 3);
+  assert.equal(accepted.styles[0].alignment, 9);
+  const legacy = parseAss([
+    '[V4 Styles]',
+    'Format: Name, Fontname, Fontsize, BorderStyle, Alignment',
+    'Style: Legacy,Arial,20,1,11',
+  ].join('\n'), { strict: true });
+  assert.equal(legacy.styles[0].alignment, 6, 'SSA V4 alignment 11 maps to ASS middle-right');
+});
+
 test('ASS：Dialogue 字段数少于 Format 声明 → lenient 跳过并计数', () => {
   const src = [
     '[Events]',
