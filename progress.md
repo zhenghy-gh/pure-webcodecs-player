@@ -1083,5 +1083,26 @@
 - 扩展回归覆盖边界小数、越界小数、空区域标识符、区域标识符空格/箭头、非 ASCII 空白和非标准枚举。定向 VTT + WebRTC 70/70，全量 3172/3172；lint/check 通过（check 内嵌 3172/3172）。
 - 已提交并推送 VTT 规范修订及本 addendum：`07f90b5 fix: align strict webvtt settings with spec`；纯 parser，无需浏览器验证。
 
+## Attempt 51：稳定 StatsCollector 周期采样测试
+
+### 发现
+- npm run check 的并行全量测试偶发让固定等待 60ms 的 StatsCollector 测试只采到 2 轮而失败（要求至少 3 轮）；单文件隔离连续运行可过，表明是运行负载导致 timer schedule 抖动，而非 collector 行为回归。
+- 失败不会反映媒体/WebRTC 用户运行时缺陷，但让门禁不稳定、掩盖真实问题。
+
+### 修改
+- webrtc/__tests__/webrtc-stats-backoff.test.js：去掉脆弱的固定 60ms 等待，改为以 10ms 间隔等待第三份样本，最多 500ms；拿到所需样本即停止并保留 stop 后不再采集的断言。生产 StatsCollector 无改动。
+
+### 验证
+- 修复前单独重跑该测试文件 21/21 通过，确认失败为并行负载相关的偶发竞态。
+- VTT settings + VTT + WebRTC stats 定向测试 70/70 通过。
+- 全量 npm test 3172/3172；npm run lint && npm run check 通过，lint 547 个 JS 文件，check 内嵌 3172/3172。
+- 纯测试等待时间稳健性修复，不需浏览器验证。
+
+### 提交和推送
+- 本轮待提交：仅 webrtc/__tests__/webrtc-stats-backoff.test.js 和本段进度记录。
+
+### 风险
+- 测试最多多等待至 500ms；没有生产代码/API 行为变化。
+
 ### 下一轮候选
 - 审查未知 cue settings 扩展策略与其他格式的 strict grammar，并寻找媒体管线之外高价值问题。

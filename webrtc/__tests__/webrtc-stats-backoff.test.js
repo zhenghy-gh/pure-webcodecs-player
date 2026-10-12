@@ -199,7 +199,11 @@ test('StatsCollector：start() 后多次采样、stop() 后不再触发', async 
   const collector = new StatsCollector(pc, 10);
   const samples = [];
   collector.start((m) => samples.push(m));
-  await new Promise((r) => setTimeout(r, 60));
+  // 在并行 CI/全量套件负载下按条件等待，避免固定 60ms 被调度抖动压缩成仅两轮。
+  const sampleDeadline = Date.now() + 500;
+  while (samples.length < 3 && Date.now() < sampleDeadline) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
   collector.stop();
   const beforeStopCount = calls;
   await new Promise((r) => setTimeout(r, 40));
