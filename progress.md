@@ -699,3 +699,30 @@
 
 ### 下一轮候选
 - 审查 Script Info 重复关键键、Style/Events 缺失 Format 时 strict 的默认列回退契约，以及 PlayRes 安全范围是否需上限。
+
+## Attempt 37：严格模式拒绝重复 Script Info 键
+
+### 发现
+- 复现条件：`[Script Info]` 含大小写不同但归一后相同的键（例如 `PlayResX: 640` 与 `playresx: 1280`）。
+- 根因：解析器以归一化 key 存入 `info` 对象，后出现的值静默覆盖先值；strict 模式没有发现关键元数据重复，调用方只能看到最终值。
+- 用户影响：严格模式输入中的冲突元数据被悄悄覆盖，降低了错误可诊断性，也可能造成坐标尺寸取值歧义。
+
+### 修改
+- subtitle/src/ass.js：在 parseAss 中跟踪归一化 Script Info key；strict 模式重复键抛带行号、字段和值的 `SubtitleError(PARSE_ERROR)`。lenient 仍以后值覆盖。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖大小写归一重复 PlayResX 的拒绝，并确认 lenient 兼容行为。
+
+### 验证
+- 修复前复现：strict 与 lenient 都接受重复 PlayResX 并返回最后值 1280。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js`，36/36 通过。
+- 全量测试：`npm test` 串行通过 3160/3160，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；内嵌全量测试 3160/3160，lint 检查 547 个 JS 文件。check 报告性门槛表统计为 0/565、0/16，但脚本结论为全部通过。纯字幕 parser 变更不涉及浏览器播放管线，无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：Script Info strict duplicate 检查、回归测试和 progress.md。
+
+### 风险
+- strict 模式现在拒绝任何重复 Script Info key（不只 PlayRes）；lenient 路径与输出对象兼容行为保持不变。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 检查 strict 时缺少 Style/Events Format 是否仍静默启用默认列序，并确认该 fallback 与既有项目契约一致。

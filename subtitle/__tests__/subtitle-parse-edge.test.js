@@ -68,6 +68,16 @@ test('SRT：非数字序号行记警告但仍解析', () => {
 
 /* ---------------- ASS 边界 ---------------- */
 
+test('ASS：strict 拒绝重复 Script Info 键，lenient 仍以后值覆盖', () => {
+  const src = '[Script Info]\nPlayResX: 640\nplayresx: 1280\nPlayResY: 360';
+  assert.throws(() => parseAss(src, { strict: true }), (error) =>
+    error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+    error.detail.field === 'playresx' && error.detail.line === 3);
+  const lenient = parseAss(src);
+  assert.equal(lenient.info.playResX, 1280);
+  assert.equal(lenient.info.playResY, 360);
+});
+
 test('ASS：strict 校验 PlayResX/Y 为正安全整数，lenient 保留宽松解析', () => {
   for (const field of ['PlayResX', 'PlayResY']) {
     for (const value of ['640px', 'oops', '0', '-10', '9007199254740992']) {

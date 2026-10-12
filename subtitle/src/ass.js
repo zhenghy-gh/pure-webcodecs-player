@@ -87,6 +87,7 @@ export function parseAss(text, options = {}) {
   const warnings = [];
   /** @type {Set<string>} */
   const unsupportedAll = new Set();
+  const scriptInfoKeys = new Set();
   let dialogueCount = 0;
   let commentCount = 0;
   let skippedBlocks = 0;
@@ -116,6 +117,10 @@ export function parseAss(text, options = {}) {
       if (kv) {
         const key = kv[1].trim().toLowerCase();
         const val = kv[2].trim();
+        if (strict && scriptInfoKeys.has(key)) {
+          throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Script Info 键 ${key} 重复`, { detail: { line: li + 1, field: key, value: val } });
+        }
+        scriptInfoKeys.add(key);
         info[key] = val;
         if (key === 'playresx' || key === 'playresy') {
           const dimension = Number(val);
