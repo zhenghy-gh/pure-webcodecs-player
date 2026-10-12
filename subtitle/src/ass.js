@@ -143,6 +143,30 @@ export function parseAss(text, options = {}) {
         styleFormat.forEach((k, i) => { rec[k] = (parts[i] ?? '').trim(); });
         const st = createDefaultStyle(rec['name'] || `Style${styles.length + 1}`);
         try {
+          if (strict) {
+            const numericFields = ['fontsize', 'scalex', 'scaley', 'spacing', 'angle', 'borderstyle', 'outline', 'shadow', 'alignment', 'marginl', 'marginr', 'marginv'];
+            const booleanFields = ['bold', 'italic', 'underline', 'strikeout'];
+            const decimalPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+            for (const field of numericFields) {
+              const value = rec[field] ?? '';
+              if (value !== '' && (!decimalPattern.test(value) || !Number.isFinite(Number(value)))) {
+                throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段 ${field} 不是合法数字`, { detail: { field, value } });
+              }
+            }
+            const integerFields = ['borderstyle', 'alignment', 'marginl', 'marginr', 'marginv'];
+            for (const field of integerFields) {
+              const value = rec[field] ?? '';
+              if (value !== '' && (!decimalPattern.test(value) || !Number.isSafeInteger(Number(value)))) {
+                throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段 ${field} 不是合法整数`, { detail: { field, value } });
+              }
+            }
+            for (const field of booleanFields) {
+              const value = rec[field] ?? '';
+              if (value !== '' && (!/^[+-]?\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) {
+                throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段 ${field} 不是合法整数`, { detail: { field, value } });
+              }
+            }
+          }
           st.fontname = rec['fontname'] || st.fontname;
           st.fontsize = numOr(rec['fontsize'], st.fontsize);
           if (rec['primarycolour']) st.primary = parseAssColor(rec['primarycolour']);
@@ -165,7 +189,7 @@ export function parseAss(text, options = {}) {
           st.marginR = numOr(rec['marginr'], st.marginR);
           st.marginV = numOr(rec['marginv'], st.marginV);
         } catch (err) {
-          warnings.push(`第 ${li + 1} 行样式含非法颜色值，相关字段回退默认：${/** @type {Error} */ (err).message}`);
+          warnings.push(`第 ${li + 1} 行样式含非法字段，相关值回退默认：${/** @type {Error} */ (err).message}`);
           if (strict) {
             throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段非法`, {
               cause: err, detail: { line: li + 1, value: body },

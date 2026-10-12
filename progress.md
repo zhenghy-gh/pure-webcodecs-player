@@ -508,3 +508,31 @@
 
 ### 下一轮候选
 - 继续审计 strict ASS 时间码捕获与 Comment 记录、以及字幕探测/解析入口是否一致遵守畸形输入契约。
+
+## Attempt 30：严格验证 ASS 样式数值字段
+
+### 发现
+- 复现条件：`parseAss(text, { strict: true })` 的 Style 字段使用 `Fontsize=40px`、`Bold=1foo`、`Angle=NaN` 等畸形值。
+- 根因：ASS 样式构造器使用 `parseFloat` / `parseInt` 宽松读取并退回默认值，strict 模式既不验证数值格式，也不产生 warning；畸形样式被当成成功输入。
+- 用户影响：strict 消费者无法拒绝损坏字段，部分输入被静默截断或回退，造成实际字体/位置/效果与文件内容不一致。
+
+### 修改
+- subtitle/src/ass.js：仅在 strict 模式验证已知数值样式字段的完整十进制语法、整数型字段的整数/安全范围，以及 Bold/Italic/Underline/StrikeOut 的整数语法；失败经标准 `SubtitleError(PARSE_ERROR)` 传播并保留字段/value cause。lenient 路径继续使用原有 parseFloat/intOr/boolOr 容错。
+- subtitle/__tests__/subtitle-parse-edge.test.js：验证带尾随字符数值、NaN 和小数 alignment 在 strict 下报错；lenient 对照保持老行为。
+
+### 验证
+- 修复前复现：strict 与 lenient 都返回正常样式（`40px` 被截为 40、`1foo` 被读取为 true、无 warning）。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js`，30/30 通过。
+- 全量测试：`npm test` 串行通过 3154/3154，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；内嵌全量测试 3154/3154，lint 检查 547 个 JS 文件。该次静态验证同时作为维护计划每 10 次 attempt 阶段验证（Attempt 30）。
+- 变更仅影响纯 ESM 字幕解析，媒体浏览器播放管线未变，本轮无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：ASS strict 样式字段校验、回归测试及 progress.md。
+
+### 风险
+- strict 模式对部分历史上可被 `parseFloat` 前缀读取的畸形数字、非整数位置字段更严格；这是 strict 契约的预期。lenient 默认行为保持兼容。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 审计 ASS strict 时间码/Comment 字段覆盖，或探索容器/字幕公共入口把编码与 parse 错误统一映射为项目错误码的边界。

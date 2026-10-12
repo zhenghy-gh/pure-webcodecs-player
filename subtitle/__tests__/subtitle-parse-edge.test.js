@@ -113,6 +113,38 @@ test('ASS：Style 非法颜色 strict 模式抛带 cause 的 PARSE_ERROR', () =>
     error.detail.line === 3 && error.cause?.code === 'PARSE_ERROR');
 });
 
+test('ASS：Style strict 拒绝带尾随字符的数字/布尔字段，lenient 继续兼容', () => {
+  const cases = [
+    ['Fontsize', '40px'],
+    ['Bold', '1foo'],
+    ['Angle', 'NaN'],
+    ['Alignment', '2.5'],
+  ];
+  for (const [field, value] of cases) {
+    const src = [
+      '[V4+ Styles]',
+      'Format: Name, Fontname, Fontsize, Bold, Angle, Alignment',
+      'Style: Bad,Arial,20,0,0,2',
+    ];
+    const columns = src[1].slice(src[1].indexOf(':') + 1).split(',').map((name) => name.trim());
+    const values = src[2].slice(src[2].indexOf(':') + 1).split(',');
+    values[columns.indexOf(field)] = value;
+    src[2] = 'Style:' + values.join(',');
+    const input = src.join('\n');
+    assert.throws(() => parseAss(input, { strict: true }), (error) =>
+      error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+      error.cause?.detail?.field === field.toLowerCase());
+  }
+  const lenient = parseAss([
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize, Bold, Angle',
+    'Style: Bad,Arial,40px,1foo,NaN',
+  ].join('\n'));
+  assert.equal(lenient.styles[0].fontsize, 40);
+  assert.equal(lenient.styles[0].bold, true);
+  assert.equal(lenient.stats.warnings.length, 0);
+});
+
 test('ASS：Dialogue 字段数少于 Format 声明 → lenient 跳过并计数', () => {
   const src = [
     '[Events]',
