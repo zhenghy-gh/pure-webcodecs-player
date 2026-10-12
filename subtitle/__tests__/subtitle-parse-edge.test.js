@@ -170,6 +170,35 @@ test('ASS：Style strict 拒绝带尾随字符的数字/布尔字段，lenient �
   assert.equal(lenient.stats.warnings.length, 0);
 });
 
+test('ASS：strict 拒绝零字号/非正缩放和负几何值，保留负字号/字距/角度', () => {
+  const format = 'Name, Fontname, Fontsize, ScaleX, ScaleY, Outline, Shadow, MarginL, Spacing, Angle';
+  const columns = format.split(',').map((name) => name.trim().toLowerCase());
+  const baseValues = ['Good', 'Arial', '24', '100', '100', '2', '2', '10', '0', '0'];
+  const cases = [
+    ['fontsize', '0'], ['fontsize', '0.0'], ['fontsize', '-0'], ['scalex', '0'], ['scalex', '-100'],
+    ['scaley', '0'], ['scaley', '-100'], ['outline', '-2'], ['shadow', '-1'],
+    ['marginl', '-4'],
+  ];
+  for (const [field, value] of cases) {
+    const values = baseValues.slice();
+    values[columns.indexOf(field)] = value;
+    const input = ['[V4+ Styles]', 'Format: ' + format, 'Style: ' + values.join(',')].join('\n');
+    assert.throws(() => parseAss(input, { strict: true }), (error) =>
+      error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+      error.cause?.detail?.field === field);
+  }
+  const valid = baseValues.slice();
+  valid[columns.indexOf('fontsize')] = '-10';
+  valid[columns.indexOf('spacing')] = '-1';
+  valid[columns.indexOf('angle')] = '-30';
+  const result = parseAss(['[V4+ Styles]', 'Format: ' + format, 'Style: ' + valid.join(',')].join('\n'), { strict: true });
+  assert.equal(result.styles[0].fontsize, -10);
+  assert.equal(result.styles[0].spacing, -1);
+  assert.equal(result.styles[0].angle, -30);
+  const lenient = parseAss(['[V4+ Styles]', 'Format: ' + format, 'Style: ' + baseValues.map((value, index) => index === columns.indexOf('fontsize') ? '0' : value).join(',')].join('\n'));
+  assert.equal(lenient.styles[0].fontsize, 0);
+});
+
 test('ASS：Style strict 拒绝超宽/越界颜色；lenient 保留既有掩码兼容', () => {
   for (const value of ['&H123456789ABC&', '16777216', '999999999999999999999999999']) {
     const src = [

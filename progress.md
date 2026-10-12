@@ -754,3 +754,31 @@
 
 ### 下一轮候选
 - 继续审查 strict 对空 Dialogue 文本、缺少 Style 列/引用不存在样式的约束，判断哪些应为语法错误、哪些保留有效 fallback。
+
+## Attempt 39：严格校验 ASS Style 零值/负几何值
+
+### 发现
+- 复现条件：strict ASS Style 将 `Fontsize: 0`、`ScaleX/ScaleY <= 0`、负 `Outline`/`Shadow`/Margin 值当作可用样式数据接受。
+- 根因：既有校验仅检查数值语法、整数形式及 Alignment/BorderStyle 枚举，没有约束会造成零字高、退化/镜像缩放或无效几何留白的值域。
+- 用户影响：strict 输入会成功输出对布局/渲染无意义或具有误导性的 Style。
+
+### 修改
+- subtitle/src/ass.js：strict 拒绝数值为零的字号（覆盖 `0`、`0.0`、`-0`）、非正缩放，以及负描边、阴影和 Margin；lenient 路径不变。
+- 兼容边界：保留负 Fontsize、Spacing 与 Angle，不把实现差异误当作格式错误。libass 兼容性说明确认 VSFilter/libass 会保留负 Fontsize 并在渲染时使用绝对值：https://github.com/TheOneric/libass/commit/5ca4c9ba44f73f3088f6dbd7a9f6009a8759d675.patch 。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖拒绝值、零字号不同写法、负值兼容，以及 lenient 零字号保持原行为。
+
+### 验证
+- 修复前复现：strict 接受 0 字号、负/零缩放、负描边/阴影/Margin。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js subtitle/__tests__/ass.test.js`，57/57 通过。
+- 全量测试：`npm test` 串行通过 3163/3163，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；内嵌测试 3163/3163，lint 检查 547 个 JS 文件。check 报告性门槛表仍显示 0/565、0/16，脚本结论全部通过。字幕 parser 变更不触及播放/渲染执行管线，无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：ASS Style strict 数值范围检查、回归测试和 progress.md。
+
+### 风险
+- 数值范围规则只影响显式 strict 模式；lenient 保持历史兼容。strict 仍接受负 Fontsize，这是为兼容 VSFilter/libass 行为而有意保留。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 继续审查 strict Dialogue 的 Style 字段缺省/未知样式引用，以及空正文是否属于合法零内容 cue，避免把有效 fallback 误判为结构错误。

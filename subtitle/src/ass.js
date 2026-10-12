@@ -209,6 +209,23 @@ export function parseAss(text, options = {}) {
             if (rec['borderstyle'] !== '' && rec['borderstyle'] !== undefined && ![1, 3].includes(Number(rec['borderstyle']))) {
               throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段 borderstyle 非法`, { detail: { field: 'borderstyle', value: rec['borderstyle'] } });
             }
+            const positiveFields = ['scalex', 'scaley'];
+            const nonNegativeFields = ['outline', 'shadow', 'marginl', 'marginr', 'marginv'];
+            if (rec['fontsize'] !== '' && Number(rec['fontsize']) === 0) {
+              throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段 fontsize 不能为零`, { detail: { field: 'fontsize', value: rec['fontsize'] } });
+            }
+            for (const field of positiveFields) {
+              const value = rec[field] ?? '';
+              if (value !== '' && Number(value) <= 0) {
+                throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段 ${field} 必须为正数`, { detail: { field, value } });
+              }
+            }
+            for (const field of nonNegativeFields) {
+              const value = rec[field] ?? '';
+              if (value !== '' && Number(value) < 0) {
+                throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段 ${field} 不能为负数`, { detail: { field, value } });
+              }
+            }
             for (const field of booleanFields) {
               const value = rec[field] ?? '';
               if (value !== '' && (!/^[+-]?\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) {
