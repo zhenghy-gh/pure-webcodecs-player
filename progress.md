@@ -422,3 +422,33 @@
 
 ### 下一轮候选
 - 审计 Player 的 play/pause/seek 对管线同步 throw、异步 Promise rejection 的统一处理，以及 destroy 后迟到控制结果是否仍会触发 error。
+
+## Attempt 27：收敛 Player play/pause 管线错误与销毁竞态
+
+### 发现
+- 复现条件：`Player.play()` 的底层管线控制同步抛错，或 `play()`/`pause()` 返回 rejected Promise；另一个竞态是在 `Player.destroy()` 异步释放期间 play Promise 才拒绝。
+- 根因：Player 先将状态置为 playing 并启动时钟，再直接调用管线控制；同步异常会留下错误状态，异步拒绝未消费；pause 同步异常可能导致时钟已停但 Player 仍 playing。销毁的异步窗口中迟到错误也需要被终态屏蔽。
+- 用户影响：控制 Promise 可造成 `unhandledrejection`，状态/时钟与实际管线不一致，宿主收不到规范化的 `DECODE_ERROR`。
+
+### 修改
+- core/src/player.js：play/pause 共用安全管线控制入口；同步 throw 规范化为 `DECODE_ERROR`、终止样本泵、暂停软时钟、进入 error 并派发 error；thenable 异步拒绝被消费并以同一路径收敛。`destroy()` 开始时设置 `_destroying`，屏蔽 teardown 期间迟到的控制错误。
+- core/__tests__/core-player-state.test.js：新增 play 同步抛错、play/pause 异步拒绝、pause 同步抛错及 destroy 等待时迟到拒绝 5 条回归断言；确认不产生未处理拒绝且 destroyed 状态不被复活。
+
+### 验证
+- 定向测试：`node --test --test-timeout=15000 core/__tests__/core-player-state.test.js`，45/45 通过。
+- 全量测试：`npm test` 串行通过 3151/3151，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；内嵌测试 3151/3151，lint 检查 547 个 JS 文件。
+- 真实 Chromium WebCodecs：`scripts/e2e/run.mjs --harness=player-harness.html --media=/samples/e2e/sintel-trailer.mp4`，15/15 通过；首帧约 463ms、播放推进 0.48→1.28s、seek 12s→9.33s、seek 后恢复 9.50→10.01s、AudioWorklet、stats/buffered、背压和 destroy 均通过；无 console.error/pageerror/unhandledrejection/非预期网络失败，只有 headless WebGL warning 和 2 个主动取消请求。
+- 真实 Chromium MSE：`--harness=mse-harness.html`，19/19 通过；首帧 854x480 约 210ms、播放推进 0.08→0.88s、seek 20s→16.50s、seek 后恢复 16.51→16.97s，buffered、destroy 和 src 释放均通过；无播放器错误和非预期网络失败，只有 1 个主动取消请求。
+- E2E 覆盖截图已恢复为 HEAD 原始版本，未纳入提交。
+
+### 提交和推送
+- 本轮待提交：Player play/pause 错误收敛、回归测试和本条进展记录。
+
+### 风险
+- Player `play()`/`pause()` 的底层异步控制拒绝通过 Player `error` 事件通知（play 的调用 Promise 本身不等待管线内部播放 Promise）；宿主需订阅 error。
+- `seek()` 本身走 demuxer seek 路径，并无 play/pause 管线调用；其错误边界已保持原实现，本轮未更改公共 API。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 审计控制 setter 异步拒绝在 destroy 后是否仍派发 error，以及 MSE/WebCodecs pipeline 的 play/pause 状态是否在失败时自洽。

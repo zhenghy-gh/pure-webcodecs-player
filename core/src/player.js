@@ -145,6 +145,7 @@ export class Player extends Emitter {
     this.statsValue = options.stats ?? new Stats(options.clockOptions);
     this._loadPromise = null;
     this._loadGeneration = 0;
+    this._destroying = false;
     this._pumpToken = 0;
     this._seekToken = 0;
     this._trackSwitchToken = 0;
@@ -217,7 +218,8 @@ export class Player extends Emitter {
       this.emit('error', e);
       throw e;
     }
-    if (result && typeof result.then === 'function') {
+    if (result !== null && (typeof result === 'object' || typeof result === 'function')) {
+      // Promise.resolve also converts a throwing then getter into a rejection.
       void Promise.resolve(result).catch((error) => {
         this.emit('error', asControlError(error));
       });
@@ -369,6 +371,26 @@ export class Player extends Emitter {
     return this;
   }
 
+  _playbackControlError(error) {
+    const e = asControlError(error);
+    if (this._destroying || [PLAYER_STATES.ERROR, PLAYER_STATES.DESTROYED].includes(this.stateValue)) return e;
+    this._pumpToken++;
+    this.clock.pause();
+    this._transitionSafe(PLAYER_STATES.ERROR);
+    this.emit('error', e);
+    return e;
+  }
+  _invokePlaybackControl(method) {
+    let result;
+    try { result = this.pipeline?.[method]?.(); } catch (error) {
+      throw this._playbackControlError(error);
+    }
+    if (result !== null && (typeof result === 'object' || typeof result === 'function')) {
+      // Promise.resolve also captures a throwing then getter as a rejection.
+      void Promise.resolve(result).catch((error) => this._playbackControlError(error));
+    }
+    return result;
+  }
   async play() {
     this._requireLoaded('play');
     if (this.stateValue === PLAYER_STATES.PLAYING) return;
@@ -376,7 +398,7 @@ export class Player extends Emitter {
     if (this.endedValue) { await this.seek(0); }
     this._transition(PLAYER_STATES.PLAYING);
     this.clock.play(this.currentTimeValue / 1e6);
-    this.pipeline?.play?.();
+    this._invokePlaybackControl('play');
     // 起播前向缓冲：先把水位灌到 bufferTargetUs 再进入常规泵（CONTRACTS §5 bufferTargetUs）
     const token = ++this._pumpToken;
     await this._prebuffer(token);
@@ -389,7 +411,7 @@ export class Player extends Emitter {
     if (this.stateValue !== PLAYER_STATES.PLAYING) return;
     this.currentTimeValue = this.currentTimeUs;
     this.clock.pause();
-    this.pipeline?.pause?.();
+    this._invokePlaybackControl('pause');
     this._pumpToken++;
     this._transition(PLAYER_STATES.PAUSED);
   }
@@ -512,6 +534,7 @@ export class Player extends Emitter {
 
   async destroy() {
     if (this.stateValue === PLAYER_STATES.DESTROYED) return;
+    this._destroying = true;
     this._pumpToken++;
     this._loadGeneration += 1;
     this._trackSwitchToken += 1;

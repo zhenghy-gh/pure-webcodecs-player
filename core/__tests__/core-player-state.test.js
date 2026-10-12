@@ -925,6 +925,92 @@ test('控制 setter：管线异步拒绝时消费 Promise 并发 error', async (
   assert.equal(player.playbackRate, 1.5);
 });
 
+test('play：管线同步失败时进入 error、停止时钟并派发 DECODE_ERROR', async () => {
+  const player = makePlayer({
+    pipelineFactory: async () => ({ play() { throw new Error('detached play'); }, destroy: async () => {} }),
+    playerOptions: { bufferTargetUs: 0 },
+  });
+  await player.load(new Uint8Array([1]));
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  await assert.rejects(() => player.play(), (error) => error.code === 'DECODE_ERROR');
+  assert.equal(player.state, PLAYER_STATES.ERROR);
+  assert.equal(player.clock.running, false);
+  assert.equal(errors.length, 1);
+  await player.destroy();
+});
+
+test('play：管线异步拒绝时进入 error 且拒绝被消费', async () => {
+  const player = makePlayer({
+    pipelineFactory: async () => ({ play: () => Promise.reject(new Error('async play failure')), destroy: async () => {} }),
+    playerOptions: { bufferTargetUs: 0 },
+  });
+  await player.load(new Uint8Array([1]));
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  await player.play();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(player.state, PLAYER_STATES.ERROR);
+  assert.equal(player.clock.running, false);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, 'DECODE_ERROR');
+  await player.destroy();
+});
+
+test('pause：管线同步失败时收敛到 error 而不残留 playing 时钟', async () => {
+  const player = makePlayer({ pipelineFactory: blockingPipelineFactory() });
+  await player.load(new Uint8Array([1]));
+  await player.play();
+  player.pipeline.pause = () => { throw new Error('detached pause'); };
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  assert.throws(() => player.pause(), (error) => error.code === 'DECODE_ERROR');
+  assert.equal(player.state, PLAYER_STATES.ERROR);
+  assert.equal(player.clock.running, false);
+  assert.equal(errors.length, 1);
+  await player.destroy();
+});
+
+test('pause：管线异步拒绝时进入 error 且拒绝被消费', async () => {
+  const player = makePlayer({ pipelineFactory: blockingPipelineFactory() });
+  await player.load(new Uint8Array([1]));
+  await player.play();
+  player.pipeline.pause = () => Promise.reject(new Error('async pause failure'));
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  player.pause();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(player.state, PLAYER_STATES.ERROR);
+  assert.equal(player.clock.running, false);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, 'DECODE_ERROR');
+  await player.destroy();
+});
+
+test('play：destroy 清理期间迟到的管线拒绝被消费且不进入 error', async () => {
+  let rejectPlay;
+  let finishDestroy;
+  const player = makePlayer({
+    pipelineFactory: async () => ({
+      play: () => new Promise((_resolve, reject) => { rejectPlay = reject; }),
+      destroy: () => new Promise((resolve) => { finishDestroy = resolve; }),
+    }),
+    playerOptions: { bufferTargetUs: 0 },
+  });
+  await player.load(new Uint8Array([1]));
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  await player.play();
+  const destroying = player.destroy();
+  rejectPlay(new Error('late play rejection'));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(player.state, PLAYER_STATES.PLAYING);
+  assert.equal(errors.length, 0);
+  finishDestroy();
+  await destroying;
+  assert.equal(player.state, PLAYER_STATES.DESTROYED);
+});
+
 test('bufferedAheadUs：底层水位读取异常或为负值时安全返回 null', () => {
   const player = new Player();
   player.pipeline = { get bufferedAheadUs() { throw new Error('detached output'); } };
