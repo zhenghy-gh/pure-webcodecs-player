@@ -774,7 +774,7 @@
 - 静态验证：`npm run lint && npm run check` 通过；内嵌测试 3163/3163，lint 检查 547 个 JS 文件。check 报告性门槛表仍显示 0/565、0/16，脚本结论全部通过。字幕 parser 变更不触及播放/渲染执行管线，无需真实浏览器验证。
 
 ### 提交和推送
-- 本轮待提交：ASS Style strict 数值范围检查、回归测试和 progress.md。
+- 已提交并推送：`4017947 fix: validate strict ass style ranges`（Style strict 数值范围检查、回归测试及 progress.md）。
 
 ### 风险
 - 数值范围规则只影响显式 strict 模式；lenient 保持历史兼容。strict 仍接受负 Fontsize，这是为兼容 VSFilter/libass 行为而有意保留。
