@@ -1255,3 +1255,27 @@
 
 ### 风险
 - 单轨 codec 不支持时现按可解码轨降级；如果所有音视频轨均不支持仍按既有行为返回 decodeError。未新增公共 API；未执行版本/发布工作流。
+
+## Attempt 58：校验 fMP4 重封装样本的 size 和 payload
+
+### 发现
+- 复现条件：调用 createMediaSegment 时 Sample.size 与 data.byteLength 不同（可能过短或过长）。
+- 根因：重封装器原样写入声明 size，却按 data 实际长度拼装 mdat，输出 trun 的样本边界和后续 payload 偏移不一致，生成不可读/错误解码的 fMP4。对非 Uint8Array 的 typed view 还需严格保留 view 的 byteOffset 与 byteLength。
+- 用户影响：由 remuxer 接受的外部 Sample 会损坏产生的媒体段；失败延迟到下游解码才显现。
+
+### 修改
+- mp4/src/remuxer.js：在推进 sequenceNumber 或构建 moof 前验证 data 为 byte buffer/view、size 是非负安全整数且与 data.byteLength 一致、size 不超过 BMFF 32-bit sample size。
+- mp4/src/remuxer.js：将 ArrayBuffer 和 typed-array 子视图规范化为准确 Uint8Array 字节范围，避免误写 view 底层无关字节。
+- mp4/__tests__/remuxer.test.js：新增小/大 size mismatch 拒绝、非法样本不得消耗 sequence number、ArrayBuffer 正常输入与 typed subarray 范围精准输出回归。
+
+### 验证
+- 定向 remuxer、remuxer-gaps、muxer-roundtrip 测试：12/12 通过。
+- npm run check：fixtures 通过；全量测试 3186/3186；lint 通过（548 个 JS 文件）；check 结论全部通过。
+- 真实浏览器：Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放推进、seek 后恢复、buffer 水位及 destroy 全部通过。
+- 浏览器截图已恢复；git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- 无公共 API 改动；错误的 Sample 输入现在更早抛出 STATE_ERROR，正确 byte buffer/view 保持支持。未执行版本/发布工作流。

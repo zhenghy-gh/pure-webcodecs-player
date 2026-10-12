@@ -172,3 +172,27 @@ test('空样本数组抛错；lazy 样本抛错', async () => {
     remuxer.createMediaSegment({ id: 1 }, [{ index: 0, data: null, size: 10, duration: 40, dts: 0, pts: 0, keyframe: true }]),
   );
 });
+
+test('createMediaSegment rejects sample sizes inconsistent with payload bytes', () => {
+  const remuxer = new Fmp4Remuxer();
+  const track = { id: 1, timescale: 1000 };
+  const sample = { index: 3, timestamp: 0, dts: 0, duration: 40_000, keyframe: true, data: new Uint8Array([1, 2]) };
+  assert.throws(
+    () => remuxer.createMediaSegment(track, [{ ...sample, size: 1 }]),
+    /size does not match payload byte length/,
+  );
+  assert.throws(
+    () => remuxer.createMediaSegment(track, [{ ...sample, size: 3 }]),
+    /size does not match payload byte length/,
+  );
+  assert.equal(remuxer.sequenceNumber, 0, 'invalid samples must not consume a segment sequence number');
+
+  const segment = remuxer.createMediaSegment(track, [{ ...sample, data: new Uint8Array([1, 2]).buffer }]);
+  assert.equal(segment.sampleCount, 1);
+  assert.equal(remuxer.sequenceNumber, 1);
+
+  const backing = new Uint8Array([99, 4, 5, 88]);
+  const viewSegment = remuxer.createMediaSegment(track, [{ ...sample, data: backing.subarray(1, 3) }]);
+  const mdat = iterateFind(viewSegment.data, 'mdat');
+  assert.deepEqual([...viewSegment.data.subarray(mdat.contentStart, mdat.end)], [4, 5]);
+});

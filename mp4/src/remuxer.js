@@ -121,7 +121,13 @@ export class Fmp4Remuxer {
   createMediaSegment(track, samples) {
     if (!samples.length) throw stateError('createMediaSegment: empty samples');
     for (const s of samples) {
-      if (!s.data) throw stateError(`sample #${s.index ?? '?'} has no data (lazy?)`);
+      if (!s.data || (!(s.data instanceof ArrayBuffer) && !ArrayBuffer.isView(s.data))) {
+        throw stateError(`sample #${s.index ?? '?'} has no byte payload (lazy?)`);
+      }
+      const size = s.size ?? s.data.byteLength;
+      if (!Number.isSafeInteger(size) || size < 0 || size > 0xffffffff || size !== s.data.byteLength) {
+        throw stateError(`sample #${s.index ?? '?'} size does not match payload byte length`);
+      }
     }
     const timescale = track.timescale ?? 1000;
 
@@ -138,7 +144,11 @@ export class Fmp4Remuxer {
         keyframe: !!s.keyframe,
         cts: usToTicks(s.timestamp, timescale) - dtsTicks,
         dts: undefined, // buildMoofMdat 只用 duration/size/keyframe/cts/data
-        data: s.data,
+        data: s.data instanceof Uint8Array
+          ? s.data
+          : s.data instanceof ArrayBuffer
+            ? new Uint8Array(s.data)
+            : new Uint8Array(s.data.buffer, s.data.byteOffset, s.data.byteLength),
       };
     });
 
