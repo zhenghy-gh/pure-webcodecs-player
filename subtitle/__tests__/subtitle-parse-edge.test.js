@@ -102,6 +102,17 @@ test('ASS：Style 含非法颜色值 → catch 回退默认 primary 并记警告
   assert.ok(r.stats.warnings.length >= 1, '应记录颜色解析失败警告');
 });
 
+test('ASS：Style 非法颜色 strict 模式抛带 cause 的 PARSE_ERROR', () => {
+  const src = [
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize, PrimaryColour',
+    'Style: Bad,Arial,20,notacolor',
+  ].join('\n');
+  assert.throws(() => parseAss(src, { strict: true }), (error) =>
+    error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+    error.detail.line === 3 && error.cause?.code === 'PARSE_ERROR');
+});
+
 test('ASS：Dialogue 字段数少于 Format 声明 → lenient 跳过并计数', () => {
   const src = [
     '[Events]',

@@ -166,6 +166,11 @@ export function parseAss(text, options = {}) {
           st.marginV = numOr(rec['marginv'], st.marginV);
         } catch (err) {
           warnings.push(`第 ${li + 1} 行样式含非法颜色值，相关字段回退默认：${/** @type {Error} */ (err).message}`);
+          if (strict) {
+            throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行样式字段非法`, {
+              cause: err, detail: { line: li + 1, value: body },
+            });
+          }
         }
         styles.push(st);
         continue;

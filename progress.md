@@ -480,3 +480,31 @@
 
 ### 下一轮候选
 - 审计其他字幕解析器 strict 分支是否也存在裸异常泄漏，或寻找真实媒体数据源/边界处理中的高价值问题。
+
+## Attempt 29：修复 ASS strict 非法样式静默降级
+
+### 发现
+- 复现条件：调用 `parseAss(text, { strict: true })`，输入的 Style 行包含无法解析的颜色（如 `PrimaryColour=notacolor`）。
+- 根因：样式字段解析包在 catch 中，任何颜色错误都只写 warning 并回退默认值；strict 标志没有参与该错误分支，导致严格解析仍成功。
+- 用户影响：strict 调用方无法把畸形样式识别为解析失败，与 README 对 strict 模式“畸形即抛错”的契约不一致；输入错误会静默变成视觉上不同的样式。
+
+### 修改
+- subtitle/src/ass.js：保持 lenient 既有回退默认值行为；strict 下颜色/样式字段错误转换为带原始 cause、行号和值 detail 的 `SubtitleError(PARSE_ERROR)`。
+- subtitle/__tests__/subtitle-parse-edge.test.js：增加严格模式断言 error 类型、code、行号和 cause；原 lenient fallback 回归保持。
+
+### 验证
+- 修复前复现：错误颜色在 strict 模式返回成功，生成 1 个默认回退样式并留 warning。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js`，29/29 通过。
+- 全量测试：`npm test` 串行通过 3153/3153，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；check 内嵌测试 3153/3153，lint 检查 547 个 JS 文件。
+- 修改仅影响纯 ESM 字幕解析，不涉及浏览器播放/渲染管线，因此无需真实浏览器验证。
+
+### 提交和推送
+- 本轮待提交：ASS parser strict 错误处理、回归测试和 progress.md。
+
+### 风险
+- 只有 strict 模式行为改变为预期的拒绝；默认 lenient 模式依然记录 warning 并对非法颜色回退默认色，合法文件结果不变。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 继续审计 strict ASS 时间码捕获与 Comment 记录、以及字幕探测/解析入口是否一致遵守畸形输入契约。
