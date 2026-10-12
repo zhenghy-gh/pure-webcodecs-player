@@ -305,6 +305,23 @@ test('ASS：strict 拒绝缺失 Style/Events Format，lenient 沿用默认列序
   assert.equal(parseAss(events).cues[0].text, 'hello');
 });
 
+test('ASS：strict Dialogue Layer 必须是安全整数，lenient 保留前缀兼容', () => {
+  const make = (layer) => [
+    '[Events]',
+    'Format: Layer, Start, End, Text',
+    'Dialogue: ' + layer + ',0:00:01.00,0:00:02.00,cue',
+  ].join('\n');
+  for (const value of ['2abc', '1.5', '9007199254740992', '']) {
+    assert.throws(() => parseAss(make(value), { strict: true }), (error) =>
+      error instanceof SubtitleError && error.code === 'PARSE_ERROR' &&
+      error.detail.line === 3 && error.detail.field === 'layer' && error.detail.value === value);
+  }
+  assert.equal(parseAss(make('-2'), { strict: true }).cues[0].layer, -2);
+  assert.equal(parseAss(make('+2'), { strict: true }).cues[0].layer, 2);
+  assert.equal(parseAss(make('2abc')).cues[0].layer, 2);
+  assert.equal(parseAss(make('1.5')).cues[0].layer, 1);
+});
+
 test('ASS：strict 拒绝大小写冲突的重复 Style 名，lenient 保留顺序', () => {
   const src = [
     '[V4+ Styles]',

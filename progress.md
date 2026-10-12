@@ -888,5 +888,29 @@
 - 只影响显式 strict 模式；lenient 重名样式行为未变。没有公开 API 变化。
 - 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
 
+## Attempt 44：strict 校验 ASS Dialogue Layer 安全整数
+
+### 发现
+- 复现条件：`Layer` 为 `2abc`、`1.5` 或超出 JS 安全整数的数值。
+- 根因：cue 创建使用 `parseInt` 容错，strict 路径此前没有校验 V4+ `Layer` 字段；畸形值静默变成前缀整数或失真数字。
+- 用户影响：strict 接受损坏/精度不可靠的事件层级，绘制顺序可能错乱。
+
+### 修改
+- subtitle/src/ass.js：strict Dialogue 存在 `Layer` 列时要求有符号十进制整数并确保 `Number.isSafeInteger`；允许负层级和显式正号。lenient 保持历史 `parseInt` 行为。
+- subtitle/__tests__/subtitle-parse-edge.test.js：覆盖前缀/小数/越界/空值拒绝、负/正安全整数接受及 lenient 前缀兼容。
+
+### 验证
+- 修复前复现：strict 接受 `2abc`、`1.5`、`9007199254740992`，输出 Layer 为 2、1 和失真数值。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-parse-edge.test.js subtitle/__tests__/subtitle-ass-edge.test.js subtitle/__tests__/ass.test.js`，61/61 通过。
+- 第 20 轮阶段全量验证：`npm test && npm run lint && npm run check` 通过；全量测试 3167/3167，lint 检查 547 个 JS 文件。check 报告的 PRD 覆盖门槛摘要仍为 0/565、0/16（报告输出），结论全部通过。
+- 改动仅限 ASS parser strict 校验，无需浏览器播放验证。
+
+### 提交和推送
+- 本轮待提交：Dialogue Layer strict 整数校验、回归测试和 progress.md。
+
+### 风险
+- 范围只影响 strict 输入；负安全整数保留为合法 layer，lenient 不变。无公共 API 变化。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
 ### 下一轮候选
-- 检查缺失 Style 字段与空 Dialogue 正文的严格模式兼容语义，避免将合法 fallback 或零内容 cue 误判。
+- 继续检查 strict ASS 的空 Dialogue 正文和缺失/空 Style 字段的有效性契约，避免错误拒绝合法内容。

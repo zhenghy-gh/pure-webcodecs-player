@@ -318,6 +318,12 @@ export function parseAss(text, options = {}) {
       /** @type {Record<string,string>} */
       const rec = {};
       fmt.forEach((k, i) => { rec[k] = i < fmt.length - 1 ? parts[i].trim() : parts.slice(fmt.length - 1).join(',').trim(); });
+      if (strict && isDialogue && fmt.includes('layer')) {
+        const value = rec['layer'] ?? '';
+        if (!/^[+-]?\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
+          throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Dialogue Layer 必须是安全整数`, { detail: { line: li + 1, field: 'layer', value } });
+        }
+      }
       const markedLayer = /^marked\s*=\s*([01])$/i.exec(rec['marked'] ?? '');
       if (strict && isDialogue && !fmt.includes('layer') && fmt.includes('marked') && !markedLayer) {
         throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 SSA Marked 字段必须是 Marked=0 或 Marked=1`, { detail: { line: li + 1, field: 'marked', value: rec['marked'] ?? '' } });
