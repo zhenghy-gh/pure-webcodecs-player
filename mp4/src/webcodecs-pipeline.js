@@ -98,7 +98,7 @@ export class Mp4WebCodecsPipeline {
     if (!support.supported) {
       throw decodeError(`decoder unsupported: ${support.reason}`);
     }
-    if (this.videoConfig && !this.videoDecoder) {
+    if (support.video && this.videoConfig && !this.videoDecoder) {
       this.videoDecoder = new VideoDecoder({
         output: (frame) => {
           this.stats?.markSampleDecoded();
@@ -111,7 +111,7 @@ export class Mp4WebCodecsPipeline {
       });
       this.videoDecoder.configure(this.videoConfig);
     }
-    if (this.audioConfig && !this.audioDecoder) {
+    if (support.audio && this.audioConfig && !this.audioDecoder) {
       this.audioDecoder = new AudioDecoder({
         output: (data) => {
           this.stats?.markSampleDecoded();

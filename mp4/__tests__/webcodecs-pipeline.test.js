@@ -183,6 +183,41 @@ test('管线 supported()：isConfigSupported 三分支与配置缓存', async ()
   });
 });
 
+test('start() skips the decoder and pump for an unsupported media type', async () => {
+  await withGlobals({
+    VideoDecoder: FakeVideoDecoder,
+    AudioDecoder: FakeAudioDecoder,
+    EncodedVideoChunk: FakeEncodedVideoChunk,
+    EncodedAudioChunk: FakeEncodedAudioChunk,
+  }, async () => {
+    try {
+      const samples = videoSamples(2);
+      FakeVideoDecoder.supported = true;
+      FakeAudioDecoder.supported = false;
+      const videoOnly = new Mp4WebCodecsPipeline(fakeDemuxer([V_TRACK, A_TRACK], {
+        1: samples,
+        2: [{ index: 0, trackId: 2, timestamp: 0, duration: 23219, size: 4, keyframe: true, data: new Uint8Array(4) }],
+      }));
+      await videoOnly.start();
+      assert.equal(videoOnly.videoDecoder.chunks.length, 2);
+      assert.equal(videoOnly.audioDecoder, null);
+
+      FakeVideoDecoder.supported = false;
+      FakeAudioDecoder.supported = true;
+      const audioOnly = new Mp4WebCodecsPipeline(fakeDemuxer([V_TRACK, A_TRACK], {
+        1: samples,
+        2: [{ index: 0, trackId: 2, timestamp: 0, duration: 23219, size: 4, keyframe: true, data: new Uint8Array(4) }],
+      }));
+      await audioOnly.start();
+      assert.equal(audioOnly.videoDecoder, null);
+      assert.equal(audioOnly.audioDecoder.chunks.length, 1);
+    } finally {
+      FakeVideoDecoder.supported = true;
+      FakeAudioDecoder.supported = true;
+    }
+  });
+});
+
 test('管线 start()：双轨 pump、chunk 语义、stats 与 flush', async () => {
   const demuxer = fakeDemuxer(
     [V_TRACK, A_TRACK],

@@ -1232,3 +1232,26 @@
 
 ### 风险
 - 本轮仅修复 fragmented MP4 的 traf 基址、mdat 样本边界校验；未新增公共 API。未执行发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+## Attempt 57：按单轨 codec 能力安全启动 WebCodecs
+
+### 发现
+- 复现条件：音视频双轨中某一种 codec 不受当前 WebCodecs decoder 支持，但另一轨可解。
+- 根因：supported() 允许任意一条可解即通过；_ensureDecoders() 却无视逐轨探测结果，仍配置不支持的 decoder，start() 也会启动两条轨道的 pump。
+- 用户影响：双轨媒体不能在一轨可播放时优雅降级，可能因不支持的轨道配置失败，使可解码轨道也无法播放。
+
+### 修改
+- mp4/src/webcodecs-pipeline.js：_ensureDecoders 仅创建且配置通过对应 isConfigSupported 探测的音频/视频解码器。既有 start() pump 会跳过 decoder 为空的轨道，因此可解码轨正常播放、不支持轨不启动。
+- mp4/__tests__/webcodecs-pipeline.test.js：新增视频仅支持、音频仅支持两个启动回归，断言仅有支持的 decoder/pump 工作，并清理 FakeDecoder 全局状态。
+
+### 验证
+- 定向 WebCodecs 管线测试（webcodecs-pipeline + gaps）：13/13 通过。
+- npm run check：fixtures 通过；全量测试 3185/3185；lint 通过（548 个 JS 文件）；check 结论全部通过。
+- 真实浏览器：Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；播放、首帧、时钟推进、seek 后恢复、buffered 与释放均通过。
+- 浏览器截图已还原；git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- 单轨 codec 不支持时现按可解码轨降级；如果所有音视频轨均不支持仍按既有行为返回 decodeError。未新增公共 API；未执行版本/发布工作流。
