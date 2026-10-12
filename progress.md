@@ -1125,7 +1125,7 @@
 - 纯格式嗅探 parser 改动，不涉及播放渲染，未需浏览器验证。
 
 ### 提交和推送
-- 本轮待提交：detectFormat 优先级修正、ASS/SRT 混合输入回归测试及此 progress 记录。
+- 已提交并推送：`3d63edb fix: disambiguate srt and ass subtitle content`（detectFormat 优先级修正、ASS/SRT 混合输入回归及进度记录）。
 
 ### 风险
 - 格式特征混合文本本质上有歧义：节头/Dialogue 特征若先于独立 SRT 时间行仍按 ASS 处理，以避免 ASS 文件中示例或正文包含时间箭头时误判。
