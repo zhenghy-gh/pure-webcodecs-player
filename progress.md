@@ -809,3 +809,30 @@
 
 ### 下一轮候选
 - 审查 strict Dialogue 中缺省/未知 Style 引用与空正文的兼容语义，寻找高价值且可验证的解析问题。
+
+## Attempt 41：按 SSA/V4+ 版本推断 Events 默认列序
+
+### 发现
+- 复现条件：旧式 SSA 使用 `[V4 Styles]`，省略 Events `Format:`，按标准 SSA 列序提供 `Marked=1` 事件。
+- 根因：无 Format 时 `inferEventFormat` 对所有格式都返回 V4+ `Layer` 列序，导致 SSA 的 `Marked=1` 被误当 Layer 字段，时间/文本列也可能错位。
+- 用户影响：SSA 缺失可选 Format 行时，cue 内容和时间码会被错误解析。
+
+### 修改
+- subtitle/src/ass.js：记录当前 Styles 版本，V4/SSA 文件缺少 Events Format 时推断 `Marked, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`；V4+ 仍用 Layer 列序。显式 Format 优先。
+- subtitle/__tests__/subtitle-ass-edge.test.js：覆盖 SSA `Marked=1` 无 Format 时起止时间、层级和文本；原 V4+ 缺 Format 且含逗号测试继续守护旧行为。
+
+### 验证
+- 修复前复现：SSA 无 Events Format 解析得到 layer 0（而非 Marked=1）；其余字段在样例中看似正常，掩盖了版本特定错误。
+- 定向测试：`node --test --test-timeout=15000 subtitle/__tests__/subtitle-ass-edge.test.js subtitle/__tests__/ass.test.js subtitle/__tests__/subtitle-parse-edge.test.js`，58/58 通过。
+- 全量测试：`npm test` 串行通过 3164/3164，0 失败。
+- 静态验证：`npm run lint && npm run check` 通过；内嵌全量测试 3164/3164，lint 检查 547 个 JS 文件。check 报告门槛摘要仍为 0/565、0/16，脚本结论全部通过。仅字幕解析逻辑变更，不需浏览器验证。
+
+### 提交和推送
+- 本轮待提交：SSA/V4+ 版本化默认事件列序、回归测试和 progress.md。
+
+### 风险
+- 缺 Format 的 SSA 文件现按 SSA V4 Marked 列序解析，V4+ fallback 保持现状。显式 Events Format 仍完全控制字段映射。
+- 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 审查 strict Dialogue 的缺省/未知 Style 引用与空正文兼容语义，或检查多版本 Styles 节混用时 Events 默认列序的选择是否需按 ScriptType 明确判定。

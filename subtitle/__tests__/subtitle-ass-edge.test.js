@@ -32,6 +32,22 @@ test('ASS：仅 [Script Info] 头、无 Dialogue → 0 cue 且 info 解析', () 
   assert.equal(r.info.title, '只有头');
 });
 
+test('SSA：[Events] 缺 Format 行 → 按 V4 Marked 默认列序解析', () => {
+  const src = [
+    '[V4 Styles]',
+    'Format: Name, Fontname, Fontsize',
+    'Style: Default,Arial,20',
+    '[Events]',
+    'Dialogue: Marked=1,0:00:01.00,0:00:02.00,Default,,0,0,0,,SSA fallback',
+  ].join('\n');
+  const result = parseAss(src);
+  assert.equal(result.cues.length, 1);
+  assert.equal(result.cues[0].startUs, 1_000_000);
+  assert.equal(result.cues[0].endUs, 2_000_000);
+  assert.equal(result.cues[0].layer, 1);
+  assert.equal(result.cues[0].text, 'SSA fallback');
+});
+
 test('ASS：[Events] 缺 Format 行 → 回退默认列序，Text 含逗号保留', () => {
   const src = [
     '[Script Info]',

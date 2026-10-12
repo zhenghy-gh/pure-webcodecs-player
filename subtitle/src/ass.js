@@ -54,6 +54,7 @@ import { tokenizeDialogue } from './tags.js';
 /** 无 Format 行时的默认列序 */
 const DEFAULT_STYLE_FORMAT = ['name', 'fontname', 'fontsize', 'primarycolour', 'secondarycolour', 'outlinecolour', 'backcolour', 'bold', 'italic', 'underline', 'strikeout', 'scalex', 'scaley', 'spacing', 'angle', 'borderstyle', 'outline', 'shadow', 'alignment', 'marginl', 'marginr', 'marginv', 'encoding'];
 const DEFAULT_EVENT_FORMAT = ['layer', 'start', 'end', 'style', 'name', 'marginl', 'marginr', 'marginv', 'effect', 'text'];
+const DEFAULT_SSA_EVENT_FORMAT = ['marked', 'start', 'end', 'style', 'name', 'marginl', 'marginr', 'marginv', 'effect', 'text'];
 
 /**
  * 解析 ASS/SSA 文本。
@@ -96,6 +97,7 @@ export function parseAss(text, options = {}) {
   /** 当前节的 Format 列序 */
   let styleFormat = DEFAULT_STYLE_FORMAT.slice();
   let styleFormatDeclared = false;
+  let ssaStyles = false;
   let eventFormat = null;
 
   /** @type {string|null} */
@@ -113,6 +115,7 @@ export function parseAss(text, options = {}) {
       if (section.startsWith('v4')) {
         styleFormat = DEFAULT_STYLE_FORMAT.slice();
         styleFormatDeclared = false;
+        ssaStyles = section === 'v4 styles';
       }
       if (section === 'events') eventFormat = null;
       continue;
@@ -293,7 +296,7 @@ export function parseAss(text, options = {}) {
       if (strict && isDialogue && eventFormat === null) {
         throw new SubtitleError('PARSE_ERROR', `第 ${li + 1} 行 Dialogue 缺少 Events Format 声明`, { detail: { line: li + 1, section } });
       }
-      const fmt = eventFormat ?? inferEventFormat(section, styleFormat);
+      const fmt = eventFormat ?? inferEventFormat(ssaStyles);
       if (strict && isDialogue) {
         const missing = ['start', 'end', 'text'].filter((field) => !fmt.includes(field));
         if (missing.length) {
@@ -410,9 +413,9 @@ function boolOr(s, dflt) {
   return Number.isFinite(n) ? n !== 0 : dflt;
 }
 
-/** 无 Events Format 时推断列序：SSA(V4) 用 Marked，V4+ 用 Layer */
-function inferEventFormat(_section, _styleFormat) {
-  return DEFAULT_EVENT_FORMAT.slice();
+/** 无 Events Format 时按样式节版本推断列序：SSA(V4) 用 Marked，V4+ 用 Layer */
+function inferEventFormat(ssaStyles) {
+  return (ssaStyles ? DEFAULT_SSA_EVENT_FORMAT : DEFAULT_EVENT_FORMAT).slice();
 }
 
 export { formatAssTimestamp };
