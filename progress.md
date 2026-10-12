@@ -663,7 +663,7 @@
 - 静态验证：`npm run lint && npm run check` 通过；内嵌全量测试 3158/3158，lint 检查 547 个 JS 文件。仅影响字幕文本解析，不涉及浏览器播放管线，无需真实浏览器验证。
 
 ### 提交和推送
-- 已提交并推送：`ba1e9ab fix: reject ambiguous strict ass formats`（strict Format 校验、回归测试及 progress.md）。
+- 已提交并推送：`1238b45 fix: require strict ass dialogue fields`（strict Dialogue 必需列校验、回归测试及 progress.md）。
 
 ### 风险
 - strict 模式拒绝不含 Start/End/Text 的 Dialogue Format；合法 ASS 默认列序及 lenient 模式行为保持原样。Comment 行不要求 Text 列。
