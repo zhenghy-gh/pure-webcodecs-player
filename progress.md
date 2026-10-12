@@ -828,7 +828,7 @@
 - 静态验证：`npm run lint && npm run check` 通过；内嵌全量测试 3164/3164，lint 检查 547 个 JS 文件。check 报告门槛摘要仍为 0/565、0/16，脚本结论全部通过。仅字幕解析逻辑变更，不需浏览器验证。
 
 ### 提交和推送
-- 本轮待提交：SSA/V4+ 版本化默认事件列序、回归测试和 progress.md。
+- 已提交并推送：`23c6f0a fix: infer legacy ssa event columns`（SSA/V4+ 版本化默认事件列序、回归测试及 progress.md）。
 
 ### 风险
 - 缺 Format 的 SSA 文件现按 SSA V4 Marked 列序解析，V4+ fallback 保持现状。显式 Events Format 仍完全控制字段映射。
