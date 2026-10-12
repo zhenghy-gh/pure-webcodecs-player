@@ -1043,7 +1043,7 @@
 - 解析器逻辑变更，无需真实浏览器播放验证。
 
 ### 提交和推送
-- 本轮待提交：损坏 SRT cue 边界恢复、回归测试和 progress.md。
+- 已提交并推送：`a94e4bf fix: isolate malformed adjacent srt cues`（损坏 SRT cue 边界恢复、回归测试及 progress.md）。
 
 ### 风险
 - 非空行中的时间行格式与紧随数字的序号组合被视为 cue 边界，因而会将这段正文解释为损坏 cue；此结构与无空行的损坏 SRT 无法在语法上区分。
