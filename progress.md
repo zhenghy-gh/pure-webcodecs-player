@@ -1081,7 +1081,7 @@
 ### 后续规范复核（Attempt 50 续）
 - 对照 W3C WebVTT 当前规范发现初始 strict 校验对小数百分比、行号前导正号、align:middle 和空 region ID 的处理有偏差；已修正 grammar，并要求设置之间只以 ASCII 空格/tab 分隔。
 - 扩展回归覆盖边界小数、越界小数、空区域标识符、区域标识符空格/箭头、非 ASCII 空白和非标准枚举。定向 VTT + WebRTC 70/70，全量 3172/3172；lint/check 通过（check 内嵌 3172/3172）。
-- VTT 规范修订代码/测试及本 addendum 待提交推送；纯 parser，无需浏览器验证。
+- 已提交并推送 VTT 规范修订及本 addendum：`07f90b5 fix: align strict webvtt settings with spec`；纯 parser，无需浏览器验证。
 
 ### 下一轮候选
 - 审查未知 cue settings 扩展策略与其他格式的 strict grammar，并寻找媒体管线之外高价值问题。
