@@ -2,7 +2,7 @@
  * subtitle/__tests__/subtitle-srt-edge.test.js — SRT 解析深水区
  *
  * 扩展 srt.test.js 未深入的分支：
- *   - 块间缺少空行 → 多 cue 被合并为单块（第二条丢失，已知限制）
+ *   - 块间缺少空行 → 自动按后续时间行恢复 cue 边界
  *   - 负时间 / 零时长（end==start）→ 跳过
  *   - 空文本 cue 仍计入
  *   - 时间行尾坐标段进入 settings.extra
@@ -16,13 +16,18 @@ import assert from 'node:assert/strict';
 import { parseSrt } from '../src/index.js';
 import { SubtitleError } from '../src/index.js';
 
-test('SRT：块间无空行 → 后续 cue 被合并进首块（已知限制，第二条丢失）', () => {
-  const src = '1\n00:00:01,000 --> 00:00:02,000\n第一条\n2\n00:00:03,000 --> 00:00:04,000\n第二条\n';
-  const r = parseSrt(src);
-  // 整段被切成单块（无空行分隔），第二个时间行沦为首块文本的一部分，不另起 cue
-  assert.equal(r.cues.length, 1);
-  assert.ok(r.cues[0].text.includes('00:00:03,000'), '第二条时间行应作为首块文本被吞入');
-  assert.equal(r.stats.skippedBlocks, 0);
+test('SRT：块间无空行 → 根据后续时间行恢复 cue 边界', () => {
+  const withIds = '1\n00:00:01,000 --> 00:00:02,000\n第一条\n2\n00:00:03,000 --> 00:00:04,000\n第二条\n';
+  const withoutIds = '00:00:01,000 --> 00:00:02,000\n第一条\n00:00:03,000 --> 00:00:04,000\n第二条\n';
+  for (const src of [withIds, withoutIds]) {
+    for (const strict of [false, true]) {
+      const r = parseSrt(src, { strict });
+      assert.equal(r.cues.length, 2);
+      assert.deepEqual(r.cues.map((cue) => cue.text), ['第一条', '第二条']);
+      assert.equal(r.cues[1].startUs, 3_000_000);
+      assert.equal(r.stats.skippedBlocks, 0);
+    }
+  }
 });
 
 test('SRT：负时间（秒为负）非法 → 跳过', () => {

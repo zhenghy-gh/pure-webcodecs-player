@@ -995,4 +995,31 @@
 - 未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
 
 ### 下一轮候选
-- 检查空 Dialogue 正文及其他可选事件字段 strict 合法性；关注非末列 Text 与逗号小数时间戳等边界的无歧义解析。
+- 检查 ASS 非末列 Text 与逗号分隔数据的无歧义解析，并复核 SRT 恢复边界策略。
+
+## Attempt 48：恢复缺少空行分隔的 SRT 相邻 cue
+
+### 发现
+- 复现条件：两个 SRT cue 之间没有空白行，含/不含数字序号均可复现。
+- 根因：解析器只按空白行切块；合并块仅取第一条时间行，其余时间行和后续文本被并入第一条 cue 的正文。
+- 用户影响：丢失后一条及之后的 cue，字幕时间轴和正文错误。
+
+### 修改
+- subtitle/src/srt.js：空行切分后，对单块内多个有效正向时间行恢复 cue 边界；若时间行紧邻纯数字序号，将序号划归新 cue。原有序号/无序号解析和错误时间检测路径保留。
+- subtitle/__tests__/subtitle-srt-edge.test.js：将已知缺陷守卫改为回归，覆盖有/无序号以及 strict/lenient 下两条 cue 的正文、时间和零跳过计数。
+
+### 验证
+- 修复前复现：strict/lenient 均只返回一条 cue，正文包含第二条时间行和台词。
+- 定向测试：node --test --test-timeout=15000 subtitle/__tests__/subtitle-srt-edge.test.js subtitle/__tests__/srt.test.js，27/27 通过。
+- 全量测试：npm test 通过，3170/3170，0 失败。
+- 静态验证：`npm run lint && npm run check` 和单独重跑 `npm run check` 均退出码 0；lint 检查 547 个 JS 文件；check 内嵌全量测试 3170/3170，0 失败。PRD 门槛摘要 0/565、0/16 是报告性输出，check 结论全部通过。本轮定向 SRT 测试稳定为 27/27。纯 parser 修改，不需浏览器播放验证。
+
+### 提交和推送
+- 本轮待提交：SRT cue 边界恢复、回归测试和 progress.md。
+
+### 风险
+- 合并块内可解析且递增的后续时间行被视为 cue 起点；若正文刻意包含独立成行、形似合法 SRT 时间行的文本，该行可能被视为新 cue 边界。缺少 separator 的格式本身存在歧义。
+- 没有公共 API 变化；未执行 npm 发布、版本递增、release commit、tag、npm pack 或 npm publish。
+
+### 下一轮候选
+- 增加正文含似时间行的歧义守卫，并观察运行环境下 Node glob 测试发现数波动是否可重复。

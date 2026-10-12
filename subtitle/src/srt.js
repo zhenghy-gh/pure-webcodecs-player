@@ -37,6 +37,20 @@ import { normalizeText } from './cue.js';
 const TIMING_RE = /^\s*(\S+)\s+-->\s+(\S+)\s*(.*)$/;
 
 /**
+ * 只将可解析且正向的时间区间用于 cue 边界恢复。
+ * @param {string} line
+ */
+function isValidTimingLine(line) {
+  const match = TIMING_RE.exec(line);
+  if (!match) return false;
+  try {
+    return parseTimestamp(match[2]) > parseTimestamp(match[1]);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 解析 SRT 文本。
  * @param {string} text 文件内容
  * @param {ParseOptions} [options]
@@ -56,15 +70,34 @@ export function parseSrt(text, options = {}) {
   /** @type {string[]} */
   const warnings = [];
   let skippedBlocks = 0;
-  // 空白行切块：允许块间出现多个含空白字符的「空」行
-  const blocks = normalized.split(/\n[ \t]*\n+/);
+  // 空白行切块：允许块间出现多个含空白字符的「空」行。对漏掉空行的常见 SRT，
+  // 用后续时间行恢复 cue 边界，并将紧邻其前的纯数字序号归到新 cue。
+  const blocks = normalized.split(/\n[ \t]*\n+/).flatMap((block) => {
+    const lines = block.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+    const timingIndexes = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (isValidTimingLine(lines[i])) timingIndexes.push(i);
+    }
+    if (timingIndexes.length < 2) return [block];
+
+    const segments = [];
+    let start = 0;
+    for (const timingIndex of timingIndexes.slice(1)) {
+      const boundary = timingIndex > start && /^\d+$/.test(lines[timingIndex - 1]) ? timingIndex - 1 : timingIndex;
+      if (boundary <= start) continue;
+      segments.push(lines.slice(start, boundary).join('\n'));
+      start = boundary;
+    }
+    segments.push(lines.slice(start).join('\n'));
+    return segments;
+  });
 
   for (let bi = 0; bi < blocks.length; bi++) {
     const lines = blocks[bi].split('\n').map((l) => l.trim()).filter((l) => l !== '');
     if (lines.length === 0) continue;
 
     // 找到时间行的下标：第一处包含 '-->' 的行
-    const ti = lines.findIndex((l) => TIMING_RE.test(l));
+    const ti = lines.findIndex((line) => TIMING_RE.test(line));
     if (ti === -1) {
       // 整块无时间行 → 畸形（可能是纯序号残片或垃圾数据）
       skippedBlocks += 1;
