@@ -801,7 +801,7 @@
 - 静态验证：`npm run lint && npm run check` 通过；内嵌全量测试 3163/3163，lint 检查 547 个 JS 文件。check 的报告性门槛表显示 0/565、0/16，脚本结论全部通过。只涉及 ASS/SSA parser，不改播放/渲染管线，无需真实浏览器验证。
 
 ### 提交和推送
-- 本轮待提交：SSA Marked layer 映射、回归测试和 progress.md。
+- 已提交并推送：`3d11ec2 fix: map ssa marked values to layers`（SSA Marked layer 映射、回归测试及 progress.md）。
 
 ### 风险
 - `Marked=0/1` 到 layer 0/1 的映射只作用于 SSA Marked 格式；正常 V4+ `Layer` 字段优先。strict 新增非法 Marked 拒绝，lenient 行为兼容。
