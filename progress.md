@@ -1329,3 +1329,27 @@
 
 ### 风险
 - createMediaSegment 现在拒绝不连续 DTS 输入；调用方须先将 discontinuous decode epochs 分成分别从合法基准开始的片段，或调整样本时间。该单 trun API 不新增 gap 表示功能。
+
+## Attempt 61：在轨道 timescale 域正确校验 remux DTS 连续性
+
+### 发现
+- 复现条件：44.1 kHz timescale 下有连续的 1µs → 11µs decode-time step。两个输入时间分别量化成相邻 ticks，但独立将 11µs duration 四舍五入会得到 0 tick，与 tfdt/trun 所隐式表示的连续时间矛盾。
+- 实际媒体表现：Sintel 视频样本间隔交替为 41667/41666µs，而每个 Sample.duration 为 41667µs；音频样本间隔也有 21334µs 和 21333µs。微秒时间戳/时长字段独立四舍五入，不能逐项精确相等。
+- 影响：Round 60 的 `previous DTS + duration` 微秒域精确相等检查，错误拒绝有效真实媒体，浏览器 MSE 在构造 segment 时失败。量化前逐 duration 四舍五入还可能漏掉 tick。
+
+### 修改
+- mp4/src/remuxer.js：先分别将 Sample 的起始 DTS 和结束 DTS (dts + duration) 转换至轨道 timescale tick 域；在 tick 域验证当前 DTS 等于前一样本的量化结束 DTS。该精度域与最终 tfdt/trun 表示一致，接纳仅因微秒舍入形成的 ±1µs 差。
+- mp4/src/remuxer.js：各个 sample duration 由量化后的结束 tick 减开始 tick 计算；保留真实 tick 间隔，避免独立舍入 duration 引入时间线误差。
+- mp4/__tests__/remuxer.test.js：新增 44.1 kHz 时间量化边界回归，读取 `trun` 并验证样本 duration 字段。
+
+### 验证
+- 定向 remux / remuxer-gaps / muxer-roundtrip / artifacts-edge：41/41 通过。
+- npm run check：fixtures 通过；全量测试 3192/3192；lint 548 个 JS 文件通过；全门禁通过。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4：首轮暴露视频 DTS舍入差，按轨道 ticks 修正后重新验证 19/19；真实解码、播放推进、seek、stall 恢复、buffered 与 destroy 全通过。
+- E2E 临时截图已恢复；git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- 对连续 DTS 输入使用量化 DTS 区间得出的 duration；单轨 segment 的 decode timeline 以 timescale tick 为准。真正的 tick 间隙或重叠仍会在 segment 构建前被拒绝。

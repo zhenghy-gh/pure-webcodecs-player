@@ -134,9 +134,10 @@ export class Fmp4Remuxer {
       throw stateError('track timescale must be a positive 32-bit integer');
     }
 
-    // A single trun represents decode time as first DTS + preceding sample durations.
-    // Reject gaps or overlaps rather than silently compressing a discontinuous timeline.
-    const tickSamples = [];
+    // Validate continuity in contract microseconds first, then quantize adjacent DTS
+    // points and derive run durations from their difference. Independently rounding each
+    // duration can lose a tick at non-integral microsecond/timebase boundaries.
+    const timingSamples = [];
     let baseMediaDecodeTimeTicks = null;
     let expectedDtsTicks = null;
     for (let i = 0; i < samples.length; i++) {
@@ -150,11 +151,8 @@ export class Fmp4Remuxer {
       }
       const dtsTicks = usToTicks(dtsUs, timescale);
       const ptsTicks = usToTicks(ptsUs, timescale);
-      const durationTicks = usToTicks(durationUs, timescale);
-      if (!Number.isSafeInteger(dtsTicks) || dtsTicks < 0 ||
-          !Number.isSafeInteger(ptsTicks) || !Number.isSafeInteger(durationTicks) ||
-          durationTicks < 0 || durationTicks > 0xffffffff) {
-        throw stateError(`sample #${s.index ?? i} timestamp or duration is outside the supported range`);
+      if (!Number.isSafeInteger(dtsTicks) || dtsTicks < 0 || !Number.isSafeInteger(ptsTicks)) {
+        throw stateError(`sample #${s.index ?? i} timestamp is outside the supported range`);
       }
       if (expectedDtsTicks !== null && dtsTicks !== expectedDtsTicks) {
         throw stateError(`sample #${s.index ?? i} has discontinuous decode times`);
@@ -163,25 +161,39 @@ export class Fmp4Remuxer {
       if (!Number.isSafeInteger(cts) || cts < -0x80000000 || cts > 0x7fffffff) {
         throw stateError(`sample #${s.index ?? i} composition offset is outside the signed 32-bit range`);
       }
-      expectedDtsTicks = dtsTicks + durationTicks;
-      if (!Number.isSafeInteger(expectedDtsTicks)) {
+      const endDtsUs = dtsUs + durationUs;
+      if (!Number.isSafeInteger(endDtsUs)) {
         throw stateError(`sample #${s.index ?? i} decode time exceeds the supported range`);
       }
+      const endDtsTicks = usToTicks(endDtsUs, timescale);
+      if (!Number.isSafeInteger(endDtsTicks) || endDtsTicks < dtsTicks) {
+        throw stateError(`sample #${s.index ?? i} end decode time is outside the supported range`);
+      }
+      expectedDtsTicks = endDtsTicks;
       if (baseMediaDecodeTimeTicks === null) baseMediaDecodeTimeTicks = dtsTicks;
-      tickSamples.push({
+      timingSamples.push({ s, dtsTicks, endDtsTicks, cts });
+    }
+
+    const tickSamples = timingSamples.map((timing, i) => {
+      const durationTicks = timing.endDtsTicks - timing.dtsTicks;
+      if (!Number.isSafeInteger(durationTicks) || durationTicks < 0 || durationTicks > 0xffffffff) {
+        throw stateError(`sample #${timing.s.index ?? i} duration is outside the supported range`);
+      }
+      const s = timing.s;
+      return {
         index: i,
         duration: durationTicks,
         size: s.size ?? s.data.byteLength,
         keyframe: !!s.keyframe,
-        cts,
+        cts: timing.cts,
         dts: undefined, // buildMoofMdat 只用 duration/size/keyframe/cts/data
         data: s.data instanceof Uint8Array
           ? s.data
           : s.data instanceof ArrayBuffer
             ? new Uint8Array(s.data)
             : new Uint8Array(s.data.buffer, s.data.byteOffset, s.data.byteLength),
-      });
-    }
+      };
+    });
 
     const seq = this._sequenceNumber;
     const { data } = buildMoofMdat({

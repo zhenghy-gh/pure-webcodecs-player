@@ -222,6 +222,28 @@ test('createMediaSegment rejects DTS gaps and overlaps before consuming a sequen
   assert.equal(remuxer.sequenceNumber, 0);
 });
 
+test('createMediaSegment derives sample durations from adjacent DTS after timebase quantization', async () => {
+  const remuxer = new Fmp4Remuxer();
+  const track = { id: 1, timescale: 44_100, sampleEntryType: 'mp4a', codec: 'mp4a.40.2', sampleRate: 44_100, channelCount: 2, codecPrivate: new Uint8Array([0x12, 0x10]) };
+  const samples = [
+    { index: 0, timestamp: 1, dts: 1, duration: 11, keyframe: true, data: new Uint8Array([1]) },
+    { index: 1, timestamp: 12, dts: 12, duration: 23, keyframe: true, data: new Uint8Array([2]) },
+  ];
+  const segment = remuxer.createMediaSegment(track, samples);
+  const moof = iterateFind(segment.data, 'moof');
+  let traf;
+  iterateBoxes(segment.data, moof.contentStart, moof.end, (header) => { if (header.type === 'traf') traf = header; });
+  const truns = [];
+  iterateBoxes(segment.data, traf.contentStart, traf.end, (header) => { if (header.type === 'trun') truns.push(header); });
+  const stream = new ByteStream(segment.data, truns[0].contentStart, truns[0].end - truns[0].contentStart);
+  stream.readU32();
+  assert.equal(stream.readU32(), 2);
+  stream.readI32();
+  assert.equal(stream.readU32(), 1, 'first sample duration bridges the adjacent DTS tick');
+  stream.readU32(); stream.readU32(); stream.readU32(); // first sample size, flags, CTS
+  assert.equal(stream.readU32(), 1, 'second sample duration also follows quantized DTS endpoint');
+});
+
 test('createMediaSegment rejects timing values that overflow BMFF fields', () => {
   const remuxer = new Fmp4Remuxer();
   const track = { id: 1, timescale: 1000 };
