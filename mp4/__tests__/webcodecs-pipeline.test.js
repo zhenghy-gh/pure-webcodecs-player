@@ -147,6 +147,43 @@ function videoSamples(count, { withData = true } = {}) {
   }));
 }
 
+test('supported() only reports existing tracks whose decoder config is supported', async () => {
+  await withGlobals({
+    VideoDecoder: FakeVideoDecoder, AudioDecoder: FakeAudioDecoder,
+    EncodedVideoChunk: FakeEncodedVideoChunk, EncodedAudioChunk: FakeEncodedAudioChunk,
+  }, async () => {
+    const audioOnly = new Mp4WebCodecsPipeline(fakeDemuxer([A_TRACK], {}), {});
+    FakeAudioDecoder.supported = false;
+    const unsupportedAudio = await audioOnly.supported();
+    assert.deepEqual(unsupportedAudio, {
+      supported: false,
+      video: false,
+      audio: false,
+      reason: 'configs unsupported',
+    });
+
+    const videoOnly = new Mp4WebCodecsPipeline(fakeDemuxer([V_TRACK], {}), {});
+    FakeVideoDecoder.supported = false;
+    const unsupportedVideo = await videoOnly.supported();
+    assert.deepEqual(unsupportedVideo, {
+      supported: false,
+      video: false,
+      audio: false,
+      reason: 'configs unsupported',
+    });
+
+    const noTracks = new Mp4WebCodecsPipeline(fakeDemuxer([], {}), {});
+    assert.deepEqual(await noTracks.supported(), {
+      supported: false,
+      video: false,
+      audio: false,
+      reason: 'configs unsupported',
+    });
+    FakeVideoDecoder.supported = true;
+    FakeAudioDecoder.supported = true;
+  });
+});
+
 test('管线 supported()：isConfigSupported 三分支与配置缓存', async () => {
   const demuxer = fakeDemuxer([V_TRACK, A_TRACK], {});
   await withGlobals({

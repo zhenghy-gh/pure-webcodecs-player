@@ -76,8 +76,8 @@ export class Mp4WebCodecsPipeline {
     const info = this.demuxer.getMediaInfo();
     const vTrack = info?.tracks.find((t) => t.type === TrackType.VIDEO);
     const aTrack = info?.tracks.find((t) => t.type === TrackType.AUDIO);
-    let okVideo = !vTrack;
-    let okAudio = !aTrack;
+    let okVideo = false;
+    let okAudio = false;
     const failures = [];
 
     if (vTrack) {

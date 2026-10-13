@@ -1377,3 +1377,26 @@
 
 ### 风险
 - 支持结果保持现有 any-track 成功策略；如果单轨不支持，仍跳过该轨 decoder/pump，不为单轨保留失败配置。无公共 API 更改。
+
+## Attempt 63：避免 WebCodecs supported() 将不存在轨道标记为可用
+
+### 发现
+- 复现条件：只有音频轨或只有视频轨的媒体，其实际轨道 decoder 探测返回 unsupported；以及媒体没有 WebCodecs 音/视频轨道。
+- 根因：上轮为保证只含视频/音频文件的另一轨不阻断可解轨，把不存在的轨道支持状态初始化成 true。aggregation 用 OR 判总支持，于是缺失轨本身就能让 `supported: true`，即使文件中唯一存在的轨道不支持；无 A/V 轨时也被错误报告为可支持。
+- 用户影响：单轨不支持的文件会误通过 supported()；start 后没有可运行 decoder/pump，能力查询与实际播放不一致。
+
+### 修改
+- mp4/src/webcodecs-pipeline.js：video/audio capability 默认均为 false；只有实际存在轨的 config probe 返回 true 才能置为 true。缺轨不会阻断另一轨，也不能伪造成功；无可用轨返回 unsupported。
+- mp4/__tests__/webcodecs-pipeline.test.js：增加 audio-only codec unsupported、video-only codec unsupported、无媒体轨道三种用例，要求 flags 全 false / overall unsupported。
+
+### 验证
+- WebCodecs pipeline + gaps 定向测试：14/14 通过。
+- npm run check：fixtures 通过；全量测试 3193/3193；lint 548 个 JS 文件通过；全门禁通过。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；轨道解析、真实解码、播放/seek、stall 恢复、buffered 及销毁均通过。
+- E2E 临时截图已恢复；git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- 无 A/V 轨道的输入明确返回 unsupported，不会再被标记为可启动 WebCodecs 管线。无公共 API 结构变化。
