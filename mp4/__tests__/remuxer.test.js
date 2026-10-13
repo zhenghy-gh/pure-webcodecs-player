@@ -205,6 +205,42 @@ test('空样本数组抛错；lazy 样本抛错', async () => {
   );
 });
 
+test('createMediaSegment rejects DTS gaps and overlaps before consuming a sequence number', () => {
+  const remuxer = new Fmp4Remuxer();
+  const track = { id: 1, timescale: 1000 };
+  const first = { index: 0, timestamp: 0, dts: 0, duration: 40_000, keyframe: true, data: new Uint8Array([1]) };
+  const second = { index: 1, timestamp: 80_000, dts: 80_000, duration: 40_000, keyframe: false, data: new Uint8Array([2]) };
+  assert.throws(
+    () => remuxer.createMediaSegment(track, [first, second]),
+    /discontinuous decode times/,
+  );
+  const overlap = { ...second, timestamp: 20_000, dts: 20_000 };
+  assert.throws(
+    () => remuxer.createMediaSegment(track, [first, overlap]),
+    /discontinuous decode times/,
+  );
+  assert.equal(remuxer.sequenceNumber, 0);
+});
+
+test('createMediaSegment rejects timing values that overflow BMFF fields', () => {
+  const remuxer = new Fmp4Remuxer();
+  const track = { id: 1, timescale: 1000 };
+  const sample = { index: 4, timestamp: 0, dts: 0, duration: 40_000, keyframe: true, data: new Uint8Array([1]) };
+  assert.throws(
+    () => remuxer.createMediaSegment(track, [{ ...sample, duration: 0x1_0000_0000_0000 }]),
+    /outside the supported range/,
+  );
+  assert.throws(
+    () => remuxer.createMediaSegment(track, [{ ...sample, timestamp: 3_000_000_000_000 }]),
+    /composition offset is outside/,
+  );
+  assert.throws(
+    () => remuxer.createMediaSegment(track, [{ ...sample, timestamp: 1.5 }]),
+    /invalid integer timestamp or duration/,
+  );
+  assert.equal(remuxer.sequenceNumber, 0);
+});
+
 test('createMediaSegment rejects sample sizes inconsistent with payload bytes', () => {
   const remuxer = new Fmp4Remuxer();
   const track = { id: 1, timescale: 1000 };

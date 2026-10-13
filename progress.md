@@ -1304,3 +1304,28 @@
 
 ### 风险
 - 超长 GOP 现在会增大单个输出段以保持随机访问边界；无关键帧 metadata 时批次可能超过 targetDurationUs，但不再凭空在依赖帧处断开。无公共 API 更改。
+
+## Attempt 60：拒绝 fMP4 remux 无法表达的 DTS 间隙
+
+### 发现
+- 复现条件：向 createMediaSegment 提供同轨样本，其后样本 DTS 与前样本 DTS + duration 不连续（间隙或重叠）。
+- 根因：一个 trun 只通过首样本 tfdt、每样本 duration 隐式表示连续 decode timeline；旧 remuxer 各自写 sample DTS 计算仅用于 CTS，却不校验相邻关系，因此接受并静默压缩了输入 gap/overlap。另有非整数、不安全或超出 BMFF 字段范围的时间数据可被转换/写 box 时截断。
+- 用户影响：段的 decode timing 与输入 Sample 不一致，视频画面或 A/V 同步发生偏移；畸形时间字段可能产生损坏的 media segment。
+
+### 修改
+- mp4/src/remuxer.js：构建及推进序号前，要求 timescale 为正 32-bit 整数，PTS/DTS/duration 为安全整数微秒，DTS ticks 非负，duration ticks 可由 trun 32-bit 表示，CTS 位于 trun signed 32-bit 范围。
+- mp4/src/remuxer.js：在 track timescale tick 域检查 DTS == previous DTS + previous duration；拒绝 discontinuity 和 overlap，不再静默合并。
+- mp4/__tests__/remuxer.test.js：新增 DTS gap/overlap 拒绝、时间字段溢出及 fractional timestamp 拒绝，并断言无效样本不会推进序号。
+
+### 验证
+- 定向 remux / remuxer-gaps / muxer-roundtrip / artifacts-edge：40/40 通过。
+- 60 轮里程碑全量 npm run check：fixtures 通过；全量测试 3191/3191；lint 通过（548 个 JS 文件）；全流程通过。
+- 独立 npm test 复核全量测试 3191/3191 通过；之前一次在临时编辑期间的测试计数为 3175，故再跑完整门禁并确认稳定结果。
+- 真实浏览器：Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；双轨解析、真实解码、播放推进、seek 恢复、buffered 与 destroy 均通过。
+- 浏览器临时截图已恢复；git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- createMediaSegment 现在拒绝不连续 DTS 输入；调用方须先将 discontinuous decode epochs 分成分别从合法基准开始的片段，或调整样本时间。该单 trun API 不新增 gap 表示功能。

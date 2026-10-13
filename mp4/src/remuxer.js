@@ -130,34 +130,67 @@ export class Fmp4Remuxer {
       }
     }
     const timescale = track.timescale ?? 1000;
+    if (!Number.isInteger(timescale) || timescale < 1 || timescale > 0xffffffff) {
+      throw stateError('track timescale must be a positive 32-bit integer');
+    }
 
-    const seq = this._sequenceNumber++;
-    const baseMediaDecodeTimeTicks = usToTicks(samples[0].dts ?? samples[0].timestamp, timescale);
-
-    // µs → 轨原生 ticks（box 内部表示）；cts = PTS - DTS 回转
-    const tickSamples = samples.map((s, i) => {
-      const dtsTicks = usToTicks(s.dts ?? s.timestamp, timescale);
-      return {
+    // A single trun represents decode time as first DTS + preceding sample durations.
+    // Reject gaps or overlaps rather than silently compressing a discontinuous timeline.
+    const tickSamples = [];
+    let baseMediaDecodeTimeTicks = null;
+    let expectedDtsTicks = null;
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      const dtsUs = s.dts ?? s.timestamp;
+      const ptsUs = s.timestamp;
+      const durationUs = s.duration ?? 0;
+      if (!Number.isSafeInteger(dtsUs) || !Number.isSafeInteger(ptsUs) ||
+          !Number.isSafeInteger(durationUs) || durationUs < 0) {
+        throw stateError(`sample #${s.index ?? i} has invalid integer timestamp or duration`);
+      }
+      const dtsTicks = usToTicks(dtsUs, timescale);
+      const ptsTicks = usToTicks(ptsUs, timescale);
+      const durationTicks = usToTicks(durationUs, timescale);
+      if (!Number.isSafeInteger(dtsTicks) || dtsTicks < 0 ||
+          !Number.isSafeInteger(ptsTicks) || !Number.isSafeInteger(durationTicks) ||
+          durationTicks < 0 || durationTicks > 0xffffffff) {
+        throw stateError(`sample #${s.index ?? i} timestamp or duration is outside the supported range`);
+      }
+      if (expectedDtsTicks !== null && dtsTicks !== expectedDtsTicks) {
+        throw stateError(`sample #${s.index ?? i} has discontinuous decode times`);
+      }
+      const cts = ptsTicks - dtsTicks;
+      if (!Number.isSafeInteger(cts) || cts < -0x80000000 || cts > 0x7fffffff) {
+        throw stateError(`sample #${s.index ?? i} composition offset is outside the signed 32-bit range`);
+      }
+      expectedDtsTicks = dtsTicks + durationTicks;
+      if (!Number.isSafeInteger(expectedDtsTicks)) {
+        throw stateError(`sample #${s.index ?? i} decode time exceeds the supported range`);
+      }
+      if (baseMediaDecodeTimeTicks === null) baseMediaDecodeTimeTicks = dtsTicks;
+      tickSamples.push({
         index: i,
-        duration: Math.max(0, usToTicks(s.duration ?? 0, timescale)),
+        duration: durationTicks,
         size: s.size ?? s.data.byteLength,
         keyframe: !!s.keyframe,
-        cts: usToTicks(s.timestamp, timescale) - dtsTicks,
+        cts,
         dts: undefined, // buildMoofMdat 只用 duration/size/keyframe/cts/data
         data: s.data instanceof Uint8Array
           ? s.data
           : s.data instanceof ArrayBuffer
             ? new Uint8Array(s.data)
             : new Uint8Array(s.data.buffer, s.data.byteOffset, s.data.byteLength),
-      };
-    });
+      });
+    }
 
+    const seq = this._sequenceNumber;
     const { data } = buildMoofMdat({
       sequenceNumber: seq,
       trackId: track.id,
       baseMediaDecodeTime: baseMediaDecodeTimeTicks,
       samples: tickSamples,
     });
+    this._sequenceNumber = seq + 1;
     let durationUs = 0;
     for (const s of samples) durationUs += s.duration ?? 0;
     return {
