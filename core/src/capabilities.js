@@ -9,17 +9,25 @@
  */
 import { buildMseMimeType, mseIsTypeSupported } from './codec-string.js';
 
-/** 是否存在 WebCodecs 全家桶 */
-export function hasWebCodecs() {
+function hasVideoWebCodecs() {
   try {
-    return (
-      typeof VideoDecoder === 'function' &&
-      typeof AudioDecoder === 'function' &&
-      typeof EncodedVideoChunk === 'function'
-    );
+    return typeof VideoDecoder === 'function' && typeof EncodedVideoChunk === 'function';
   } catch {
     return false;
   }
+}
+
+function hasAudioWebCodecs() {
+  try {
+    return typeof AudioDecoder === 'function' && typeof EncodedAudioChunk === 'function';
+  } catch {
+    return false;
+  }
+}
+
+/** 是否存在完整的音视频 WebCodecs API */
+export function hasWebCodecs() {
+  return hasVideoWebCodecs() && hasAudioWebCodecs();
 }
 
 /** 是否存在 MediaSource */
@@ -114,7 +122,7 @@ function normalizeCodecList(value, fallback) {
 async function detectCapabilitiesUncached({ videoCodecs, audioCodecs }) {
   const report = {
     webcodecs: {
-      supported: hasWebCodecs(),
+      supported: hasVideoWebCodecs() || hasAudioWebCodecs(),
       video: Object.create(null),
       audio: Object.create(null),
     },
@@ -201,7 +209,7 @@ export function resetCapabilityCache() {
 
 /** 单个视频 codec 的 WebCodecs 解码可用性（失败计 false） */
 export async function canDecodeVideo(config) {
-  if (!hasWebCodecs()) return false;
+  if (!hasVideoWebCodecs()) return false;
   try {
     const support = await VideoDecoder.isConfigSupported(config);
     return !!support?.supported;
@@ -212,7 +220,7 @@ export async function canDecodeVideo(config) {
 
 /** 单个音频 codec 的 WebCodecs 解码可用性（失败计 false） */
 export async function canDecodeAudio(config) {
-  if (!hasWebCodecs()) return false;
+  if (!hasAudioWebCodecs()) return false;
   try {
     const support = await AudioDecoder.isConfigSupported(config);
     return !!support?.supported;

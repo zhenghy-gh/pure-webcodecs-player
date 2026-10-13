@@ -113,6 +113,9 @@ function makeFakes() {
       chunks.push(this);
     }
   }
+  class FakeEncodedAudioChunk {
+    constructor(opts) { Object.assign(this, opts); }
+  }
 
   class FakeVideoDecoder {
     constructor({ output, error }) {
@@ -161,8 +164,9 @@ function makeFakes() {
     VideoDecoder: FakeVideoDecoder,
     AudioDecoder: FakeAudioDecoder,
     EncodedVideoChunk: FakeEncodedVideoChunk,
+    EncodedAudioChunk: FakeEncodedAudioChunk,
   };
-  return { env, videoDecoders, audioDecoders, chunks, fakeWindow, FakeVideoDecoder, FakeAudioDecoder, FakeEncodedVideoChunk };
+  return { env, videoDecoders, audioDecoders, chunks, fakeWindow, FakeVideoDecoder, FakeAudioDecoder, FakeEncodedVideoChunk, FakeEncodedAudioChunk };
 }
 
 async function withWebCodecs(fn) {
@@ -172,6 +176,7 @@ async function withWebCodecs(fn) {
     VideoDecoder: fakes.FakeVideoDecoder,
     AudioDecoder: fakes.FakeAudioDecoder,
     EncodedVideoChunk: fakes.FakeEncodedVideoChunk,
+    EncodedAudioChunk: fakes.FakeEncodedAudioChunk,
   }, () => fn(fakes));
 }
 
@@ -186,6 +191,34 @@ test('codecStringFromAvcC 边界：null/过短返回 null（禁止编造 profile
 /* ---------------- CmafWebCodecsPlayer 调度路径 ---------------- */
 
 describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
+  test('纯音频环境只需 AudioDecoder + EncodedAudioChunk', async () => {
+    const fakes = makeFakes();
+    await withGlobals({
+      window: { AudioDecoder: fakes.FakeAudioDecoder, EncodedAudioChunk: fakes.FakeEncodedAudioChunk },
+      AudioDecoder: fakes.FakeAudioDecoder,
+      EncodedAudioChunk: fakes.FakeEncodedAudioChunk,
+    }, async () => {
+      const { init } = buildAudioStream();
+      const player = new CmafWebCodecsPlayer();
+      await player.open(init);
+      assert.equal(player.videoDecoder, null);
+      assert.ok(player.audioDecoder);
+    });
+  });
+
+  test('双轨 init 缺少 AudioDecoder 时在部分建 decoder 前拒绝', async () => {
+    const fakes = makeFakes();
+    await withGlobals({
+      window: { VideoDecoder: fakes.FakeVideoDecoder, EncodedVideoChunk: fakes.FakeEncodedVideoChunk },
+      VideoDecoder: fakes.FakeVideoDecoder,
+      EncodedVideoChunk: fakes.FakeEncodedVideoChunk,
+    }, async () => {
+      const player = new CmafWebCodecsPlayer();
+      await assert.rejects(() => player.open(buildAvStream().init), (e) => e.code === 'NOT_SUPPORTED');
+      assert.equal(player.videoDecoder, null, 'missing audio APIs must not leave a partial video decoder');
+    });
+  });
+
   test('open：双轨配置推导、configure、timescale 落位；返回结构与 ASC 推导', async () => {
     await withWebCodecs(async (fakes) => {
       const { init } = buildAvStream();
@@ -263,6 +296,7 @@ describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
       p.appendChunk(chunks[0], buf.subarray(init.length));
       const ad = fakes.audioDecoders[0];
       assert.equal(ad.decoded.length, 2, '音频轨 2 样本进 AudioDecoder');
+      assert.ok(ad.decoded[0] instanceof fakes.FakeEncodedAudioChunk, '音频 decoder 必须收到 EncodedAudioChunk');
       assert.equal(ad.decoded[0].type, 'key');
       assert.equal(ad.decoded[0].duration, Math.round((3003 / 44100) * 1e6), '音频 timescale 44100 换算');
 

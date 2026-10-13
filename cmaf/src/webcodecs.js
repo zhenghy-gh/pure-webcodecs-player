@@ -7,13 +7,28 @@
  *  2. 提供 CmafWebCodecsPlayer：逐 chunk 喂样本 → VideoDecoder/AudioDecoder
  *     → frame 回调（渲染归 core 的 VideoFrameRenderer，本层不碰画布）。
  *
- * Node 环境：hasWebCodecs 恒 false，构造器抛 NOT_SUPPORTED——按契约 §0.3
- * "Node 下返回不支持，不允许未捕获异常"。
+ * 构造器不要求全套音视频 API；open(init) 根据实际轨道分别校验 decoder 与 Encoded*Chunk。
+ * 因此单轨媒体只依赖该轨道的 WebCodecs API，Node 下打开缺失对应 API 的轨仍返回 NOT_SUPPORTED。
  */
 
-import { hasWebCodecs } from '../../core/src/capabilities.js';
 import { notSupported } from '../../core/src/errors.js';
 import { parseInitSegment } from './chunk-parser.js';
+
+function hasVideoWebCodecs() {
+  try {
+    return typeof VideoDecoder === 'function' && typeof EncodedVideoChunk === 'function';
+  } catch {
+    return false;
+  }
+}
+
+function hasAudioWebCodecs() {
+  try {
+    return typeof AudioDecoder === 'function' && typeof EncodedAudioChunk === 'function';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * 由 avcC 前 3 字节生成 avc1.PPCCLL（契约 §3：参数取 SPS 或 avcC 前 3 字节）。
@@ -93,9 +108,6 @@ function guessChannelsFromAsc(asc) {
  */
 export class CmafWebCodecsPlayer {
   constructor({ onVideoFrame, onAudioData, onError } = {}) {
-    if (!hasWebCodecs()) {
-      throw notSupported('当前环境不支持 WebCodecs（VideoDecoder/AudioDecoder）');
-    }
     this.onVideoFrame = onVideoFrame || (() => {});
     this.onAudioData = onAudioData || (() => {});
     this.onError = onError || (() => {});
@@ -109,6 +121,12 @@ export class CmafWebCodecsPlayer {
   /** 解析 init segment 并建立解码器 */
   async open(initBytes) {
     const cfg = decoderConfigsFromInit(initBytes);
+    if (cfg.video && !hasVideoWebCodecs()) {
+      throw notSupported('当前环境缺少视频 WebCodecs decoder 或 chunk API');
+    }
+    if (cfg.audio && !hasAudioWebCodecs()) {
+      throw notSupported('当前环境缺少音频 WebCodecs decoder 或 chunk API');
+    }
     if (cfg.video) {
       this.videoTimescale = cfg.videoTrack.timescale;
       const support = await window.VideoDecoder.isConfigSupported(cfg.video);
@@ -147,7 +165,8 @@ export class CmafWebCodecsPlayer {
       for (const s of track.samples) {
         const data = buf.subarray(s.dataStart, s.dataStart + s.size);
         try {
-          decoder.decode(new window.EncodedVideoChunk({
+          const Chunk = isVideo ? window.EncodedVideoChunk : window.EncodedAudioChunk;
+          decoder.decode(new Chunk({
             type: s.keyframe ? 'key' : 'delta',
             timestamp: Math.round((s.dtsOffset / ts) * 1e6), // 契约：边界 µs
             duration: Math.round((s.durationTicks / ts) * 1e6),

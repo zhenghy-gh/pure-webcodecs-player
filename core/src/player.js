@@ -25,8 +25,8 @@ function hasWebCodecsCtor(mediaInfo) {
     const needsVideo = tracks.some((track) => track.type === 'video');
     const needsAudio = tracks.some((track) => track.type === 'audio');
     if (needsVideo && (typeof VideoDecoder !== 'function' || typeof EncodedVideoChunk !== 'function')) return false;
-    if (needsAudio && typeof AudioDecoder !== 'function') return false;
-    return needsVideo || needsAudio || typeof VideoDecoder === 'function' || typeof AudioDecoder === 'function';
+    if (needsAudio && (typeof AudioDecoder !== 'function' || typeof EncodedAudioChunk !== 'function')) return false;
+    return needsVideo || needsAudio;
   } catch {
     return false;
   }

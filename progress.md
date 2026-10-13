@@ -1400,3 +1400,32 @@
 
 ### 风险
 - 无 A/V 轨道的输入明确返回 unsupported，不会再被标记为可启动 WebCodecs 管线。无公共 API 结构变化。
+
+## Attempt 64：按轨道检查 WebCodecs API 并修复 CMAF 音频 chunk 类型
+
+### 发现
+- 复现条件：只有 AudioDecoder + EncodedAudioChunk、但没有 VideoDecoder 的音频媒体；只有视频 API、但没有音频 API 的视频媒体；或音频 decoder 收到 EncodedVideoChunk 的 CMAF 输入。
+- 根因 1：MP4 pipeline 构造时调用 hasWebCodecs()，其“完整套装”门槛同时要求 VideoDecoder + AudioDecoder，却漏查 EncodedAudioChunk；纯音频路线因缺无关视频 API 被拒，也可能因缺音频 chunk 构造器误判支持。Player 的 track-aware guard 存在相同缺 EncodedAudioChunk 问题。
+- 根因 2：core 深能力探测及 canDecodeVideo/canDecodeAudio 共用 hasWebCodecs()，单类 API 会抑制两种 codec 探测，audio-only/video-only 设备也就无法被 chooseRoute 选中 WebCodecs。CMAF appendChunk 更直接把两类 decoder 的输入都包装成 EncodedVideoChunk。
+- 用户影响：部分浏览器/平台上的单轨解码路线降级或失败；CMAF 纯音频 decode 将以错误 chunk 构造器报错。
+
+### 修改
+- core/src/capabilities.js：独立检查 VideoDecoder + EncodedVideoChunk 和 AudioDecoder + EncodedAudioChunk；保留完整套装 hasWebCodecs 的含义，但 video/audio 深探测各检查本族 API；webcodecs.available 对应至少一个完整族。
+- core/src/player.js：默认 WebCodecs pipeline factory 按媒体实际轨道检查对应 decoder 和 Encoded*Chunk API。
+- mp4/src/webcodecs-pipeline.js：不在构造时一刀切拒绝；supported() 按实际轨道族检查 decoder/chunk，并仅探测该 codec。
+- cmaf/src/webcodecs.js：按 decoder 轨道族分别创建 EncodedVideoChunk 或 EncodedAudioChunk。
+- core/__tests__、mp4/__tests__：覆盖 audio-only / video-only decoder 配置、缺 audio chunk API、全套 API，以及无 WebCodecs unsupported 路径。
+- cmaf/__tests__/cmaf-webcodecs-env.test.js：补测双轨 init 缺少其中一个 API 家族时，在创建任何 decoder 之前原子拒绝。
+- cmaf/__tests__/cmaf-webcodecs-env.test.js：fake 增加 EncodedAudioChunk，回归断言音频 decoder 收到正确类型。
+
+### 验证
+- 定向 core capabilities / player defaults / MP4 pipeline / CMAF fake 浏览器测试：87/87 通过。
+- npm run check：fixtures 通过；全量测试 3197/3197；lint 548 个 JS 文件通过；全门禁通过（最终完整运行 exit code 0）。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；MSE 初始化、真实视频解码、播放推进、seek、stall 恢复、buffered 与 destroy 均通过。
+- E2E 临时截图已恢复；git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- hasWebCodecs() 继续代表“全套音视频 API 齐全”，避免改变旧同步快判语义；轨道-aware 的深探测、Player 默认工厂和 MP4 pipeline 则单独允许完整 API 家族。CMAF appendChunk 仍以 trackId===1 做视频启发式分类。

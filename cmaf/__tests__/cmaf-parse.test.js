@@ -194,8 +194,10 @@ test('decoderConfigsFromInit：产出 WebCodecs 可用配置', () => {
   assert.equal(cfg.videoTrack.timescale, 90000);
 });
 
-test('Node 下 CmafWebCodecsPlayer 抛 NOT_SUPPORTED（契约 §0.3）', () => {
-  assert.throws(() => new CmafWebCodecsPlayer(), (e) => e.code === 'NOT_SUPPORTED');
+test('Node 下 CMAF 管线可构造，但实际视频轨 open 返回 NOT_SUPPORTED', async () => {
+  const player = new CmafWebCodecsPlayer();
+  const init = fmp4.buildInit([makeVideoTrak()]);
+  await assert.rejects(() => player.open(init), (e) => e.code === 'NOT_SUPPORTED');
 });
 
 /* ---------------- LL-HLS part 加载策略骨架 ---------------- */

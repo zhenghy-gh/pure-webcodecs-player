@@ -45,16 +45,20 @@ test('buildAudioConfig：AAC 配置带 AudioSpecificConfig', () => {
   assert.deepEqual([...cfg.description], [...asc]);
 });
 
-test('Node 环境无 WebCodecs：管线构造抛 STATE_ERROR', async () => {
+test('Node 环境无 WebCodecs：管线可构造且支持探测返回 false', async () => {
   const { bytes } = buildProgressiveVideoFixture();
   const d = new Mp4Demuxer();
   d.attach(new MemoryDataSource(bytes));
   await d.init();
 
-  assert.throws(
-    () => new Mp4WebCodecsPipeline(d, {}),
-    (e) => e.code === 'STATE_ERROR',
-  );
+  const pipeline = new Mp4WebCodecsPipeline(d, {});
+  assert.deepEqual(await pipeline.supported(), {
+    supported: false,
+    video: false,
+    audio: false,
+    reason: 'video: WebCodecs decoder or chunk API unavailable',
+  });
+  await d.destroy();
 });
 
 /* ==================================================================== */
@@ -147,6 +151,34 @@ function videoSamples(count, { withData = true } = {}) {
   }));
 }
 
+test('single-track WebCodecs pipelines require only that track family APIs', async () => {
+  await withGlobals({ AudioDecoder: FakeAudioDecoder, EncodedAudioChunk: FakeEncodedAudioChunk }, async () => {
+    const audioSamples = [{ index: 0, trackId: A_TRACK.id, timestamp: 0, duration: 23219, size: 2, keyframe: true, data: new Uint8Array([1, 2]) }];
+    const audioOnly = new Mp4WebCodecsPipeline(fakeDemuxer([A_TRACK], { [A_TRACK.id]: audioSamples }), {});
+    const result = await audioOnly.supported();
+    assert.deepEqual(result, { supported: true, video: false, audio: true, reason: null });
+    await audioOnly.start();
+    assert.equal(audioOnly.videoDecoder, null);
+    assert.equal(audioOnly.audioDecoder.chunks.length, 1);
+  });
+  await withGlobals({ VideoDecoder: FakeVideoDecoder, EncodedVideoChunk: FakeEncodedVideoChunk }, async () => {
+    const videoOnly = new Mp4WebCodecsPipeline(fakeDemuxer([V_TRACK], { [V_TRACK.id]: videoSamples(1) }), {});
+    const result = await videoOnly.supported();
+    assert.deepEqual(result, { supported: true, video: true, audio: false, reason: null });
+    await videoOnly.start();
+    assert.equal(videoOnly.videoDecoder.chunks.length, 1);
+    assert.equal(videoOnly.audioDecoder, null);
+  });
+  await withGlobals({ AudioDecoder: FakeAudioDecoder }, async () => {
+    const audioOnly = new Mp4WebCodecsPipeline(fakeDemuxer([A_TRACK], {}), {});
+    const result = await audioOnly.supported();
+    assert.deepEqual(result, {
+      supported: false, video: false, audio: false,
+      reason: 'audio: WebCodecs decoder or chunk API unavailable',
+    });
+  });
+});
+
 test('supported() only reports existing tracks whose decoder config is supported', async () => {
   await withGlobals({
     VideoDecoder: FakeVideoDecoder, AudioDecoder: FakeAudioDecoder,
@@ -190,6 +222,7 @@ test('管线 supported()：isConfigSupported 三分支与配置缓存', async ()
     VideoDecoder: FakeVideoDecoder,
     AudioDecoder: FakeAudioDecoder,
     EncodedVideoChunk: FakeEncodedVideoChunk,
+    EncodedAudioChunk: FakeEncodedAudioChunk,
   }, async () => {
     const pipeline = new Mp4WebCodecsPipeline(demuxer, {});
 

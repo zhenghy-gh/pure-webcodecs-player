@@ -5,14 +5,27 @@
  * - 视频经回调交给 core 的 VideoFrameRenderer 上屏；
  * - 音频 AudioData 转 Float32 后交给 AudioWorkletPlayer 播放。
  *
- * Node 测试环境没有 WebCodecs：构造会抛错；但配置构建（buildVideoConfig 等）
- * 是纯函数，可直接单测。
+ * 构造时不要求完整 WebCodecs API；supported() 按实际音视频轨探测对应 decoder/chunk 构造器。
+ * 配置构建（buildVideoConfig 等）是纯函数，可直接单测。
  */
-import {
-  hasWebCodecs,
-  TrackType,
-} from '../../core/src/index.js';
+import { TrackType } from '../../core/src/index.js';
 import { stateError, decodeError } from '../../core/src/errors.js';
+
+function hasVideoWebCodecs() {
+  try {
+    return typeof VideoDecoder === 'function' && typeof EncodedVideoChunk === 'function';
+  } catch {
+    return false;
+  }
+}
+
+function hasAudioWebCodecs() {
+  try {
+    return typeof AudioDecoder === 'function' && typeof EncodedAudioChunk === 'function';
+  } catch {
+    return false;
+  }
+}
 
 /** Track → VideoDecoderConfig（契约字段 description；纯函数，供测试） */
 export function buildVideoConfig(track) {
@@ -55,9 +68,6 @@ export class Mp4WebCodecsPipeline {
    * }} handlers
    */
   constructor(demuxer, handlers = {}) {
-    if (!hasWebCodecs()) {
-      throw stateError('WebCodecs not available in this environment');
-    }
     this.demuxer = demuxer;
     this.handlers = handlers;
     this.stats = handlers.stats ?? null;
@@ -81,23 +91,31 @@ export class Mp4WebCodecsPipeline {
     const failures = [];
 
     if (vTrack) {
-      try {
-        this.videoConfig = buildVideoConfig(vTrack);
-        okVideo = (await VideoDecoder.isConfigSupported(this.videoConfig))?.supported === true;
-        if (!okVideo) this.videoConfig = null;
-      } catch (err) {
-        this.videoConfig = null;
-        failures.push('video: ' + String(err));
+      if (!hasVideoWebCodecs()) {
+        failures.push('video: WebCodecs decoder or chunk API unavailable');
+      } else {
+        try {
+          this.videoConfig = buildVideoConfig(vTrack);
+          okVideo = (await VideoDecoder.isConfigSupported(this.videoConfig))?.supported === true;
+          if (!okVideo) this.videoConfig = null;
+        } catch (err) {
+          this.videoConfig = null;
+          failures.push('video: ' + String(err));
+        }
       }
     }
     if (aTrack) {
-      try {
-        this.audioConfig = buildAudioConfig(aTrack);
-        okAudio = (await AudioDecoder.isConfigSupported(this.audioConfig))?.supported === true;
-        if (!okAudio) this.audioConfig = null;
-      } catch (err) {
-        this.audioConfig = null;
-        failures.push('audio: ' + String(err));
+      if (!hasAudioWebCodecs()) {
+        failures.push('audio: WebCodecs decoder or chunk API unavailable');
+      } else {
+        try {
+          this.audioConfig = buildAudioConfig(aTrack);
+          okAudio = (await AudioDecoder.isConfigSupported(this.audioConfig))?.supported === true;
+          if (!okAudio) this.audioConfig = null;
+        } catch (err) {
+          this.audioConfig = null;
+          failures.push('audio: ' + String(err));
+        }
       }
     }
 

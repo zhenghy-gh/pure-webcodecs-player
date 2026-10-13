@@ -54,32 +54,36 @@ test('默认 codec 清单不可被调用方修改', () => {
 
 /* ------------------------------ has* 同步快判 ------------------------------ */
 
-test('hasWebCodecs：三家齐全才为 true，缺一即 false', async () => {
+test('hasWebCodecs：音视频 decoder 与两种 encoded chunk 构造器齐全才为 true', async () => {
   assert.equal(hasWebCodecs(), false);
   await withGlobals(
-    { VideoDecoder: class {}, AudioDecoder: class {}, EncodedVideoChunk: class {} },
+    { VideoDecoder: class {}, AudioDecoder: class {}, EncodedVideoChunk: class {}, EncodedAudioChunk: class {} },
     () => assert.equal(hasWebCodecs(), true),
   );
   await withGlobals(
-    { VideoDecoder: class {}, AudioDecoder: class {} }, // 缺 EncodedVideoChunk
+    { VideoDecoder: class {}, AudioDecoder: class {}, EncodedVideoChunk: class {} }, // 缺 EncodedAudioChunk
     () => assert.equal(hasWebCodecs(), false),
   );
   assert.equal(globalThis.VideoDecoder, undefined, 'Fake 已还原');
   assert.equal(globalThis.EncodedVideoChunk, undefined, 'Fake 已还原');
 });
 
-test('hasWebCodecs：全局构造器 getter 抛错时安全返回 false', () => {
-  const desc = Object.getOwnPropertyDescriptor(globalThis, 'VideoDecoder');
-  Object.defineProperty(globalThis, 'VideoDecoder', {
-    configurable: true,
-    get() { throw new Error('VideoDecoder accessor 抛错'); },
+test('hasWebCodecs：全局构造器 getter 抛错时安全返回 false', async () => {
+  await withGlobals({
+    VideoDecoder: class {}, AudioDecoder: class {},
+    EncodedVideoChunk: class {}, EncodedAudioChunk: class {},
+  }, async () => {
+    const desc = Object.getOwnPropertyDescriptor(globalThis, 'VideoDecoder');
+    Object.defineProperty(globalThis, 'VideoDecoder', {
+      configurable: true,
+      get() { throw new Error('VideoDecoder accessor 抛错'); },
+    });
+    try {
+      assert.equal(hasWebCodecs(), false);
+    } finally {
+      Object.defineProperty(globalThis, 'VideoDecoder', desc);
+    }
   });
-  try {
-    assert.equal(hasWebCodecs(), false);
-  } finally {
-    if (desc) Object.defineProperty(globalThis, 'VideoDecoder', desc);
-    else delete globalThis.VideoDecoder;
-  }
 });
 
 test('hasMSE / hasManagedMediaSource：全局 getter 抛错时安全返回 false', () => {
@@ -198,12 +202,28 @@ class FakeAudioDecoder {
   }
 }
 
+test('detectCapabilities：音视频 WebCodecs 家族可分别独立深探测', async () => {
+  await withGlobals({ AudioDecoder: FakeAudioDecoder, EncodedAudioChunk: class {} }, async () => {
+    const report = await detectCapabilities({ deep: true, videoCodecs: ['ok'], audioCodecs: ['a-ok'] });
+    assert.equal(report.webcodecs.supported, true);
+    assert.deepEqual({ ...report.webcodecs.video }, { ok: false });
+    assert.deepEqual({ ...report.webcodecs.audio }, { 'a-ok': true });
+  });
+  await withGlobals({ VideoDecoder: FakeVideoDecoder, EncodedVideoChunk: class {} }, async () => {
+    const report = await detectCapabilities({ deep: true, videoCodecs: ['ok'], audioCodecs: ['a-ok'] });
+    assert.equal(report.webcodecs.supported, true);
+    assert.deepEqual({ ...report.webcodecs.video }, { ok: true });
+    assert.deepEqual({ ...report.webcodecs.audio }, { 'a-ok': false });
+  });
+});
+
 test('detectCapabilities：WebCodecs 支持路径逐 codec 深探测，异常/undefined 计 false', async () => {
   await withGlobals(
     {
       VideoDecoder: FakeVideoDecoder,
       AudioDecoder: FakeAudioDecoder,
       EncodedVideoChunk: class {},
+      EncodedAudioChunk: class {},
     },
     async () => {
       resetCapabilityCache();
@@ -246,7 +266,7 @@ test('detectCapabilities：MSE 支持路径按 isTypeSupported 命中收集 mime
 
 test('detectCapabilities：codec 列表去重、去空白并忽略非字符串', async () => {
   await withGlobals(
-    { VideoDecoder: FakeVideoDecoder, AudioDecoder: FakeAudioDecoder, EncodedVideoChunk: class {} },
+    { VideoDecoder: FakeVideoDecoder, AudioDecoder: FakeAudioDecoder, EncodedVideoChunk: class {}, EncodedAudioChunk: class {} },
     async () => {
       const report = await detectCapabilities({
         deep: true,
@@ -308,7 +328,7 @@ test('detectCapabilities：并发同 key 只执行一次 probe，reset 不接收
     }
   }
   await withGlobals(
-    { VideoDecoder: SlowVideoDecoder, AudioDecoder: SlowAudioDecoder, EncodedVideoChunk: class {} },
+    { VideoDecoder: SlowVideoDecoder, AudioDecoder: SlowAudioDecoder, EncodedVideoChunk: class {}, EncodedAudioChunk: class {} },
     async () => {
       resetCapabilityCache();
       const p1 = detectCapabilities({ videoCodecs: ['x', ' x '], audioCodecs: ['y'] });
@@ -357,11 +377,25 @@ test('detectCapabilities：secureContext 与 audioWorklet/webgpu 反映注入环
   assert.equal(globalThis.isSecureContext, undefined, 'Fake 已还原');
 });
 
-test('canDecodeVideo / canDecodeAudio：无 WebCodecs 直接 false；异常与空结果计 false', async () => {
+test('canDecodeVideo / canDecodeAudio：各自检查 decoder/chunk API；异常与空结果计 false', async () => {
   assert.equal(await canDecodeVideo({ codec: 'ok' }), false);
   assert.equal(await canDecodeAudio({ codec: 'a-ok' }), false);
   await withGlobals(
-    { VideoDecoder: FakeVideoDecoder, AudioDecoder: FakeAudioDecoder, EncodedVideoChunk: class {} },
+    { VideoDecoder: FakeVideoDecoder, EncodedVideoChunk: class {} },
+    async () => {
+      assert.equal(await canDecodeVideo({ codec: 'ok' }), true);
+      assert.equal(await canDecodeAudio({ codec: 'a-ok' }), false, '缺 AudioDecoder 和 EncodedAudioChunk');
+    },
+  );
+  await withGlobals(
+    { AudioDecoder: FakeAudioDecoder, EncodedAudioChunk: class {} },
+    async () => {
+      assert.equal(await canDecodeAudio({ codec: 'a-ok' }), true);
+      assert.equal(await canDecodeVideo({ codec: 'ok' }), false, '缺 VideoDecoder 和 EncodedVideoChunk');
+    },
+  );
+  await withGlobals(
+    { VideoDecoder: FakeVideoDecoder, AudioDecoder: FakeAudioDecoder, EncodedVideoChunk: class {}, EncodedAudioChunk: class {} },
     async () => {
       assert.equal(await canDecodeVideo({ codec: 'ok' }), true);
       assert.equal(await canDecodeVideo({ codec: 'no' }), false);
@@ -513,6 +547,7 @@ test('detectCapabilitiesLegacy：WC 命中 → pipeline=webcodecs，managed/comb
       VideoDecoder: FakeVideoDecoder,
       AudioDecoder: FakeAudioDecoder,
       EncodedVideoChunk: class {},
+      EncodedAudioChunk: class {},
       MediaSource: FakeMediaSource,
       ManagedMediaSource: class {},
     },

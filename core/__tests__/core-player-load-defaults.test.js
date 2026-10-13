@@ -116,6 +116,7 @@ test('默认 WC 管线：detectForMedia 合并媒体 codec 深探测后裁决 we
     VideoDecoder: FakeVideoDecoder,
     AudioDecoder: FakeAudioDecoder,
     EncodedVideoChunk: class {},
+    EncodedAudioChunk: class {},
   }, async () => {
     FakeVideoDecoder.reset();
     // 不注入 capabilities / pipelineFactory：走 detectForMedia + DEFAULT_WC_PIPELINE
@@ -171,9 +172,9 @@ test('默认 WC 工厂：复合轨缺少任一所需 decoder 时不初始化不�
   });
 });
 
-test('默认 WC 工厂：纯音频只要求 AudioDecoder', async () => {
+test('默认 WC 工厂：纯音频只要求 AudioDecoder 与 EncodedAudioChunk', async () => {
   const audioOnly = { ...mediaInfo, tracks: [mediaInfo.tracks[1]] };
-  await withGlobals({ AudioDecoder: FakeAudioDecoder }, async () => {
+  await withGlobals({ AudioDecoder: FakeAudioDecoder, EncodedAudioChunk: class {} }, async () => {
     const p = new Player({
       route: 'webcodecs',
       demuxerFactory: async () => ({ open: async () => audioOnly, destroy: async () => {} }),
