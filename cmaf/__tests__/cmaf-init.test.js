@@ -49,6 +49,7 @@ test('init：avcC 提取 entryType=fourcc=bytes 与 timescale', () => {
 
   const info = parseInitSegment(init);
   assert.equal(info.video.timescale, 90000);
+  assert.equal(info.video.trackId, 1, '解析视频轨真实 tkhd.track_ID');
   assert.equal(info.audio, null, '纯视频 init 不应含音频');
 });
 
@@ -99,6 +100,7 @@ test('init：mp4a/esds 提取 AudioSpecificConfig 与 AOT/timescale', () => {
   assert.equal(info.audio.codecAot, 2, 'ASC 高 5 位为 AOT=2');
   // 修正后按 hdlr('soun') 关联：单音频轨 mdhd timescale 取真实 44100，而非默认 48000
   assert.equal(info.audio.timescale, 44100, '按 hdlr 关联后单音频轨取真实 timescale=44100');
+  assert.equal(info.audio.trackId, 2, '解析音频轨真实 tkhd.track_ID');
   assert.equal(info.video, null, '纯音频 init 不应含视频');
 });
 

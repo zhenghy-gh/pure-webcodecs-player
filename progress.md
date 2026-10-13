@@ -1428,4 +1428,27 @@
 - 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
 
 ### 风险
-- hasWebCodecs() 继续代表“全套音视频 API 齐全”，避免改变旧同步快判语义；轨道-aware 的深探测、Player 默认工厂和 MP4 pipeline 则单独允许完整 API 家族。CMAF appendChunk 仍以 trackId===1 做视频启发式分类。
+- hasWebCodecs() 继续代表“全套音视频 API 齐全”；单轨探测则按对应完整 API 族进行。
+
+## Attempt 65：CMAF 解码按 init 中的 tkhd.track_ID 精确路由
+
+### 发现
+- 复现条件：视频轨 ID 不为 1、音频轨 ID 不为 2，或片段中包含 init 未声明的未知轨道。
+- 根因：CmafWebCodecsPlayer.appendChunk() 将 trackId===1 硬编码为视频，并把所有其余轨道回退给音频解码器；其行为忽略了 init 的 trak/tkhd 映射，导致合法非默认 track_ID 送入错误 decoder，未知 ID 也可能被误解码。
+- 用户影响：使用非 1/2 轨道编号的 CMAF 内容会丢帧、错音或在 WebCodecs decoder 抛错；未知轨道无法安全跳过。
+
+### 修改
+- cmaf/src/chunk-parser.js：按 moov/trak/hdlr 关联媒体族，从同一 trak 的 tkhd 解析 v0/v1 track_ID，并与 timescale 一起返回；保留 findTimescales() 的原有结果形状。
+- cmaf/src/webcodecs.js：decoder track 元数据保留轨 ID；open() 对缺失/无效 ID 提前拒绝；appendChunk() 精确匹配视频/音频 ID，忽略未配置 ID，close() 清除关联 ID。
+- cmaf/__tests__：覆盖 tkhd ID 提取、纯音频/视频与任意非 1/2 双轨路由、错误 ID 不误投、正确 Encoded*Chunk 类型。
+
+### 验证
+- 定向 CMAF init / WebCodecs / parse / fragment 测试：42/42 通过。
+- 真实 Chromium MSE sintel-trailer.mp4 验收：19/19 通过；包括真实解码、播放、seek、stall 恢复与 destroy。
+- npm run check：fixtures 通过；全量测试 3198/3198；lint 548 个 JS 文件通过；完整门禁通过（exit code 0）。
+
+### 提交和推送
+- 全量门禁完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- CMAF init 路由元数据目前对每种已支持族视频、音频各保留一条配置轨；其他 ID 被有意跳过，而不是猜测 decoder 类型。

@@ -25,7 +25,7 @@ const FAKE_AVC_C = new Uint8Array([
 ]);
 const ASC = new Uint8Array([0x12, 0x10]); // AOT=2(LC) 44.1kHz 双声道
 
-function makeVideoTrak() {
+function makeVideoTrak(extra = {}) {
   return {
     id: 1,
     type: 'video',
@@ -34,9 +34,10 @@ function makeVideoTrak() {
     width: 640,
     height: 360,
     timescale: 90000,
+    ...extra,
   };
 }
-function makeAudioTrak() {
+function makeAudioTrak(extra = {}) {
   return {
     id: 2,
     type: 'audio',
@@ -45,6 +46,7 @@ function makeAudioTrak() {
     sampleRate: 44100,
     channels: 2,
     timescale: 44100,
+    ...extra,
   };
 }
 function makeVideoFrames(baseDts, count) {
@@ -231,8 +233,8 @@ describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
       assert.equal(cfg.audio.codec, 'mp4a.40.2');
       assert.equal(cfg.audio.sampleRate, 44100, 'ASC 索引 4 → 44100');
       assert.equal(cfg.audio.numberOfChannels, 2);
-      assert.deepEqual(cfg.videoTrack, { timescale: 90000 });
-      assert.deepEqual(cfg.audioTrack, { timescale: 44100 });
+      assert.deepEqual(cfg.videoTrack, { trackId: 1, timescale: 90000 });
+      assert.deepEqual(cfg.audioTrack, { trackId: 2, timescale: 44100 });
 
       const vd = fakes.videoDecoders[0];
       const ad = fakes.audioDecoders[0];
@@ -285,7 +287,30 @@ describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
     });
   });
 
-  test('appendChunk：trackId≠1 分发到 AudioDecoder；未知轨同样回退音频（trackId===1 视频启发式）', async () => {
+  test('appendChunk：使用 init 中的 track_ID 路由非 1/2 的音视频轨，忽略未知轨', async () => {
+    await withWebCodecs(async (fakes) => {
+      const init = fmp4.buildInit([makeVideoTrak({ id: 7 }), makeAudioTrak({ id: 9 })]);
+      const videoFrag = fmp4.buildFragment({ trackId: 7, samples: makeVideoFrames(0, 3), hasCts: true });
+      const audioFrag = fmp4.buildAudioFragment(9, 44100, makeVideoFrames(0, 2));
+      const payload = fmp4.concat([videoFrag, audioFrag]);
+      const player = new CmafWebCodecsPlayer();
+      const cfg = await player.open(init);
+      assert.equal(cfg.videoTrack.trackId, 7);
+      assert.equal(cfg.audioTrack.trackId, 9);
+      const chunks = splitChunks(payload).chunks;
+      player.appendChunk(chunks[0], payload);
+      player.appendChunk(chunks[1], payload);
+      assert.equal(fakes.videoDecoders[0].decoded.length, 3);
+      assert.equal(fakes.audioDecoders[0].decoded.length, 2);
+      assert.ok(fakes.videoDecoders[0].decoded[0] instanceof fakes.FakeEncodedVideoChunk);
+      assert.ok(fakes.audioDecoders[0].decoded[0] instanceof fakes.FakeEncodedAudioChunk);
+      player.appendChunk({ tracks: [{ trackId: 1, samples: [{ durationTicks: 1, size: 1, keyframe: true, dtsOffset: 0, dataStart: 0 }] }] }, payload);
+      assert.equal(fakes.videoDecoders[0].decoded.length, 3, 'trackId=1 不得误投到已配置 video track');
+      assert.equal(fakes.audioDecoders[0].decoded.length, 2, '未知轨不得回退投递到 audio decoder');
+    });
+  });
+
+  test('appendChunk：按 init 中的音频 track_ID 解码且忽略未知轨', async () => {
     await withWebCodecs(async (fakes) => {
       const { init, buf } = buildAudioStream();
       const p = new CmafWebCodecsPlayer();
@@ -300,10 +325,10 @@ describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
       assert.equal(ad.decoded[0].type, 'key');
       assert.equal(ad.decoded[0].duration, Math.round((3003 / 44100) * 1e6), '音频 timescale 44100 换算');
 
-      // trackId≠1 一律回退音频解码器（trackId===1 为视频的骨架启发式，含未知轨）
+      // 不匹配 init track_ID 的轨道不能回退误投到音频 decoder。
       const ad2 = fakes.audioDecoders[0];
       p.appendChunk({ tracks: [{ trackId: 9, samples: [{ durationTicks: 1, size: 1, keyframe: true, dtsOffset: 0, dataStart: 0 }] }] }, buf);
-      assert.equal(ad2.decoded.length, 3, '未知轨回退音频解码器');
+      assert.equal(ad2.decoded.length, 2, '未知轨应被忽略');
     });
   });
 

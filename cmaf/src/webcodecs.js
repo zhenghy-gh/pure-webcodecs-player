@@ -51,7 +51,8 @@ export function codecStringFromAsc(asc) {
  * 从 CMAF init segment 推导解码配置。
  * @param {Uint8Array} initBytes
  * @returns {{video:VideoDecoderConfig|null, audio:AudioDecoderConfig|null,
- *            videoTrack:{timescale:number}|null, audioTrack:{timescale:number}|null}}
+ *            videoTrack:{trackId:number|null,timescale:number}|null,
+ *            audioTrack:{trackId:number|null,timescale:number}|null}}
  */
 export function decoderConfigsFromInit(initBytes) {
   const info = parseInitSegment(initBytes);
@@ -77,8 +78,8 @@ export function decoderConfigsFromInit(initBytes) {
   return {
     video,
     audio,
-    videoTrack: info.video ? { timescale: info.video.timescale } : null,
-    audioTrack: info.audio ? { timescale: info.audio.timescale } : null,
+    videoTrack: info.video ? { trackId: info.video.trackId, timescale: info.video.timescale } : null,
+    audioTrack: info.audio ? { trackId: info.audio.trackId, timescale: info.audio.timescale } : null,
   };
 }
 
@@ -115,12 +116,20 @@ export class CmafWebCodecsPlayer {
     /** @type {AudioDecoder|null} */ this.audioDecoder = null;
     this.videoTimescale = 90000;
     this.audioTimescale = 48000;
+    this.videoTrackId = null;
+    this.audioTrackId = null;
     this._pending = [];
   }
 
   /** 解析 init segment 并建立解码器 */
   async open(initBytes) {
     const cfg = decoderConfigsFromInit(initBytes);
+    if (cfg.video && !(cfg.videoTrack.trackId > 0)) {
+      throw notSupported('视频轨缺少有效的 tkhd track_ID，无法关联 CMAF 分片');
+    }
+    if (cfg.audio && !(cfg.audioTrack.trackId > 0)) {
+      throw notSupported('音频轨缺少有效的 tkhd track_ID，无法关联 CMAF 分片');
+    }
     if (cfg.video && !hasVideoWebCodecs()) {
       throw notSupported('当前环境缺少视频 WebCodecs decoder 或 chunk API');
     }
@@ -128,6 +137,7 @@ export class CmafWebCodecsPlayer {
       throw notSupported('当前环境缺少音频 WebCodecs decoder 或 chunk API');
     }
     if (cfg.video) {
+      this.videoTrackId = cfg.videoTrack.trackId;
       this.videoTimescale = cfg.videoTrack.timescale;
       const support = await window.VideoDecoder.isConfigSupported(cfg.video);
       if (!support.supported) {
@@ -140,6 +150,7 @@ export class CmafWebCodecsPlayer {
       this.videoDecoder.configure(cfg.video);
     }
     if (cfg.audio) {
+      this.audioTrackId = cfg.audioTrack.trackId;
       this.audioTimescale = cfg.audioTrack.timescale;
       this.audioDecoder = new window.AudioDecoder({
         output: (data) => this.onAudioData(data),
@@ -158,8 +169,9 @@ export class CmafWebCodecsPlayer {
    */
   appendChunk(chunk, buf) {
     for (const track of chunk.tracks) {
-      const isVideo = !!this.videoDecoder && track.trackId === 1;
-      const decoder = isVideo ? this.videoDecoder : this.audioDecoder;
+      const isVideo = !!this.videoDecoder && track.trackId === this.videoTrackId;
+      const isAudio = !!this.audioDecoder && track.trackId === this.audioTrackId;
+      const decoder = isVideo ? this.videoDecoder : isAudio ? this.audioDecoder : null;
       if (!decoder) continue;
       const ts = isVideo ? this.videoTimescale : this.audioTimescale;
       for (const s of track.samples) {
@@ -193,6 +205,8 @@ export class CmafWebCodecsPlayer {
     } finally {
       this.videoDecoder = null;
       this.audioDecoder = null;
+      this.videoTrackId = null;
+      this.audioTrackId = null;
     }
   }
 }

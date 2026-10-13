@@ -187,57 +187,75 @@ export function parseInitSegment(initBytes) {
   const videoCfg = findVideoDecoderConfig(initBytes);
   const asc = findAudioSpecificConfig(initBytes);
 
-  /** 按 trak 树关联提取 timescale（复用 hdlr 判定轨类型，非全文件字节扫描） */
-  const timescales = findTimescales(initBytes);
+  /** 按 trak 树关联提取 track ID 与 timescale（复用 hdlr 判定轨类型） */
+  const tracks = findTrackMetadata(initBytes);
 
   return {
     video: videoCfg
       ? {
           entryType: videoCfg.entryType,
           description: videoCfg.description,
-          timescale: timescales.video ?? 90000,
+          trackId: tracks.video?.trackId ?? null,
+          timescale: tracks.video?.timescale ?? 90000,
         }
       : null,
-    audio: asc ? { asc, codecAot: (asc[0] >> 3) & 0x1f, timescale: timescales.audio ?? 48000 } : null,
+    audio: asc
+      ? {
+          asc,
+          codecAot: (asc[0] >> 3) & 0x1f,
+          trackId: tracks.audio?.trackId ?? null,
+          timescale: tracks.audio?.timescale ?? 48000,
+        }
+      : null,
   };
 }
 
 /**
  * 从 init segment 的 moov 树按 trak 结构关联提取各轨 timescale。
- *
- * 修正（audit-79 C-2）：旧实现全文件扫描 'mdhd' 字节串、并以出现顺序
- * 假定"第 1 个 mdhd=视频、第 2 个=音频"，在音视频顺序非常规、或解码配置
- * 字节里恰含 'mdhd' 序列时会取错。这里改为遍历
- *   moov → trak → mdia，用 hdlr.handlerType 判定轨类型
- * （'vide'→视频、'soun'→音频），再读同 trak 的 mdhd 取 timescale。
- * 不依赖出现顺序，也不扫描解码配置字节（avcC/hvcC/esds 等二进制内
- * 理论上也可出现这 4 字节，全文件扫描会误命中）。
+ * 复用 hdlr 判定媒体族，并从同一 trak 的 tkhd 读取 ID；不依赖轨道顺序。
  *
  * @param {Uint8Array} initBytes ftyp+moov 字节
  * @returns {{video?:number, audio?:number}}
  */
 export function findTimescales(initBytes) {
+  const metadata = findTrackMetadata(initBytes);
+  return {
+    ...(metadata.video?.timescale != null ? { video: metadata.video.timescale } : {}),
+    ...(metadata.audio?.timescale != null ? { audio: metadata.audio.timescale } : {}),
+  };
+}
+
+/** 从 moov 中按媒体族返回每个轨的 track ID 与 timescale。 */
+function findTrackMetadata(initBytes) {
   const result = {};
-  // 顶层定位 moov（非全文件扫描）
   const moov = findBox(initBytes, 0, initBytes.length, 'moov');
   if (!moov) return result;
   for (const trak of iterateBoxes(initBytes, moov.contentStart, moov.contentEnd)) {
     if (trak.type !== 'trak') continue;
+    const tkhd = findBox(initBytes, trak.contentStart, trak.contentEnd, 'tkhd');
     const mdia = findBox(initBytes, trak.contentStart, trak.contentEnd, 'mdia');
-    if (!mdia) continue; // 缺 mdia：兜底跳过该轨
-    const mdhd = findBox(initBytes, mdia.contentStart, mdia.contentEnd, 'mdhd');
-    if (!mdhd) continue; // 缺 mdhd：兜底跳过该轨
+    if (!mdia) continue;
     const handlerType = readHandlerType(initBytes, mdia);
-    const ts = readMdhdTimescale(initBytes, mdhd);
-    if (ts == null) continue; // timescale 非法：兜底跳过
-    if (handlerType === 'soun') {
-      if (result.audio == null) result.audio = ts;
-    } else if (handlerType === 'vide') {
-      if (result.video == null) result.video = ts;
-    }
-    // 其他 handlerType / 缺 hdlr：兜底跳过该轨
+    const key = handlerType === 'vide' ? 'video' : handlerType === 'soun' ? 'audio' : null;
+    if (!key) continue;
+    const trackId = tkhd ? readTrackId(initBytes, tkhd) : null;
+    const mdhd = findBox(initBytes, mdia.contentStart, mdia.contentEnd, 'mdhd');
+    const timescale = mdhd ? readMdhdTimescale(initBytes, mdhd) : null;
+    const metadata = result[key] ??= { trackId: null, timescale: null };
+    if (metadata.trackId == null && trackId != null) metadata.trackId = trackId;
+    if (metadata.timescale == null && timescale != null) metadata.timescale = timescale;
   }
   return result;
+}
+
+/** 读取 tkhd.track_ID；不支持的版本、截断或保留值 0 返回 null。 */
+function readTrackId(buf, tkhd) {
+  const version = buf[tkhd.contentStart];
+  if (version !== 0 && version !== 1) return null;
+  const idOffset = tkhd.contentStart + (version === 1 ? 20 : 12);
+  if (idOffset + 4 > tkhd.contentEnd || idOffset + 4 > buf.length) return null;
+  const id = new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint32(idOffset);
+  return id > 0 ? id : null;
 }
 
 /** 读 hdlr 的 handlerType（4 字符）；缺 hdlr/截断返回 null */
