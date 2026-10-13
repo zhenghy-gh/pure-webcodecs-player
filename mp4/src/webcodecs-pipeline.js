@@ -76,21 +76,38 @@ export class Mp4WebCodecsPipeline {
     const info = this.demuxer.getMediaInfo();
     const vTrack = info?.tracks.find((t) => t.type === TrackType.VIDEO);
     const aTrack = info?.tracks.find((t) => t.type === TrackType.AUDIO);
-    let okVideo = true;
-    let okAudio = true;
-    try {
-      if (vTrack) {
+    let okVideo = !vTrack;
+    let okAudio = !aTrack;
+    const failures = [];
+
+    if (vTrack) {
+      try {
         this.videoConfig = buildVideoConfig(vTrack);
         okVideo = (await VideoDecoder.isConfigSupported(this.videoConfig))?.supported === true;
+        if (!okVideo) this.videoConfig = null;
+      } catch (err) {
+        this.videoConfig = null;
+        failures.push('video: ' + String(err));
       }
-      if (aTrack) {
+    }
+    if (aTrack) {
+      try {
         this.audioConfig = buildAudioConfig(aTrack);
         okAudio = (await AudioDecoder.isConfigSupported(this.audioConfig))?.supported === true;
+        if (!okAudio) this.audioConfig = null;
+      } catch (err) {
+        this.audioConfig = null;
+        failures.push('audio: ' + String(err));
       }
-    } catch (err) {
-      return { supported: false, reason: String(err), video: false, audio: false };
     }
-    return { supported: okVideo || okAudio, video: okVideo, audio: okAudio, reason: okVideo || okAudio ? null : 'configs unsupported' };
+
+    const supported = okVideo || okAudio;
+    return {
+      supported,
+      video: okVideo,
+      audio: okAudio,
+      reason: supported ? null : failures.length ? failures.join('; ') : 'configs unsupported',
+    };
   }
 
   async _ensureDecoders() {

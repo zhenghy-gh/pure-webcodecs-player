@@ -1353,3 +1353,27 @@
 
 ### 风险
 - 对连续 DTS 输入使用量化 DTS 区间得出的 duration；单轨 segment 的 decode timeline 以 timescale tick 为准。真正的 tick 间隙或重叠仍会在 segment 构建前被拒绝。
+
+## Attempt 62：隔离 WebCodecs 音视频轨能力探测错误
+
+### 发现
+- 复现条件：含音视频双轨的媒体中，VideoDecoder.isConfigSupported 或 AudioDecoder.isConfigSupported 单独一个抛异常。
+- 根因：supported() 将两个异步探测放进单一 try/catch；首个探测异常会直接返回双轨 unsupported，连尚未探测或另一轨本可成功的 decoder 都被判为失败。先探测到的轨配置也可能残留为不可用状态。
+- 影响：浏览器仅支持音频或仅支持视频时，单轨 WebCodecs 异常阻断可解轨道，造成不必要的 MSE/播放路线降级或完全无法播放。
+
+### 修改
+- mp4/src/webcodecs-pipeline.js：视频/音频配置探测分别捕获异常，单轨 unsupported 时清理其配置并记录轨道级错误；另一轨探测照常完成，支持任一轨时继续启动对应 decoder/pump。仅两轨均不可用时报告失败原因。
+- mp4/__tests__/webcodecs-pipeline.test.js：新增视频探测异常但音频保留，以及音频异常但视频保留的双向断言，同时检查成功轨配置缓存、失败轨配置清理。
+- 测试 fake decoder 的异常状态拆分为视频/音频各自独立，避免共享 static 继承导致假阳性/假阴性。
+
+### 验证
+- WebCodecs pipeline + gaps 定向测试：13/13 通过。
+- npm run check：fixtures 通过；全量测试 3192/3192；lint 548 个 JS 文件通过；全门禁通过。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；MSE 初始化、视频解码、播放/seek、stall 恢复、buffered 与 destroy 均通过。
+- E2E 临时截图已恢复；git diff --check 通过。
+
+### 提交和推送
+- 修复和进度记录完成后独立提交并推送当前分支 maintenance/round-6。
+
+### 风险
+- 支持结果保持现有 any-track 成功策略；如果单轨不支持，仍跳过该轨 decoder/pump，不为单轨保留失败配置。无公共 API 更改。

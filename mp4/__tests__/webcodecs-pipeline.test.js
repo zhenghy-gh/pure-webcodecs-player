@@ -82,7 +82,7 @@ class FakeVideoDecoder {
   static supported = true;
   static throws = false;
   static async isConfigSupported(config) {
-    if (FakeVideoDecoder.throws) throw new Error('isConfigSupported exploded');
+    if (this.throws) throw new Error(`${this.name ?? 'decoder'} isConfigSupported exploded`);
     return { supported: this.supported };
   }
   constructor(init) {
@@ -101,7 +101,9 @@ class FakeVideoDecoder {
   close() { this.closes += 1; }
 }
 
-class FakeAudioDecoder extends FakeVideoDecoder {}
+class FakeAudioDecoder extends FakeVideoDecoder {
+  static throws = false;
+}
 class FakeEncodedVideoChunk {
   constructor(init) { this.init = init; }
 }
@@ -174,12 +176,22 @@ test('管线 supported()：isConfigSupported 三分支与配置缓存', async ()
     FakeVideoDecoder.supported = true;
     FakeAudioDecoder.supported = true;
 
-    // isConfigSupported 抛异常 → 显式 unsupported + reason
+    // 单轨探测异常不能抹除另一轨的有效支持
     FakeVideoDecoder.throws = true;
-    const boom = await pipeline.supported();
-    assert.equal(boom.supported, false);
-    assert.match(boom.reason, /exploded/);
+    const audioOnly = await pipeline.supported();
+    assert.deepEqual({ supported: audioOnly.supported, video: audioOnly.video, audio: audioOnly.audio, reason: audioOnly.reason },
+      { supported: true, video: false, audio: true, reason: null });
+    assert.equal(pipeline.videoConfig, null);
+    assert.equal(pipeline.audioConfig.sampleRate, 44100);
     FakeVideoDecoder.throws = false;
+
+    FakeAudioDecoder.throws = true;
+    const videoOnly = await pipeline.supported();
+    assert.deepEqual({ supported: videoOnly.supported, video: videoOnly.video, audio: videoOnly.audio, reason: videoOnly.reason },
+      { supported: true, video: true, audio: false, reason: null });
+    assert.equal(pipeline.videoConfig.codec, 'avc1.42001E');
+    assert.equal(pipeline.audioConfig, null);
+    FakeAudioDecoder.throws = false;
   });
 });
 
