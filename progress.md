@@ -1473,7 +1473,7 @@
 - 完成全量门禁和浏览器验收后，独立提交并推送 maintenance/round-6。
 
 ### 风险
-- 生命周期队列按 open()/close() 调用顺序执行，failed operation 会恢复队列；不承诺跨不同 CmafWebCodecsPlayer 实例串行。
+- CMAF open() 的多个同时并发调用仍未串行化；当前修改保障单次调用的预检与 decoder pair 安全替换。
 
 ## Attempt 67：串行化 CMAF open/close 生命周期操作
 
@@ -1496,3 +1496,25 @@
 
 ### 风险
 - 队列约束同一 player 实例上的生命周期顺序；不同实例之间无共享队列。
+
+## Attempt 68：CMAF flush 拒绝时继续关闭所有 decoder
+
+### 发现
+- 复现条件：双轨 close() 中 VideoDecoder.flush() 或 close() 抛错/拒绝。
+- 根因：_closeNow() 之前顺序 await video flush→close→audio flush→close；任何 video 操作异常都会直接跳至 finally，清空 player 引用却没有实际 flush/close 音频 decoder，且失败轨也可能保持打开。
+- 用户影响：一次 flush 错误会泄漏另一条 decoder 的内部队列/资源，close() 表面释放了引用却不能保证底层解码器已关闭。
+
+### 修改
+- cmaf/src/webcodecs.js：逐 decoder 独立 try/catch flush 和 close；记录并最终抛出首个错误，但仍处理另一个 decoder；finally 一定清空 decoder 与 track ID。
+- cmaf/__tests__/cmaf-webcodecs-env.test.js：复现 video flush 拒绝和 video close 抛错，断言 video/audio 均尽力 close、引用被清空、首错被报告，且 lifecycle 队列在失败后可继续使用。
+
+### 验证
+- 定向 CMAF WebCodecs / init / parse：45/45 通过。
+- 全量 npm run check：fixtures 通过；全量测试 3204/3204；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实 decode、play、seek、stall recovery 与 destroy 均通过；E2E 截图已恢复。
+
+### 提交和推送
+- 验证完毕后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 底层 decoder.close() 自身若抛错，逻辑会继续清理另一个 decoder；该 decoder 内部是否可回收仍由浏览器实现决定。

@@ -235,14 +235,21 @@ export class CmafWebCodecsPlayer {
   }
 
   async _closeNow() {
+    const decoders = [this.videoDecoder, this.audioDecoder];
+    let firstError = null;
     try {
-      if (this.videoDecoder && this.videoDecoder.state !== 'closed') {
-        await this.videoDecoder.flush();
-        this.videoDecoder.close();
-      }
-      if (this.audioDecoder && this.audioDecoder.state !== 'closed') {
-        await this.audioDecoder.flush();
-        this.audioDecoder.close();
+      for (const decoder of decoders) {
+        if (!decoder || decoder.state === 'closed') continue;
+        try {
+          await decoder.flush();
+        } catch (err) {
+          firstError ??= err;
+        }
+        try {
+          decoder.close();
+        } catch (err) {
+          firstError ??= err;
+        }
       }
     } finally {
       this.videoDecoder = null;
@@ -250,5 +257,6 @@ export class CmafWebCodecsPlayer {
       this.videoTrackId = null;
       this.audioTrackId = null;
     }
+    if (firstError) throw firstError;
   }
 }

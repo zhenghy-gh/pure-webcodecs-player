@@ -101,7 +101,7 @@ async function withGlobals(patch, fn) {
 }
 
 function makeFakes() {
-  const env = { videoSupported: true, audioSupported: true, audioConfigureThrows: false, videoProbe: null };
+  const env = { videoSupported: true, audioSupported: true, audioConfigureThrows: false, videoProbe: null, videoFlushError: null, audioFlushError: null };
   const videoDecoders = [];
   const audioDecoders = [];
   const chunks = [];
@@ -139,7 +139,10 @@ function makeFakes() {
       if (this.state === 'closed') throw new Error('decode on closed decoder');
       this.decoded.push(chunk);
     }
-    async flush() { this.flushes++; }
+    async flush() {
+      this.flushes++;
+      if (env.videoFlushError) throw env.videoFlushError;
+    }
     close() { this.closed++; this.state = 'closed'; }
   }
 
@@ -166,7 +169,10 @@ function makeFakes() {
       if (this.state === 'closed') throw new Error('decode on closed decoder');
       this.decoded.push(chunk);
     }
-    async flush() { this.flushes++; }
+    async flush() {
+      this.flushes++;
+      if (env.audioFlushError) throw env.audioFlushError;
+    }
     close() { this.closed++; this.state = 'closed'; }
   }
 
@@ -462,6 +468,46 @@ describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
       p.appendChunk(chunks[0], buf.subarray(chunkStart));
       assert.equal(errors.length, 3, '每样本错误都上报');
       assert.equal(errors[0].message, 'boom');
+    });
+  });
+
+  test('close：video flush 失败仍清理双 decoder，保留原错且队列可恢复', async () => {
+    await withWebCodecs(async (fakes) => {
+      const player = new CmafWebCodecsPlayer();
+      await player.open(buildAvStream().init);
+      const videoDecoder = player.videoDecoder;
+      const audioDecoder = player.audioDecoder;
+      const videoError = new Error('video flush failed');
+      fakes.env.videoFlushError = videoError;
+      await assert.rejects(() => player.close(), (err) => err === videoError);
+      assert.equal(videoDecoder.flushes, 1);
+      assert.equal(videoDecoder.closed, 1, '关闭 video 即使 flush 拒绝');
+      assert.equal(audioDecoder.flushes, 1, '继续 flush audio');
+      assert.equal(audioDecoder.closed, 1, '继续 close audio');
+      assert.equal(player.videoDecoder, null);
+      assert.equal(player.audioDecoder, null);
+      assert.equal(player.videoTrackId, null);
+      assert.equal(player.audioTrackId, null);
+
+      fakes.env.videoFlushError = null;
+      await player.open(buildAvStream().init);
+      assert.ok(player.videoDecoder && player.audioDecoder, 'flush error 不应 poison lifecycle queue');
+    });
+  });
+
+  test('close：video close 抛错仍释放 audio decoder 并报告首错', async () => {
+    await withWebCodecs(async (fakes) => {
+      const player = new CmafWebCodecsPlayer();
+      await player.open(buildAvStream().init);
+      const videoDecoder = player.videoDecoder;
+      const audioDecoder = player.audioDecoder;
+      const videoError = new Error('video close failed');
+      videoDecoder.close = () => { throw videoError; };
+      await assert.rejects(() => player.close(), (err) => err === videoError);
+      assert.equal(audioDecoder.flushes, 1);
+      assert.equal(audioDecoder.closed, 1);
+      assert.equal(player.videoDecoder, null);
+      assert.equal(player.audioDecoder, null);
     });
   });
 
