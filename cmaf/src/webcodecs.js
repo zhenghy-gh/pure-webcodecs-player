@@ -118,11 +118,22 @@ export class CmafWebCodecsPlayer {
     this.audioTimescale = 48000;
     this.videoTrackId = null;
     this.audioTrackId = null;
+    this._lifecycleTail = Promise.resolve();
     this._pending = [];
   }
 
   /** 解析 init segment 并建立解码器 */
-  async open(initBytes) {
+  open(initBytes) {
+    return this._enqueueLifecycle(() => this._open(initBytes));
+  }
+
+  _enqueueLifecycle(operation) {
+    const result = this._lifecycleTail.then(operation);
+    this._lifecycleTail = result.catch(() => {});
+    return result;
+  }
+
+  async _open(initBytes) {
     const cfg = decoderConfigsFromInit(initBytes);
     if (cfg.video && !(cfg.videoTrack.trackId > 0)) {
       throw notSupported('视频轨缺少有效的 tkhd track_ID，无法关联 CMAF 分片');
@@ -170,7 +181,7 @@ export class CmafWebCodecsPlayer {
       }
 
       // Replace old decoders only after all new families are configured successfully.
-      await this.close();
+      await this._closeNow();
       this.videoDecoder = videoDecoder;
       this.audioDecoder = audioDecoder;
       this.videoTrackId = cfg.videoTrack?.trackId ?? null;
@@ -219,7 +230,11 @@ export class CmafWebCodecsPlayer {
   }
 
   /** 等待全部队列解码完成并释放 */
-  async close() {
+  close() {
+    return this._enqueueLifecycle(() => this._closeNow());
+  }
+
+  async _closeNow() {
     try {
       if (this.videoDecoder && this.videoDecoder.state !== 'closed') {
         await this.videoDecoder.flush();

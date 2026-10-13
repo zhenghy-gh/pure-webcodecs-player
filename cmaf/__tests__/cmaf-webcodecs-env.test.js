@@ -101,7 +101,7 @@ async function withGlobals(patch, fn) {
 }
 
 function makeFakes() {
-  const env = { videoSupported: true, audioSupported: true, audioConfigureThrows: false };
+  const env = { videoSupported: true, audioSupported: true, audioConfigureThrows: false, videoProbe: null };
   const videoDecoders = [];
   const audioDecoders = [];
   const chunks = [];
@@ -131,6 +131,7 @@ function makeFakes() {
       videoDecoders.push(this);
     }
     static async isConfigSupported(cfg) {
+      if (env.videoProbe) return env.videoProbe(cfg);
       return { supported: env.videoSupported, config: cfg };
     }
     configure(cfg) { this.state = 'configured'; this.config = cfg; }
@@ -262,6 +263,10 @@ describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
       assert.equal(fakes.audioDecoders.length, 0);
       assert.equal(player.videoDecoder, null);
       assert.equal(player.audioDecoder, null);
+
+      fakes.env.audioSupported = true;
+      await player.open(buildAvStream().init);
+      assert.ok(player.videoDecoder && player.audioDecoder, 'failed operation must not poison subsequent lifecycle calls');
     });
   });
 
@@ -290,6 +295,52 @@ describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
       );
       assert.equal(p.videoDecoder, null);
       assert.equal(fakes.videoDecoders.length, 0, '拒绝路径不实例化解码器');
+    });
+  });
+
+  test('open：慢速首个 probe 与后续 open 按调用顺序串行提交', async () => {
+    await withWebCodecs(async (fakes) => {
+      let releaseFirstProbe;
+      const firstProbeStarted = new Promise((resolve) => { fakes.env.videoProbe = (cfg) => {
+        resolve();
+        return new Promise((done) => { releaseFirstProbe = () => done({ supported: true, config: cfg }); });
+      }; });
+      const player = new CmafWebCodecsPlayer();
+      const firstOpen = player.open(fmp4.buildInit([makeVideoTrak({ id: 3 })]));
+      await firstProbeStarted;
+      fakes.env.videoProbe = null;
+      const secondOpen = player.open(fmp4.buildInit([makeVideoTrak({ id: 7 })]));
+      let secondSettled = false;
+      secondOpen.finally(() => { secondSettled = true; });
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(secondSettled, false, '后续 open 必须等待首个生命周期操作');
+      releaseFirstProbe();
+      await Promise.all([firstOpen, secondOpen]);
+      assert.equal(player.videoTrackId, 7, '最终状态遵循调用顺序中的最后一次 open');
+      assert.equal(fakes.videoDecoders.length, 2);
+      assert.equal(fakes.videoDecoders[0].closed, 1, '前一次 decoder 在后续提交时释放');
+      assert.equal(player.videoDecoder, fakes.videoDecoders[1]);
+    });
+  });
+
+  test('close：排在慢速 open 后执行且不会被迟到 open 复活', async () => {
+    await withWebCodecs(async (fakes) => {
+      let releaseProbe;
+      let started;
+      const probeStarted = new Promise((resolve) => { started = resolve; });
+      fakes.env.videoProbe = (cfg) => {
+        started();
+        return new Promise((resolve) => { releaseProbe = () => resolve({ supported: true, config: cfg }); });
+      };
+      const player = new CmafWebCodecsPlayer();
+      const opening = player.open(fmp4.buildInit([makeVideoTrak({ id: 3 })]));
+      await probeStarted;
+      const closing = player.close();
+      releaseProbe();
+      await Promise.all([opening, closing]);
+      assert.equal(player.videoDecoder, null);
+      assert.equal(player.videoTrackId, null);
+      assert.equal(fakes.videoDecoders[0].closed, 1);
     });
   });
 

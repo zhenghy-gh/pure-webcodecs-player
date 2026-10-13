@@ -1473,4 +1473,26 @@
 - 完成全量门禁和浏览器验收后，独立提交并推送 maintenance/round-6。
 
 ### 风险
-- CMAF open() 的多个同时并发调用仍未串行化；当前修改保障单次调用的预检与 decoder pair 安全替换。
+- 生命周期队列按 open()/close() 调用顺序执行，failed operation 会恢复队列；不承诺跨不同 CmafWebCodecsPlayer 实例串行。
+
+## Attempt 67：串行化 CMAF open/close 生命周期操作
+
+### 发现
+- 复现条件：第一次 open() 的 isConfigSupported() 尚未返回时，再调用第二次 open() 或 close()。
+- 根因：虽然单次 open() 已做到 codec 预检、临时 decoder 配置和整体替换，但其异步操作可并发交错。较慢的旧 open 可能晚于新 open 提交并覆盖后者；close 与尚未完成的 open 也可能先清状态、再被迟到 open 重新挂上 decoder。
+- 用户影响：迅速切换 CMAF init 或销毁时，可能播放旧媒体轨、覆盖新 decoder，或在 close 返回后复活资源。
+
+### 修改
+- cmaf/src/webcodecs.js：实例级生命周期 Promise 队列按 open()/close() 调用顺序串行执行；将 decoder 初始化拆成 queued public open() 与 internal _open()，成功替换时调用不入队的 _closeNow()，避免队列自锁；拒绝的 operation 不污染队列。
+- cmaf/__tests__/cmaf-webcodecs-env.test.js：加入可控延迟 probe，覆盖慢 open + 新 open、慢 open + close 的最终顺序；覆盖 open 失败后队列仍可恢复。
+
+### 验证
+- 定向 CMAF WebCodecs / init / parse：43/43 通过。
+- npm run check：fixtures 通过；全量测试 3204/3204；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实 decode、play、seek、stall recovery 与 destroy 均通过；E2E 截图已恢复。
+
+### 提交和推送
+- 验证完成后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 队列约束同一 player 实例上的生命周期顺序；不同实例之间无共享队列。
