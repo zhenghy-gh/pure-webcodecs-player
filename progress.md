@@ -1452,3 +1452,25 @@
 
 ### 风险
 - CMAF init 路由元数据目前对每种已支持族视频、音频各保留一条配置轨；其他 ID 被有意跳过，而不是猜测 decoder 类型。
+
+## Attempt 66：CMAF 双轨 decoder 配置改为原子预检与安全替换
+
+### 发现
+- 复现条件：双轨 init 的视频 codec 可解，但音频 codec 不受支持；或音频 decoder.configure() 在视频 decoder 已创建后失败。
+- 根因：CmafWebCodecsPlayer.open() 只调用 VideoDecoder.isConfigSupported()，未预检音频配置；且视频 decoder 会在继续建立音频前直接赋给 player。因此音频拒绝/构建失败时可留下半初始化的双轨状态。重复 open 也在新配置尚未全部成功时覆盖 decoder 和 track metadata。
+- 用户影响：AAC 配置不支持时留下可见但不可完整播放的 video decoder；音频配置中途失败泄漏视频 decoder；重载媒体时旧/新轨道状态可能不一致。
+
+### 修改
+- cmaf/src/webcodecs.js：先按轨道 API 家族检查并依次 probe 所有真实 video/audio configs；全部支持后才创建/configure 临时 decoder pair，成功后才 flush/close 旧 pair 并整体交换 references/track IDs；创建或 configure 失败时关闭所有临时 decoder。
+- cmaf/__tests__/cmaf-webcodecs-env.test.js：新增音频 config 不支持时零 decoder 创建、音频 configure throw 时临时 decoder 全部回收、成功重开替换旧轨以及替换预检失败保留旧 decoder。
+
+### 验证
+- 定向 CMAF WebCodecs / init / parse 测试：46/46 通过。
+- 全量 npm run check：fixtures 通过；3202/3202 tests 通过；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；MSE 初始化、真实解码、播放/seek、stall 恢复和 teardown 均通过；截图已恢复。
+
+### 提交和推送
+- 完成全量门禁和浏览器验收后，独立提交并推送 maintenance/round-6。
+
+### 风险
+- CMAF open() 的多个同时并发调用仍未串行化；当前修改保障单次调用的预检与 decoder pair 安全替换。

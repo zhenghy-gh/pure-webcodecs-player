@@ -136,29 +136,56 @@ export class CmafWebCodecsPlayer {
     if (cfg.audio && !hasAudioWebCodecs()) {
       throw notSupported('当前环境缺少音频 WebCodecs decoder 或 chunk API');
     }
+    // Preflight every real track before constructing any decoder: an unsupported audio
+    // config must not leave the already-created video decoder behind (or vice versa).
     if (cfg.video) {
-      this.videoTrackId = cfg.videoTrack.trackId;
-      this.videoTimescale = cfg.videoTrack.timescale;
       const support = await window.VideoDecoder.isConfigSupported(cfg.video);
-      if (!support.supported) {
+      if (support?.supported !== true) {
         throw notSupported(`浏览器不支持该视频配置: ${cfg.video.codec}`);
       }
-      this.videoDecoder = new window.VideoDecoder({
-        output: (frame) => this.onVideoFrame(frame),
-        error: (e) => this.onError(e),
-      });
-      this.videoDecoder.configure(cfg.video);
     }
     if (cfg.audio) {
-      this.audioTrackId = cfg.audioTrack.trackId;
-      this.audioTimescale = cfg.audioTrack.timescale;
-      this.audioDecoder = new window.AudioDecoder({
-        output: (data) => this.onAudioData(data),
-        error: (e) => this.onError(e),
-      });
-      this.audioDecoder.configure(cfg.audio);
+      const support = await window.AudioDecoder.isConfigSupported(cfg.audio);
+      if (support?.supported !== true) {
+        throw notSupported(`浏览器不支持该音频配置: ${cfg.audio.codec}`);
+      }
     }
-    return cfg;
+
+    let videoDecoder = null;
+    let audioDecoder = null;
+    try {
+      if (cfg.video) {
+        videoDecoder = new window.VideoDecoder({
+          output: (frame) => this.onVideoFrame(frame),
+          error: (e) => this.onError(e),
+        });
+        videoDecoder.configure(cfg.video);
+      }
+      if (cfg.audio) {
+        audioDecoder = new window.AudioDecoder({
+          output: (data) => this.onAudioData(data),
+          error: (e) => this.onError(e),
+        });
+        audioDecoder.configure(cfg.audio);
+      }
+
+      // Replace old decoders only after all new families are configured successfully.
+      await this.close();
+      this.videoDecoder = videoDecoder;
+      this.audioDecoder = audioDecoder;
+      this.videoTrackId = cfg.videoTrack?.trackId ?? null;
+      this.audioTrackId = cfg.audioTrack?.trackId ?? null;
+      if (cfg.videoTrack) this.videoTimescale = cfg.videoTrack.timescale;
+      if (cfg.audioTrack) this.audioTimescale = cfg.audioTrack.timescale;
+      return cfg;
+    } catch (err) {
+      for (const decoder of [videoDecoder, audioDecoder]) {
+        if (decoder && decoder.state !== 'closed') {
+          try { decoder.close(); } catch { /* preserve the original open failure */ }
+        }
+      }
+      throw err;
+    }
   }
 
   /**

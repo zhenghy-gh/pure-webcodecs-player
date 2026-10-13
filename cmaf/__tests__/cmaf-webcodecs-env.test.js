@@ -101,7 +101,7 @@ async function withGlobals(patch, fn) {
 }
 
 function makeFakes() {
-  const env = { videoSupported: true };
+  const env = { videoSupported: true, audioSupported: true, audioConfigureThrows: false };
   const videoDecoders = [];
   const audioDecoders = [];
   const chunks = [];
@@ -153,7 +153,14 @@ function makeFakes() {
       this.closed = 0;
       audioDecoders.push(this);
     }
-    configure(cfg) { this.state = 'configured'; this.config = cfg; }
+    static async isConfigSupported(cfg) {
+      return { supported: env.audioSupported, config: cfg };
+    }
+    configure(cfg) {
+      if (env.audioConfigureThrows) throw new Error('audio configure failed');
+      this.state = 'configured';
+      this.config = cfg;
+    }
     decode(chunk) {
       if (this.state === 'closed') throw new Error('decode on closed decoder');
       this.decoded.push(chunk);
@@ -246,6 +253,32 @@ describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
     });
   });
 
+  test('open：音频 config 不支持时不创建双轨 decoder', async () => {
+    await withWebCodecs(async (fakes) => {
+      fakes.env.audioSupported = false;
+      const player = new CmafWebCodecsPlayer();
+      await assert.rejects(() => player.open(buildAvStream().init), (err) => err.code === 'NOT_SUPPORTED' && err.message.includes('mp4a.40.2'));
+      assert.equal(fakes.videoDecoders.length, 0, 'audio preflight precedes video decoder construction');
+      assert.equal(fakes.audioDecoders.length, 0);
+      assert.equal(player.videoDecoder, null);
+      assert.equal(player.audioDecoder, null);
+    });
+  });
+
+  test('open：configure 半途失败时关闭所有临时 decoder 且不挂接到 player', async () => {
+    await withWebCodecs(async (fakes) => {
+      fakes.env.audioConfigureThrows = true;
+      const player = new CmafWebCodecsPlayer();
+      await assert.rejects(() => player.open(buildAvStream().init), /audio configure failed/);
+      assert.equal(fakes.videoDecoders.length, 1);
+      assert.equal(fakes.videoDecoders[0].closed, 1, 'configure failure releases video decoder');
+      assert.equal(fakes.audioDecoders.length, 1);
+      assert.equal(fakes.audioDecoders[0].closed, 1, 'configure failure releases audio decoder');
+      assert.equal(player.videoDecoder, null);
+      assert.equal(player.audioDecoder, null);
+    });
+  });
+
   test('open：isConfigSupported 拒绝视频配置 → NOT_SUPPORTED 且不建解码器', async () => {
     await withWebCodecs(async (fakes) => {
       fakes.env.videoSupported = false;
@@ -257,6 +290,39 @@ describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
       );
       assert.equal(p.videoDecoder, null);
       assert.equal(fakes.videoDecoders.length, 0, '拒绝路径不实例化解码器');
+    });
+  });
+
+  test('open：成功重开时只在新 decoder 配置完成后替换并释放旧 decoder', async () => {
+    await withWebCodecs(async (fakes) => {
+      const player = new CmafWebCodecsPlayer();
+      await player.open(fmp4.buildInit([makeVideoTrak()]));
+      const oldDecoder = player.videoDecoder;
+      await player.open(fmp4.buildInit([makeVideoTrak({ id: 7 })]));
+      assert.equal(oldDecoder.flushes, 1);
+      assert.equal(oldDecoder.closed, 1);
+      assert.equal(player.videoTrackId, 7);
+      const sample = { durationTicks: 1, size: 1, keyframe: true, dtsOffset: 0, dataStart: 0 };
+      player.appendChunk({ tracks: [{ trackId: 1, samples: [sample] }] }, new Uint8Array([1]));
+      assert.equal(fakes.videoDecoders[0].decoded.length, 0, '旧 track_ID 必须失效');
+      player.appendChunk({ tracks: [{ trackId: 7, samples: [sample] }] }, new Uint8Array([1]));
+      assert.equal(fakes.videoDecoders[1].decoded.length, 1, '新 track_ID 应关联新 decoder');
+    });
+  });
+
+  test('open：新配置预检失败时保留仍可用的旧 decoder', async () => {
+    await withWebCodecs(async (fakes) => {
+      const player = new CmafWebCodecsPlayer();
+      await player.open(fmp4.buildInit([makeVideoTrak()]));
+      const oldDecoder = player.videoDecoder;
+      fakes.env.audioSupported = false;
+      await assert.rejects(
+        () => player.open(fmp4.buildInit([makeVideoTrak({ id: 7 }), makeAudioTrak()])),
+        (err) => err.code === 'NOT_SUPPORTED',
+      );
+      assert.equal(player.videoDecoder, oldDecoder);
+      assert.equal(oldDecoder.closed, 0, 'preflight 不应销毁仍有效的旧 decoder');
+      assert.equal(player.videoTrackId, 1);
     });
   });
 
