@@ -411,6 +411,29 @@ describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
     });
   });
 
+  test('appendChunk：B-frame timestamp 使用 DTS + signed CTS 转为 presentation time', async () => {
+    await withWebCodecs(async (fakes) => {
+      const init = fmp4.buildInit([makeVideoTrak()]);
+      const fragment = fmp4.buildFragment({
+        trackId: 1,
+        hasCts: true,
+        samples: [
+          { dts: 0, pts: 3003, duration: 3003, keyframe: true, data: new Uint8Array([1]) },
+          { dts: 3003, pts: 0, duration: 3003, keyframe: false, data: new Uint8Array([2]) },
+        ],
+      });
+      const player = new CmafWebCodecsPlayer();
+      await player.open(init);
+      const { chunks } = splitChunks(fragment);
+      player.appendChunk(chunks[0], fragment);
+      assert.deepEqual(fakes.chunks.map((chunk) => chunk.timestamp), [
+        Math.round((3003 / 90000) * 1e6),
+        0,
+      ], 'presentation timestamps follow PTS order even though decode order is DTS order');
+      assert.ok(fakes.chunks[1].timestamp < fakes.chunks[0].timestamp, 'negative CTS is retained');
+    });
+  });
+
   test('appendChunk：使用 init 中的 track_ID 路由非 1/2 的音视频轨，忽略未知轨', async () => {
     await withWebCodecs(async (fakes) => {
       const init = fmp4.buildInit([makeVideoTrak({ id: 7 }), makeAudioTrak({ id: 9 })]);

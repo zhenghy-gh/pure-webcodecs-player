@@ -1564,3 +1564,25 @@
 
 ### 风险
 - 每个 traf 当前仍按其 trun offset 连续解释样本，尚未验证样本区间与同一 chunk 其他 traf 的重叠关系。
+
+## Attempt 71：将 CMAF decode timestamps 转为 presentation timestamps
+
+### 发现
+- 复现条件：视频 fragment 含 B 帧，trun 中 CTS 为正/负，样本按 DTS 顺序提交 decoder。
+- 根因：CmafWebCodecsPlayer.appendChunk() 将 EncodedVideoChunk.timestamp 直接设为 dtsOffset。CMAF trun 同时提供 composition offset；WebCodecs chunk timestamp 应代表呈现时间，等于 DTS + CTS。忽略 CTS 会让重排帧显示在错误时间。
+- 用户影响：带 B-frame reorder 的 CMAF 视频可能错序显示或产生 presentation timeline 不连续；仅全 I/P 帧、CTS=0 的测试无法发现。
+
+### 修改
+- cmaf/src/webcodecs.js：对视频和音频样本统一以 dtsOffset + (cts ?? 0) 换算 Encoded*Chunk.timestamp；音频 CTS 正常为 0。
+- cmaf/__tests__/cmaf-webcodecs-env.test.js：新增 fragment 含一正一负 CTS 的 regression，验证时间戳映射到预期 PTS（单位 µs）且保留解码提交次序。
+
+### 验证
+- CMAF WebCodecs / roundtrip / fragment 定向测试：33/33 通过。
+- 全量 npm run check：fixtures 通过；3210/3210 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实 decode、play、seek、stall recovery 和 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 当前播放器仍按 fragment 输入顺序接收样本；此修复确保每个 EncodedChunk 的展示时间戳正确，不改变上游的 sample decode order。

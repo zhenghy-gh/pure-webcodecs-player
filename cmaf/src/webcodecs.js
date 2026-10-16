@@ -223,7 +223,7 @@ export class CmafWebCodecsPlayer {
           const Chunk = isVideo ? window.EncodedVideoChunk : window.EncodedAudioChunk;
           decoder.decode(new Chunk({
             type: s.keyframe ? 'key' : 'delta',
-            timestamp: Math.round((s.dtsOffset / ts) * 1e6), // 契约：边界 µs
+            timestamp: Math.round(((s.dtsOffset + (s.cts ?? 0)) / ts) * 1e6), // presentation time = DTS + CTS
             duration: Math.round((s.durationTicks / ts) * 1e6),
             data,
           }));
