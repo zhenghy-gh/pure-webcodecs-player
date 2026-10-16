@@ -109,7 +109,7 @@ export function splitChunks(buf) {
     if (b.type === 'moof') {
       sawMoofInCurrent = true;
       const sampleRanges = [];
-      for (const traf of parseMoof(buf, b.contentStart, b.contentEnd)) {
+      for (const traf of parseMoof(buf, b.contentStart, b.contentEnd, b.boxStart)) {
         const samples = materializeSamples(buf, b, traf);
         for (const sample of samples) {
           sampleRanges.push({ start: sample.dataStart, end: sample.dataStart + sample.size });
@@ -154,13 +154,14 @@ function materializeSamples(buf, moofBox, traf) {
   const out = [];
   // ISO 14496-12 §8.8.7：data_offset 以 moof 起点为基准；后续 trun 未显式
   // 指定 offset 时，样本数据紧随上一 run。
-  const moofStart = moofBox.contentStart - 8;
-  let cursor = mdatDataStart;
+  const moofStart = traf.moofStart ?? moofBox.contentStart - 8;
+  const dataOffsetBase = traf.dataOffsetBase ?? defaults.baseDataOffset ?? moofStart;
+  let cursor = dataOffsetBase;
   let previousRunEnd = null;
   let dtsOffset = baseTime; // 同一 traf 各 run 的 decode 时间连续累计
   for (const trun of truns) {
     if (trun.hasDataOffset) {
-      cursor = moofStart + trun.dataOffset;
+      cursor = dataOffsetBase + trun.dataOffset;
       if (previousRunEnd !== null && cursor < previousRunEnd) {
         throw notSupported(`trun 数据范围重叠或倒退: start=${cursor}, previousEnd=${previousRunEnd}`);
       }

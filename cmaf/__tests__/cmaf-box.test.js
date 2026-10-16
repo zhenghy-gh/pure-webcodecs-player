@@ -106,6 +106,19 @@ test('findAudioSpecificConfig：从 AudioSampleEntry v1 扩展字段后提取 es
     view.setUint32(box.boxStart, box.size + 16);
   }
   assert.deepEqual([...findAudioSpecificConfig(v1)], [0x12, 0x10]);
+
+  const extendedV1 = new Uint8Array(v1.length + 8);
+  const entryHeaderEnd = entry.boxStart + 8;
+  extendedV1.set(v1.subarray(0, entryHeaderEnd));
+  extendedV1.set(v1.subarray(entryHeaderEnd), entryHeaderEnd + 8);
+  const extendedView = new DataView(extendedV1.buffer);
+  extendedView.setUint32(entry.boxStart, 1);
+  extendedView.setBigUint64(entry.boxStart + 8, BigInt(entry.size + 24));
+  for (const box of [stsd, stbl, minf, mdia, trak, moov]) {
+    extendedView.setUint32(box.boxStart, box.size + 24);
+  }
+  assert.deepEqual([...findAudioSpecificConfig(extendedV1)], [0x12, 0x10],
+    'extended-size mp4a uses its 16-byte box header before the v1 audio prefix');
 });
 
 test('findAudioSpecificConfig：standalone largesize esds 正确使用 16-byte 头', () => {
@@ -326,7 +339,7 @@ test('iterateBoxes：init 缓冲顶层顺序为 ftyp→moov', () => {
 /** 手工造 trun box（standalone，vf 起点在偏移 8） */
 function buildTrun(version, flags, dataOffset, rows) {
   const hasDur = flags & 0x000100, hasSize = flags & 0x000200, hasFl = flags & 0x000400, hasCts = flags & 0x000800;
-  const perRow = 4 + (hasDur ? 4 : 0) + (hasSize ? 4 : 0) + (hasFl ? 4 : 0) + (hasCts ? 4 : 0);
+  const perRow = (hasDur ? 4 : 0) + (hasSize ? 4 : 0) + (hasFl ? 4 : 0) + (hasCts ? 4 : 0);
   const body = 4 /*sampleCount*/ + (flags & 0x000001 ? 4 : 0) + rows.length * perRow;
   const total = 8 + 4 + body;
   const out = new Uint8Array(total);
@@ -397,6 +410,15 @@ test('parseTfdt：box content 截断与不支持的 version 均拒绝', () => {
   assert.throws(() => parseTfdt(v1, 8, v1.length - 4), (err) => err.code === 'NOT_SUPPORTED');
   const unsupported = buildFullBox('tfdt', 2, new Uint8Array(8));
   assert.throws(() => parseTfdt(unsupported, 8, unsupported.length), (err) => err.code === 'NOT_SUPPORTED');
+});
+
+test('parseTfdt 与 parseMfhd：拒绝非零保留 FullBox flags', () => {
+  const tfdt = buildFullBox('tfdt', 0, new Uint8Array([0, 0, 0, 1]));
+  tfdt[11] = 1;
+  assert.throws(() => parseTfdt(tfdt, 8), (err) => err.code === 'NOT_SUPPORTED');
+  const mfhd = buildFullBox('mfhd', 0, new Uint8Array([0, 0, 0, 1]));
+  mfhd[11] = 1;
+  assert.throws(() => parseMfhd(mfhd, 8), (err) => err.code === 'NOT_SUPPORTED');
 });
 
 test('parseMfhd：sequenceNumber 解析', () => {

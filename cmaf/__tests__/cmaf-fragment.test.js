@@ -123,7 +123,7 @@ test('连续片段：mfhd seq 严格递增且 moof 长度稳定', () => {
       if (sub.type === 'mfhd') mfhdBox = sub;
     }
     assert.ok(mfhdBox, 'moof 内应含 mfhd');
-    assert.equal(parseMfhd(f, mfhdBox.contentStart), seqs[i], `第${i}个片段 seq 应=${seqs[i]}`);
+    assert.equal(parseMfhd(f, mfhdBox.contentStart, mfhdBox.contentEnd), seqs[i], `第${i}个片段 seq 应=${seqs[i]}`);
   });
 });
 

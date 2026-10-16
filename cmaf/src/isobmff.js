@@ -91,15 +91,16 @@ export function parsePrft(buf, contentStart, contentEnd = buf.byteLength) {
   }
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   if (contentStart + 12 > contentEnd) throw notSupported('PRFT 头部截断');
-  const { version } = readVersionFlags(buf, contentStart);
+  const { version, flags } = readVersionFlags(buf, contentStart);
   if (version !== 0 && version !== 1) throw notSupported(`PRFT version 不支持: ${version}`);
+  if (flags !== 0) throw notSupported(`PRFT flags 不支持: ${flags}`);
   let p = contentStart + 4;
   const referenceTrackId = dv.getUint32(p); p += 4;
   const referenceTimescale = dv.getUint32(p); p += 4;
   if (!referenceTimescale) throw notSupported('PRFT timescale 非法');
   const payloadBytes = version === 1 ? 16 : 8;
-  if (p + payloadBytes > contentEnd) {
-    throw notSupported(`PRFT v${version} 内容截断`);
+  if (p + payloadBytes !== contentEnd) {
+    throw notSupported(`PRFT v${version} 内容长度非法或截断`);
   }
   if (version === 1) {
     const producerTimeNtp = dv.getBigUint64(p); p += 8;
@@ -122,6 +123,15 @@ export function parsePrft(buf, contentStart, contentEnd = buf.byteLength) {
 }
 
 /** 在 box 列表中找指定类型（首个） */
+function collectCompleteBoxes(buf, start, end, parentType) {
+  const boxes = [...iterateBoxes(buf, start, end)];
+  const consumedEnd = boxes.length ? boxes[boxes.length - 1].contentEnd : start;
+  if (consumedEnd !== end) {
+    throw notSupported(`${parentType} 子 box 列表截断或尺寸越界: ${consumedEnd}..${end}`);
+  }
+  return boxes;
+}
+
 export function findBox(buf, start, end, type) {
   for (const b of iterateBoxes(buf, start, end)) {
     if (b.type === type) return b;
@@ -171,9 +181,11 @@ export function parseSidx(buf, contentStart, contentEnd) {
     firstOffset = dv.getUint32(p); p += 4;
   }
   requireBytes(4, 'reserved/reference_count');
-  p += 2; // reserved
+  if (dv.getUint16(p) !== 0) throw notSupported('sidx reserved 字段必须为 0');
+  p += 2;
   const referenceCount = dv.getUint16(p); p += 2;
   requireBytes(referenceCount * 12, 'references');
+  if (p + referenceCount * 12 !== contentEnd) throw notSupported('sidx 含未声明的尾随字段');
   /** @type {Array<object>} */
   const references = [];
   for (let i = 0; i < referenceCount; i++) {
@@ -202,6 +214,13 @@ export function parseSidx(buf, contentStart, contentEnd) {
 /* fullBox version/flags                                               */
 /* ------------------------------------------------------------------ */
 
+function validateContentBounds(buf, contentStart, contentEnd, boxTypeName) {
+  if (!Number.isSafeInteger(contentStart) || contentStart < 0 ||
+      !Number.isSafeInteger(contentEnd) || contentEnd < contentStart || contentEnd > buf.byteLength) {
+    throw notSupported(`${boxTypeName} 内容边界非法: ${contentStart}..${contentEnd}`);
+  }
+}
+
 function readVersionFlags(buf, contentStart) {
   const v = buf[contentStart];
   const flags = (buf[contentStart + 1] << 16) | (buf[contentStart + 2] << 8) | buf[contentStart + 3];
@@ -218,6 +237,7 @@ function readVersionFlags(buf, contentStart) {
  *            rows:Array<{duration:number,size:number,flags:number,cts:number}>}}
  */
 export function parseTrun(buf, contentStart, contentEnd) {
+  validateContentBounds(buf, contentStart, contentEnd, 'trun');
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const requireBytes = (count, field) => {
     if (p + count > contentEnd) throw notSupported(`trun ${field} 字段被截断`);
@@ -226,6 +246,11 @@ export function parseTrun(buf, contentStart, contentEnd) {
   requireBytes(4, 'fullbox header');
   const { version, flags } = readVersionFlags(buf, contentStart);
   if (version !== 0 && version !== 1) throw notSupported(`trun version 不支持: ${version}`);
+  const supportedFlags = 0x000001 | 0x000004 | 0x000100 | 0x000200 | 0x000400 | 0x000800;
+  if (flags & ~supportedFlags) throw notSupported(`trun flags 不支持: ${flags}`);
+  if ((flags & 0x000004) && (flags & 0x000400)) {
+    throw notSupported('trun first_sample_flags 与 sample_flags 不得同时出现');
+  }
   p += 4;
   requireBytes(4, 'sample_count');
   const sampleCount = dv.getUint32(p); p += 4;
@@ -278,17 +303,20 @@ export function parseTrun(buf, contentStart, contentEnd) {
     }
     rows.push(row);
   }
+  if (p !== contentEnd) throw notSupported('trun 含未声明的尾随字段');
   return { sampleCount, dataOffset, hasDataOffset, hasDuration, hasSize, hasFlags, hasCts, firstSampleFlags, rows };
 }
 
 /** 解析 tfdt → baseMediaDecodeTime */
 export function parseTfdt(buf, contentStart, contentEnd = buf.byteLength) {
+  validateContentBounds(buf, contentStart, contentEnd, 'tfdt');
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   if (contentStart + 4 > contentEnd) throw notSupported('tfdt fullbox header 被截断');
-  const { version } = readVersionFlags(buf, contentStart);
+  const { version, flags } = readVersionFlags(buf, contentStart);
   if (version !== 0 && version !== 1) throw notSupported('tfdt version 不支持: ' + version);
+  if (flags !== 0) throw notSupported(`tfdt flags 不支持: ${flags}`);
   const timeBytes = version === 1 ? 8 : 4;
-  if (contentStart + 4 + timeBytes > contentEnd) throw notSupported('tfdt baseMediaDecodeTime 字段被截断');
+  if (contentStart + 4 + timeBytes !== contentEnd) throw notSupported('tfdt baseMediaDecodeTime 字段长度非法');
   if (version === 1) {
     const ticks = dv.getBigUint64(contentStart + 4);
     if (ticks > BigInt(Number.MAX_SAFE_INTEGER)) {
@@ -301,10 +329,13 @@ export function parseTfdt(buf, contentStart, contentEnd = buf.byteLength) {
 
 /** 解析 tfhd → {trackId, defaultSampleDuration, defaultSampleSize, defaultSampleFlags, baseDataOffset} */
 export function parseTfhd(buf, contentStart, contentEnd) {
+  validateContentBounds(buf, contentStart, contentEnd, 'tfhd');
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   if (contentStart + 4 > contentEnd) throw notSupported('tfhd fullbox header 被截断');
   const { version, flags } = readVersionFlags(buf, contentStart);
   if (version !== 0) throw notSupported(`tfhd version 不支持: ${version}`);
+  const supportedFlags = 0x000001 | 0x000002 | 0x000008 | 0x000010 | 0x000020 | 0x010000 | 0x020000;
+  if (flags & ~supportedFlags) throw notSupported(`tfhd flags 不支持: ${flags}`);
   let p = contentStart + 4;
   const requireBytes = (count, field) => {
     if (p + count > contentEnd) throw notSupported(`tfhd ${field} 字段被截断`);
@@ -313,9 +344,12 @@ export function parseTfhd(buf, contentStart, contentEnd) {
   const out = {
     trackId: dv.getUint32(p),
     baseDataOffset: null,
+    sampleDescriptionIndex: null,
     defaultSampleDuration: null,
     defaultSampleSize: null,
     defaultSampleFlags: null,
+    durationIsEmpty: !!(flags & 0x010000),
+    defaultBaseIsMoof: !!(flags & 0x020000),
   };
   p += 4;
   if (flags & 0x000001) {
@@ -325,19 +359,27 @@ export function parseTfhd(buf, contentStart, contentEnd) {
     out.baseDataOffset = Number(offset);
     p += 8;
   }
-  if (flags & 0x000002) { requireBytes(4, 'sample_description_index'); p += 4; }
+  if (flags & 0x000002) {
+    requireBytes(4, 'sample_description_index');
+    out.sampleDescriptionIndex = dv.getUint32(p);
+    if (out.sampleDescriptionIndex === 0) throw notSupported('tfhd sample_description_index must be one-based');
+    p += 4;
+  }
   if (flags & 0x000008) { requireBytes(4, 'default_sample_duration'); out.defaultSampleDuration = dv.getUint32(p); p += 4; }
   if (flags & 0x000010) { requireBytes(4, 'default_sample_size'); out.defaultSampleSize = dv.getUint32(p); p += 4; }
   if (flags & 0x000020) { requireBytes(4, 'default_sample_flags'); out.defaultSampleFlags = dv.getUint32(p); p += 4; }
+  if (p !== contentEnd) throw notSupported('tfhd 含未声明的尾随字段');
   return out;
 }
 
 /** 解析 mfhd → sequenceNumber */
-export function parseMfhd(buf, contentStart, contentEnd = buf.byteLength) {
+export function parseMfhd(buf, contentStart, contentEnd = contentStart + 8) {
+  validateContentBounds(buf, contentStart, contentEnd, 'mfhd');
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  if (contentStart + 8 > contentEnd) throw notSupported('mfhd fullbox header/sequence_number 字段被截断');
-  const { version } = readVersionFlags(buf, contentStart);
+  if (contentStart + 8 !== contentEnd) throw notSupported('mfhd fullbox header/sequence_number 长度非法');
+  const { version, flags } = readVersionFlags(buf, contentStart);
   if (version !== 0) throw notSupported('mfhd version 不支持: ' + version);
+  if (flags !== 0) throw notSupported(`mfhd flags 不支持: ${flags}`);
   return dv.getUint32(contentStart + 4);
 }
 
@@ -345,17 +387,46 @@ export function parseMfhd(buf, contentStart, contentEnd = buf.byteLength) {
  * 解析一个 movie fragment（moof）：可能含多 traf，这里取全部轨。
  * @returns {Array<{trackId:number, baseTime:number, trun:Object, defaults:Object}>}
  */
-export function parseMoof(buf, contentStart, contentEnd) {
+export function parseMoof(buf, contentStart, contentEnd, moofStart = null) {
+  validateContentBounds(buf, contentStart, contentEnd, 'moof');
+  if (moofStart === null) {
+    for (const headerSize of [16, 8]) {
+      const candidate = contentStart - headerSize;
+      if (candidate < 0) continue;
+      const header = readBoxHeader(buf, candidate);
+      if (header?.type === 'moof' && header.headerSize === headerSize &&
+          candidate + header.size === contentEnd) {
+        moofStart = candidate;
+        break;
+      }
+    }
+  }
+  if (!Number.isSafeInteger(moofStart) || moofStart < 0 ||
+      contentStart - moofStart !== 8 && contentStart - moofStart !== 16) {
+    throw notSupported(`moof 起点非法: ${moofStart}`);
+  }
+  const moofHeader = readBoxHeader(buf, moofStart);
+  if (!moofHeader || moofHeader.type !== 'moof' ||
+      moofStart + moofHeader.headerSize !== contentStart ||
+      moofStart + moofHeader.size !== contentEnd) {
+    throw notSupported('moof box 头部与内容边界不匹配');
+  }
   const trafs = [];
-  for (const traf of iterateBoxes(buf, contentStart, contentEnd)) {
+  for (const traf of collectCompleteBoxes(buf, contentStart, contentEnd, 'moof')) {
     if (traf.type !== 'traf') continue;
-    const info = { trackId: 0, baseTime: 0, trun: null, truns: [], defaults: {} };
-    for (const sub of iterateBoxes(buf, traf.contentStart, traf.contentEnd)) {
+    const info = { trackId: 0, baseTime: 0, trun: null, truns: [], defaults: {}, moofStart };
+    let tfhdCount = 0;
+    let tfdtCount = 0;
+    for (const sub of collectCompleteBoxes(buf, traf.contentStart, traf.contentEnd, 'traf')) {
       if (sub.type === 'tfhd') {
+        tfhdCount++;
+        if (tfhdCount !== 1) throw notSupported('traf 不得包含多个 tfhd');
         const tfhd = parseTfhd(buf, sub.contentStart, sub.contentEnd);
         info.trackId = tfhd.trackId;
         info.defaults = tfhd;
       } else if (sub.type === 'tfdt') {
+        tfdtCount++;
+        if (tfdtCount !== 1) throw notSupported('traf 不得包含多个 tfdt');
         info.baseTime = parseTfdt(buf, sub.contentStart, sub.contentEnd);
       } else if (sub.type === 'trun') {
         const parsed = parseTrun(buf, sub.contentStart, sub.contentEnd);
@@ -363,9 +434,71 @@ export function parseMoof(buf, contentStart, contentEnd) {
         info.trun = parsed; // compatibility: retain the last-run alias
       }
     }
-    if (info.trun) trafs.push(info);
+    if (tfhdCount !== 1 || info.trackId === 0) throw notSupported('traf 必须包含一个有效 tfhd');
+    if (info.defaults.sampleDescriptionIndex !== null && info.defaults.sampleDescriptionIndex !== 1) {
+      throw notSupported(`tfhd sample_description_index 不支持: ${info.defaults.sampleDescriptionIndex}`);
+    }
+    if (info.defaults.durationIsEmpty && info.truns.some((run) => run.sampleCount > 0)) {
+      throw notSupported('duration-is-empty tfhd 不得包含非空 trun');
+    }
+    trafs.push(info);
   }
-  return trafs;
+
+  let previousTrafDataEnd = null;
+  for (let index = 0; index < trafs.length; index++) {
+    const info = trafs[index];
+    const defaults = info.defaults;
+    if (defaults.baseDataOffset !== null) {
+      info.dataOffsetBase = defaults.baseDataOffset;
+    } else if (defaults.defaultBaseIsMoof) {
+      info.dataOffsetBase = moofStart;
+    } else if (index === 0) {
+      info.dataOffsetBase = moofStart;
+    } else if (previousTrafDataEnd !== null) {
+      info.dataOffsetBase = previousTrafDataEnd;
+    } else if (info.truns.some((run) => run.sampleCount > 0)) {
+      throw notSupported('后续 traf 缺少可解析的隐式数据基址');
+    }
+
+    let runEnd = null;
+    let knownEnd = true;
+    for (const run of info.truns) {
+      if (run.hasDataOffset && info.dataOffsetBase === null) {
+        throw notSupported('trun data_offset 缺少有效 traf 数据基址');
+      }
+      let cursor = run.hasDataOffset
+        ? info.dataOffsetBase + run.dataOffset
+        : runEnd ?? info.dataOffsetBase;
+      if (run.sampleCount > 0 && runEnd === null && !run.hasDataOffset &&
+          info.dataOffsetBase === moofStart && index === 0) {
+        knownEnd = false;
+        break;
+      }
+      if (!Number.isSafeInteger(cursor)) {
+        knownEnd = false;
+        break;
+      }
+      for (const row of run.rows) {
+        const size = run.hasSize ? row.size : defaults.defaultSampleSize;
+        if (size === null || !Number.isSafeInteger(size)) {
+          knownEnd = false;
+          break;
+        }
+        cursor += size;
+      }
+      if (!knownEnd || !Number.isSafeInteger(cursor)) {
+        knownEnd = false;
+        break;
+      }
+      runEnd = cursor;
+    }
+    if (info.truns.length > 0) {
+      previousTrafDataEnd = knownEnd && runEnd !== null ? runEnd : null;
+    } else if (info.dataOffsetBase !== undefined) {
+      previousTrafDataEnd = info.dataOffsetBase;
+    }
+  }
+  return trafs.filter((traf) => traf.truns.length > 0);
 }
 
 /** 判断 sample flags 是否关键帧（ISO 14496-12 §8.8.3.1） */
@@ -459,9 +592,21 @@ function findMp4aEsds(buf, moov) {
             const entryCount = view.getUint32(stsd.contentStart + 4);
             let pos = stsd.contentStart + 8;
             for (let i = 0; i < entryCount && pos + 8 <= stsd.contentEnd; i++) {
-              const size = view.getUint32(pos);
+              const size32 = view.getUint32(pos);
               const type = boxType(buf, pos);
-              const headerSize = size === 1 ? 16 : 8;
+              let size;
+              let headerSize = 8;
+              if (size32 === 1) {
+                if (pos + 16 > stsd.contentEnd) break;
+                const largeSize = view.getBigUint64(pos + 8);
+                if (largeSize > BigInt(Number.MAX_SAFE_INTEGER)) {
+                  throw notSupported('mp4a sample entry largesize 超出安全整数范围');
+                }
+                size = Number(largeSize);
+                headerSize = 16;
+              } else {
+                size = size32 === 0 ? stsd.contentEnd - pos : size32;
+              }
               if (size < headerSize || pos + size > stsd.contentEnd) break;
               if (type === 'mp4a') {
                 // AudioSampleEntry v0 has a 28-byte body prefix; v1 adds 16 bytes before child boxes.

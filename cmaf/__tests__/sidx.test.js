@@ -122,6 +122,14 @@ test('parseSidx：拒绝非零保留 FullBox flags', () => {
     (err) => err.code === 'NOT_SUPPORTED' && /flags/.test(err.message));
 });
 
+test('parseSidx：拒绝非零 16-bit reserved 字段', () => {
+  const valid = buildSidxBytes({ refs: [] });
+  const malformed = valid.slice();
+  malformed[28] = 1;
+  assert.throws(() => parseSidx(malformed, 8, malformed.length),
+    (err) => err.code === 'NOT_SUPPORTED' && /reserved/.test(err.message));
+});
+
 test('parseSidx：version 1 不安全的 uint64 时间或偏移拒绝精度丢失', () => {
   const body = new Uint8Array(32);
   body[0] = 1;
@@ -193,6 +201,19 @@ test('prft：截断 payload、零 timescale 与 content 边界均受控拒绝', 
   assert.throws(() => parsePrft(make(0, 0, 8), 8), /timescale/);
   assert.throws(() => parsePrft(make(0, 90000, 8), 8, 7), /边界/);
   assert.throws(() => parsePrft(make(2, 90000, 8), 8), /version 不支持/);
+});
+
+test('prft：拒绝非零保留 FullBox flags', async () => {
+  const { parsePrft } = await import('../src/isobmff.js');
+  const body = new Uint8Array(20);
+  body[3] = 1;
+  new DataView(body.buffer).setUint32(4, 42);
+  new DataView(body.buffer).setUint32(8, 90000);
+  const bytes = new Uint8Array(8 + body.length);
+  new DataView(bytes.buffer).setUint32(0, bytes.length);
+  bytes.set([0x70, 0x72, 0x66, 0x74], 4);
+  bytes.set(body, 8);
+  assert.throws(() => parsePrft(bytes, 8, bytes.length), /flags/);
 });
 
 test('prft v1：producer_time NTP 以 BigInt 无损保留，media_time 精度溢出拒绝', async () => {

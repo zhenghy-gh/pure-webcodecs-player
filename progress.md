@@ -2153,3 +2153,29 @@
 
 ### 风险
 - mp4a AudioSampleEntry 支持版本 0/1；未实现的 soundVersion 2/3 布局不做猜测解析。
+
+## Attempt 97：拒绝 CMAF FullBox 中未定义的保留 flags
+
+### 发现
+- 多个 box parser 只校验 version 却忽略 flags：PRFT/TFDT/MFHD/SIDX 的 flags 必须为 0；TFHD/TRUN 只允许各自规范定义的位。保留位非零输入此前会被接受并按已知字段继续解析，掩盖损坏数据。
+- 延伸审计还发现 SIDX 16-bit reserved 字段未检查、TRUN 接受互斥的 first_sample_flags/sample_flags、tfhd/trun/mfhd 缺少安全 content range 验证；parseMoof 会静默截断嵌套 child 列表、接受无/重复 tfhd 的 traf。延伸复核发现空 traf 会影响后续 traf 的隐式 base inheritance。
+- 用户影响：非法 fragment metadata 可能被误认为有效时间/样本属性，带来时间戳错误、样本错位或解码失败。
+
+### 修改
+- cmaf/src/isobmff.js：PRFT、TFDT、MFHD 仅接受 flags=0；TFHD/TRUN 拒绝未定义 flags；实现 tfhd 显式 baseDataOffset 与 traf 间隐式数据基址继承，校验 duration-is-empty、sample_description_index 及 mutually exclusive trun flags；moof/traf 子 box 必须完整且每个 traf 恰有一个有效 tfhd。
+- cmaf/src/chunk-parser.js：trun data_offset 相对已解析的 tfhd/ISO implicit base 计算；不再忽略显式 baseDataOffset。
+- cmaf/src/isobmff.js：验证 tfhd/trun/mfhd/tfdt/prft 安全范围和完整字段；mp4a largesize 支持 64-bit box header。
+- cmaf/__tests__/sidx.test.js：覆盖 PRFT/SIDX 非零保留 flags 拒绝。
+- cmaf/__tests__/cmaf-box.test.js：新增 TFDT/MFHD 非零 flags 拒绝。
+- cmaf/__tests__/cmaf-moof-flags.test.js：新增 TRUN/TFHD 未定义 flags 拒绝；既有全部合法标志组合仍测试。
+
+### 验证
+- 全套 CMAF 测试：166/166 通过（包含空 traf 数据基址继承回归）。
+- 全量 npm run check：fixtures 通过；3252/3252 tests；lint 548 个 JS 文件通过；最终重跑 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 最终验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成全量及浏览器验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 对未来 ISO BMFF 扩展增加的新 flag 位需更新白名单实现；当前对未识别位明确拒绝。

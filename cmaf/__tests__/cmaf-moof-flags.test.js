@@ -17,7 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { splitChunks } from '../src/chunk-parser.js';
-import { parseMoof, parseTrun, parseTfhd, iterateBoxes, isKeyframeFlag } from '../src/isobmff.js';
+import { parseMoof, parseTrun, parseTfhd, parseMfhd, iterateBoxes, isKeyframeFlag } from '../src/isobmff.js';
 
 /* ---------------- 字节构造原语 ---------------- */
 
@@ -60,7 +60,7 @@ function concatAll(parts) {
 
 /** tfhd：trackId + 可选 default duration/size/flags（按位设置 flags） */
 function tfhd(trackId, { duration = null, size = null, flags = null } = {}) {
-  let f = 0;
+  let f = 0x020000; // default-base-is-moof
   const payloads = [u32(trackId)];
   if (duration != null) { f |= 0x08; payloads.push(u32(duration)); }
   if (size != null) { f |= 0x10; payloads.push(u32(size)); }
@@ -162,6 +162,18 @@ test('parseTrun：无 data-offset 标志 → dataOffset=0 且不读偏移字节'
   assert.equal(r.dataOffset, 0);
   assert.deepEqual(r.rows.map((x) => x.duration), [3003, 3003]);
   assert.deepEqual(r.rows.map((x) => x.size), [16, 17]);
+});
+
+test('parseTrun：拒绝 first_sample_flags 与逐样本 flags 同时存在', () => {
+  const conflicting = fullBox('trun', 0, 0x000004 | 0x000400, u32(0), u32(1));
+  assert.throws(() => parseTrun(conflicting, 8, conflicting.length),
+    (err) => err.code === 'NOT_SUPPORTED' && /同时/.test(err.message));
+});
+
+test('parseTrun：拒绝未知 reserved flags', () => {
+  const unknownFlags = fullBox('trun', 0, 0x000002, u32(0));
+  assert.throws(() => parseTrun(unknownFlags, 8, unknownFlags.length),
+    (err) => err.code === 'NOT_SUPPORTED' && /flags/.test(err.message));
 });
 
 test('parseTrun：拒绝不支持的 version 2，避免将 CTS 错读为有符号', () => {
@@ -363,10 +375,105 @@ test('splitChunks：跨 traf 指向重叠 mdat 样本范围时拒绝', () => {
   assert.throws(() => splitChunks(stream), (err) => err.code === 'NOT_SUPPORTED');
 });
 
-test('parseTfhd：拒绝不支持的 FullBox version', () => {
+test('parseMoof：拒绝缺失或重复 tfhd，以及截断的 traf 子 box', () => {
+  const noHeader = box('moof', box('traf', trun(0, { dataOffset: 8, rows: [] })));
+  const noHeaderMoof = Array.from(iterateBoxes(noHeader))[0];
+  assert.throws(() => parseMoof(noHeader, noHeaderMoof.contentStart, noHeaderMoof.contentEnd),
+    (err) => err.code === 'NOT_SUPPORTED' && /tfhd/.test(err.message));
+
+  const duplicateHeader = box('moof', box('traf', tfhd(7), tfhd(7)));
+  const duplicateMoof = Array.from(iterateBoxes(duplicateHeader))[0];
+  assert.throws(() => parseMoof(duplicateHeader, duplicateMoof.contentStart, duplicateMoof.contentEnd),
+    (err) => err.code === 'NOT_SUPPORTED' && /多个 tfhd/.test(err.message));
+
+  const validTraf = box('traf', tfhd(7), tfdt(0, 0), trun(0, { dataOffset: 8, rows: [] }));
+  const malformedTraf = new Uint8Array(validTraf.length + 2);
+  malformedTraf.set(validTraf);
+  new DataView(malformedTraf.buffer).setUint32(0, malformedTraf.length);
+  malformedTraf.set([0, 0], validTraf.length);
+  const malformedMoof = box('moof', malformedTraf);
+  const parsedMoof = Array.from(iterateBoxes(malformedMoof))[0];
+  assert.throws(() => parseMoof(malformedMoof, parsedMoof.contentStart, parsedMoof.contentEnd),
+    (err) => err.code === 'NOT_SUPPORTED' && /box 列表/.test(err.message));
+});
+
+test('parseMoof：拒绝无效 content range 与非空 duration-is-empty traf', () => {
+  const bytes = new Uint8Array(32);
+  assert.throws(() => parseMoof(bytes, 8, Number.MAX_SAFE_INTEGER + 1),
+    (err) => err.code === 'NOT_SUPPORTED');
+  const durationEmpty = fullBox('tfhd', 0, 0x030000, u32(7));
+  const trafBox = box('moof', box('traf', durationEmpty, tfdt(0, 0),
+    trun(0, { dataOffset: 8, rows: [{ duration: 1, size: 1 }] })));
+  const moofBox = Array.from(iterateBoxes(trafBox))[0];
+  assert.throws(() => parseMoof(trafBox, moofBox.contentStart, moofBox.contentEnd),
+    (err) => err.code === 'NOT_SUPPORTED' && /duration-is-empty/.test(err.message));
+});
+
+test('parseMoof：空 traf 的显式 data base 参与后续 traf 隐式继承', () => {
+  const traf1 = box('traf', tfhd(1), tfdt(0, 0),
+    trun(0, { dataOffset: 8, rows: [{ duration: 1, size: 4 }] }));
+  const traf2 = box('traf', fullBox('tfhd', 0, 0x000001, u32(2), u64(0)));
+  const traf3 = box('traf', fullBox('tfhd', 0, 0, u32(3)), tfdt(0, 0),
+    trun(0, { dataOffset: 0, rows: [{ duration: 1, size: 4 }] }));
+  const stream = buildMoofStream([traf1, traf2, traf3]);
+  const moofBox = Array.from(iterateBoxes(stream)).find((entry) => entry.type === 'moof');
+  const mdatBox = Array.from(iterateBoxes(stream)).find((entry) => entry.type === 'mdat');
+  const trafBoxes = Array.from(iterateBoxes(stream, moofBox.contentStart, moofBox.contentEnd))
+    .filter((entry) => entry.type === 'traf');
+  const middleTfhd = Array.from(iterateBoxes(stream, trafBoxes[1].contentStart, trafBoxes[1].contentEnd))
+    .find((entry) => entry.type === 'tfhd');
+  const lastTrun = Array.from(iterateBoxes(stream, trafBoxes[2].contentStart, trafBoxes[2].contentEnd))
+    .find((entry) => entry.type === 'trun');
+  const view = new DataView(stream.buffer, stream.byteOffset, stream.byteLength);
+  view.setBigUint64(middleTfhd.contentStart + 8, BigInt(mdatBox.contentStart + 8));
+  view.setInt32(lastTrun.contentStart + 8, 0);
+  const tracks = splitChunks(stream).chunks[0].tracks;
+  assert.equal(tracks.length, 2, 'empty traf does not produce an output track');
+  assert.equal(tracks[0].samples[0].dataStart, mdatBox.contentStart);
+  assert.equal(tracks[1].samples[0].dataStart, mdatBox.contentStart + 8,
+    'following traf inherits the immediately preceding empty traf data base');
+});
+
+test('splitChunks：trun data_offset 相对显式 tfhd base_data_offset', () => {
+  const trafBox = box('traf',
+    fullBox('tfhd', 0, 0x000001, u32(7), u64(0)),
+    tfdt(0, 0),
+    trun(0, { dataOffset: 8, rows: [{ duration: 1, size: 4 }] }),
+  );
+  const stream = buildMoofStream([trafBox]);
+  const moofBox = Array.from(iterateBoxes(stream)).find((entry) => entry.type === 'moof');
+  const traf = Array.from(iterateBoxes(stream, moofBox.contentStart, moofBox.contentEnd))
+    .find((entry) => entry.type === 'traf');
+  const children = Array.from(iterateBoxes(stream, traf.contentStart, traf.contentEnd));
+  const tfhdBox = children.find((entry) => entry.type === 'tfhd');
+  const trunBox = children.find((entry) => entry.type === 'trun');
+  const view = new DataView(stream.buffer, stream.byteOffset, stream.byteLength);
+  view.setBigUint64(tfhdBox.contentStart + 8, BigInt(moofBox.boxStart + 4));
+  view.setInt32(trunBox.contentStart + 8, moofBox.size + 4);
+  const samples = splitChunks(stream).chunks[0].tracks[0].samples;
+  assert.equal(samples[0].dataStart, moofBox.boxStart + moofBox.size + 8);
+});
+
+test('parseTfhd：拒绝不支持的 FullBox version 与 reserved flags', () => {
   const unsupported = fullBox('tfhd', 1, 0, u32(1));
   assert.throws(() => parseTfhd(unsupported, 8, unsupported.length),
     (err) => err.code === 'NOT_SUPPORTED' && /version/.test(err.message));
+  const reserved = fullBox('tfhd', 0, 0x000004, u32(1));
+  assert.throws(() => parseTfhd(reserved, 8, reserved.length),
+    (err) => err.code === 'NOT_SUPPORTED' && /flags/.test(err.message));
+});
+
+test('parseTfhd、parseTrun、parseMfhd：非法 content range 受控拒绝', () => {
+  const invalidEnd = Number.MAX_SAFE_INTEGER + 1;
+  const tfhdBox = tfhd(7);
+  const trunBox = trun(0, { rows: [] });
+  const mfhdBox = fullBox('mfhd', 0, 0, u32(1));
+  for (const [parser, input] of [
+    [parseTfhd, tfhdBox], [parseTrun, trunBox], [parseMfhd, mfhdBox],
+  ]) {
+    assert.throws(() => parser(input, 8, invalidEnd), (err) => err.code === 'NOT_SUPPORTED');
+    assert.throws(() => parser(input, -1, input.length), (err) => err.code === 'NOT_SUPPORTED');
+  }
 });
 
 test('parseTfhd：可选 base_data_offset 截断于 tfhd 边界时拒绝', () => {

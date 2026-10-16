@@ -121,18 +121,17 @@ test('回归 B：first-sample-flags 不引发 rows 错位，且首样本标志�
   assert.equal(r.firstSampleFlags, 0x02000000);
 });
 
-test('回归 B：first-sample-flags 与首样本显式 flags 共存时，显式值优先', () => {
+test('回归 B：拒绝 first-sample-flags 与首样本显式 flags 共存的 trun', () => {
   const b = trun(0, {
     dataOffset: 8,
-    firstSampleFlags: 0x02000000, // 默认若是 I 帧
+    firstSampleFlags: 0x02000000,
     rows: [
-      { duration: 3003, size: 16, flags: 0x01010000 }, // 首样本自身声明 inter
+      { duration: 3003, size: 16, flags: 0x01010000 },
       { duration: 3003, size: 17 },
     ],
   });
-  const r = parseTrun(b, 8, b.length);
-  assert.equal(r.rows[0].flags, 0x01010000, '首样本显式 flags 覆盖 first_sample_flags');
-  assert.equal(r.rows[1].flags, 0, '非首样本无自身 flags → 回落 0（first_sample_flags 仅首样本）');
+  assert.throws(() => parseTrun(b, 8, b.length),
+    (err) => err.code === 'NOT_SUPPORTED' && /同时/.test(err.message));
 });
 
 test('回归 B：splitChunks 读回 first-sample-flags 的首样本关键帧判定', () => {
