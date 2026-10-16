@@ -150,6 +150,7 @@ export class MkvDemuxer extends Demuxer {
     this.trackList = [];
     /** @type {Array<{timeNs:number, clusterOffsetInSegment:number}>} */
     this.cues = [];
+    this.#cuesByTrack = new Map();
     /** 线性扫描积累的簇索引（无 Cues 兜底） */
     this.clusterIndex = [];
 
@@ -181,6 +182,7 @@ export class MkvDemuxer extends Demuxer {
   }
 
   #trackIterators;
+  #cuesByTrack;
   #eosedTracks;
   #pendingResults;
   #pullOpts;
@@ -592,6 +594,7 @@ export class MkvDemuxer extends Demuxer {
     const end = h.unknown ? await this.#probeUnknownMasterEnd(h, offset) : h.next;
     const body = await this.#readExact(h.contentStart, end - h.contentStart);
     this.cues = [];
+    this.#cuesByTrack.clear();
     for (const point of iterElements(body, 0, body.length, SCHEMA)) {
       if (point.id !== ID.CuePoint) continue;
       let timeNs = null;
@@ -628,6 +631,11 @@ export class MkvDemuxer extends Demuxer {
       }
     }
     this.cues.sort((a, b) => a.timeNs - b.timeNs);
+    for (const cue of this.cues) {
+      let trackCues = this.#cuesByTrack.get(cue.track);
+      if (!trackCues) this.#cuesByTrack.set(cue.track, trackCues = []);
+      trackCues.push(cue);
+    }
   }
 
   // ── 未知长度 Master 边界探测 ──────────────────────────
@@ -761,7 +769,8 @@ export class MkvDemuxer extends Demuxer {
    * 单轨迭代内核：文件序过滤本轨，产出契约 Sample 形状。
    */
   async *#iterateTrack(trackId) {
-    for await (const s of this.samplesInternal({ ...this.#pullOpts, trackIds: [trackId] })) {
+    const startFileOffset = this.#pullOpts.startFileOffsetByTrack?.get(trackId) ?? this.#pullOpts.startFileOffset;
+    for await (const s of this.samplesInternal({ ...this.#pullOpts, startFileOffset, trackIds: [trackId] })) {
       const idx = this.#sampleIndexByTrack.get(trackId) ?? 0;
       this.#sampleIndexByTrack.set(trackId, idx + 1);
       yield {
@@ -801,8 +810,8 @@ export class MkvDemuxer extends Demuxer {
   // seek
   // ══════════════════════════════════════════════════════
   /**
-   * seek（整数微秒）。清空各轨拉取进度并把起点对齐到 ≤target 的最近
-   * 寻址点（优先 Cues，否则线性扫簇时间码建索引）；resolve 实际落点。
+   * seek（整数微秒）。清空各轨拉取进度并从各自 ≤target 的最近 Cue 锚点
+   * 继续前向扫描（无 Cue 时用簇索引）；共享扫描用于确定实际落点时间。
    */
   async seek(timestampUs) {
     this.#assertReady('seek');
@@ -814,7 +823,12 @@ export class MkvDemuxer extends Demuxer {
     }
 
     await this.#ensureSeekIndex();
-    const off = await this.locate(timestampUs);
+    const startFileOffsetByTrack = this.cues.length
+      ? new Map(this.trackList.map((track) => [track.id, this.#cueOffsetForTrack(track.id, timestampUs * 1000)]))
+      : null;
+    const off = startFileOffsetByTrack?.size
+      ? Array.from(startFileOffsetByTrack.values()).reduce((earliest, offset) => Math.min(earliest, offset), Infinity)
+      : await this.locate(timestampUs);
     if (off < 0) throw new PlayerError('SEEK_UNSUPPORTED', '无法定位目标时间');
 
     // 清空各轨缓冲并设置新拉取窗口（含中断迟到缓存：旧落点样本不得跨越 seek 生效）
@@ -823,7 +837,7 @@ export class MkvDemuxer extends Demuxer {
     this.#eosedTracks.clear();
     this.#sampleIndexByTrack.clear();
     this.#endEmitted = false;
-    this.#pullOpts = { startFileOffset: off, fromUs: timestampUs };
+    this.#pullOpts = { startFileOffset: off, startFileOffsetByTrack, fromUs: timestampUs };
 
     // 实际落点：从落点簇向前找首个 ≥ target 的样本时间戳（有界探测）
     const actual = await this.#peekActualTimestamp(off, timestampUs);
@@ -861,20 +875,41 @@ export class MkvDemuxer extends Demuxer {
     this.clusterIndex.sort((a, b) => a.timeNs - b.timeNs);
   }
 
+  #cueOffsetForTrack(trackId, targetNs) {
+    const trackCues = this.#cuesByTrack.get(trackId);
+    if (!trackCues?.length) return this.firstClusterOffset;
+
+    let lo = 0;
+    let hi = trackCues.length - 1;
+    let ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (trackCues[mid].timeNs <= targetNs) { ans = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    // Cue entries only promise positions from their own time onward. If this
+    // track has no cue at or before target, retain its full scan from the start.
+    if (ans < 0) return this.firstClusterOffset;
+
+    const cueTimeNs = trackCues[ans].timeNs;
+    let clusterOffset = trackCues[ans].clusterOffsetInSegment;
+    for (let i = ans - 1; i >= 0 && trackCues[i].timeNs === cueTimeNs; i--) {
+      clusterOffset = Math.min(clusterOffset, trackCues[i].clusterOffsetInSegment);
+    }
+    return this.segmentDataStart + clusterOffset;
+  }
+
   /** 时间(µs) → 目标簇文件偏移；找不到 -1 */
   async locate(us) {
     const targetNs = us * 1000;
     if (this.cues.length) {
-      // 二分：取 ≤targetNs 的最后一个 CuePoint（cues 已按 timeNs 升序）
-      let lo = 0;
-      let hi = this.cues.length - 1;
-      let ans = 0;
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        if (this.cues[mid].timeNs <= targetNs) { ans = mid; lo = mid + 1; }
-        else hi = mid - 1;
+      // locate 对外返回一个共享文件位置：从每个已声明轨的最近适用 Cue 中
+      // 选最早簇；CueTrack 缺失或无效的孤立位置不参与已知轨道选择。
+      let offset = Infinity;
+      for (const track of this.trackList) {
+        offset = Math.min(offset, this.#cueOffsetForTrack(track.id, targetNs));
       }
-      return this.segmentDataStart + this.cues[ans].clusterOffsetInSegment;
+      return Number.isFinite(offset) ? offset : this.firstClusterOffset;
     }
     const idx = this.clusterIndex;
     if (idx.length) {

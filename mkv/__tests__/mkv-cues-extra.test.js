@@ -25,16 +25,22 @@ const U8 = (a) => Uint8Array.from(a);
 const UNKNOWN_CUE_FIELD = 0x42AB;
 
 // ── 积木 ────────────────────────────────────────────────
-function vp9Track(w) {
+function vp9Track(w, trackNumber = 1) {
   w.master(ID.TrackEntry, (t) => {
-    t.u(ID.TrackNumber, 1); t.u(ID.TrackType, 1); t.s(ID.CodecID, 'V_VP9');
+    t.u(ID.TrackNumber, trackNumber); t.u(ID.TrackUID, trackNumber);
+    t.u(ID.TrackType, 1); t.s(ID.CodecID, 'V_VP9');
   });
 }
-function cluster(timecode, frame = U8([1, 2, 3, 4])) {
+function cluster(timecode, frame = U8([1, 2, 3, 4]), trackNumber = 1) {
+  return clusterWithBlocks(timecode, [{ trackNumber, frame }]);
+}
+function clusterWithBlocks(timecode, blocks) {
   return new EbmlWriter().master(ID.Cluster, (w) => {
     w.u(ID.ClusterTimecode, timecode);
-    w.raw(new EbmlWriter().leaf(ID.SimpleBlock,
-      makeBlock({ trackNumber: 1, relTimecode: 0, keyframe: true, frames: [frame] })).done());
+    for (const { trackNumber, relTimecode = 0, keyframe = true, frame } of blocks) {
+      w.raw(new EbmlWriter().leaf(ID.SimpleBlock,
+        makeBlock({ trackNumber, relTimecode, keyframe, frames: [frame] })).done());
+    }
   }).done();
 }
 
@@ -43,11 +49,11 @@ function cluster(timecode, frame = U8([1, 2, 3, 4])) {
  * 与 mkv-seek.test.js 同构：CueTime/CueClusterPosition 固定 8 字节宽度，两遍构造（占位 0 →
  * 真实偏移）保证 Cues 总长稳定、簇偏移可计算。宽度可调（width）以覆盖 1 字节 VINT。
  */
-function buildWithCues({ cueBodies, c0 = cluster(0), c1 = cluster(1000), width = 8 } = {}) {
+function buildWithCues({ cueBodies, c0 = cluster(0), c1 = cluster(1000), trackNumbers = [1], width = 8 } = {}) {
+  const tracks = new EbmlWriter().master(ID.Tracks, (w) => trackNumbers.forEach((number) => vp9Track(w, number))).done();
   const info = new EbmlWriter().master(ID.Info, (w) => {
     w.u(ID.TimecodeScale, 1_000_000); w.f(ID.Duration, 2000, 4);
   }).done();
-  const tracks = new EbmlWriter().master(ID.Tracks, vp9Track).done();
 
   const buildCues = (o0, o1) => new EbmlWriter().master(ID.Cues, (cw) => {
     for (const b of cueBodies(o0, o1)) cw.raw(b);
@@ -79,10 +85,11 @@ function buildWithCues({ cueBodies, c0 = cluster(0), c1 = cluster(1000), width =
 function cuePoint(time, positions, { extraInCtp = [], width = 8 } = {}) {
   return new EbmlWriter().master(ID.CuePoint, (p) => {
     p.u(ID.CueTime, time, width);
-    for (const { track, clusterPos } of positions) {
+    for (const { track, clusterPos, blockNumber = 1 } of positions) {
       p.master(ID.CueTrackPositions, (tp) => {
         tp.u(ID.CueTrack, track);
         tp.u(ID.CueClusterPosition, clusterPos, width);
+        if (blockNumber !== 1) tp.u(ID.CueBlockNumber, blockNumber);
         for (const ex of extraInCtp) tp.raw(ex);
       });
     }
@@ -136,6 +143,114 @@ test('多轨 Cues：locate 在两轨同簇场景下定位正确', async () => {
   // 多轨下 seek 不会因重复簇偏移错位
   const r = await d.seek(1_000_000);
   assert.equal(r.actualTimestampUs, 1_000_000);
+});
+
+test('multi-track Cues: same-time positions in distinct clusters retain both target-time samples', async () => {
+  const { bytes, cluster0Offset, cluster1Offset } = buildWithCues({
+    trackNumbers: [1, 2],
+    c0: cluster(1000, U8([1, 2, 3, 4]), 1),
+    c1: cluster(1000, U8([5, 6, 7, 8]), 2),
+    cueBodies: (o0, o1) => [
+      cuePoint(1000, [{ track: 1, clusterPos: o0 }, { track: 2, clusterPos: o1 }]),
+    ],
+  });
+  const d = new MkvDemuxer(new BufferSource(bytes));
+  await d.open();
+  assert.deepEqual(d.cues.map((cue) => cue.clusterOffsetInSegment), [cluster0Offset, cluster1Offset]);
+  assert.equal(await d.locate(1_000_000), d.segmentDataStart + cluster0Offset, 'shared locate starts at the earliest known-track Cue anchor');
+
+  const result = await d.seek(1_000_000);
+  assert.equal(result.actualTimestampUs, 1_000_000);
+  const [track1, track2] = await Promise.all([d.readSample(1), d.readSample(2)]);
+  assert.equal(track1?.timestamp, 1_000_000, 'first track sample is not skipped');
+  assert.equal(track2?.timestamp, 1_000_000, 'later track cluster remains reachable');
+});
+
+test('multi-track Cues: uncued known tracks fall back to first cluster and unknown CueTrack is ignored', async () => {
+  const { bytes, cluster0Offset, cluster1Offset } = buildWithCues({
+    trackNumbers: [1, 2],
+    c0: cluster(1000, U8([1, 2, 3, 4]), 1),
+    c1: cluster(1000, U8([5, 6, 7, 8]), 2),
+    cueBodies: (o0, o1) => [
+      cuePoint(1000, [{ track: 2, clusterPos: o1 }, { track: 99, clusterPos: o1 }]),
+    ],
+  });
+  const d = new MkvDemuxer(new BufferSource(bytes));
+  await d.open();
+  assert.equal(await d.locate(1_000_000), d.segmentDataStart + cluster0Offset);
+  const result = await d.seek(1_000_000);
+  assert.equal(result.actualTimestampUs, 1_000_000);
+  assert.equal((await d.readSample(1))?.timestamp, 1_000_000, 'known track with no Cue remains reachable');
+  assert.equal((await d.readSample(2))?.timestamp, 1_000_000, 'known indexed track still uses its Cue');
+  assert.ok(cluster1Offset > cluster0Offset);
+});
+
+test('multi-track Cues: seek uses per-track anchors and preserves uncued-track samples', async () => {
+  const c0 = clusterWithBlocks(500, [
+    { trackNumber: 1, relTimecode: 0, frame: U8([1, 2, 3, 4]) },
+    { trackNumber: 1, relTimecode: 500, frame: U8([9, 10, 11, 12]) },
+    { trackNumber: 3, relTimecode: 500, frame: U8([13, 14, 15, 16]) },
+  ]);
+  const c1 = cluster(1000, U8([5, 6, 7, 8]), 2);
+  const { bytes, cluster0Offset, cluster1Offset } = buildWithCues({
+    trackNumbers: [1, 2, 3], c0, c1,
+    cueBodies: (o0, o1) => [
+      cuePoint(500, [{ track: 1, clusterPos: o0 }]),
+      cuePoint(1000, [{ track: 2, clusterPos: o1 }]),
+    ],
+  });
+  const d = new MkvDemuxer(new BufferSource(bytes));
+  await d.open();
+  const result = await d.seek(1_000_000);
+  assert.equal(result.actualTimestampUs, 1_000_000);
+  assert.equal((await d.readSample(1))?.timestamp, 1_000_000, 'track 1 keeps its earlier Cue at 500 ms');
+  assert.equal((await d.readSample(2))?.timestamp, 1_000_000, 'track 2 uses its 1000 ms Cue in the later cluster');
+  assert.equal((await d.readSample(3))?.timestamp, 1_000_000, 'track without Cues scans from the first cluster');
+  assert.ok(cluster1Offset > cluster0Offset);
+});
+
+test('multi-track Cues: unknown CueTrack cannot pull locate before known track anchors', async () => {
+  const { bytes, cluster0Offset, cluster1Offset } = buildWithCues({
+    trackNumbers: [1, 2],
+    c0: cluster(500, U8([1, 2, 3, 4]), 1),
+    c1: clusterWithBlocks(1000, [
+      { trackNumber: 1, frame: U8([5, 6, 7, 8]) },
+      { trackNumber: 2, frame: U8([9, 10, 11, 12]) },
+    ]),
+    cueBodies: (o0, o1) => [
+      cuePoint(1000, [
+        { track: 1, clusterPos: o1 },
+        { track: 2, clusterPos: o1 },
+        { track: 99, clusterPos: o0 },
+      ]),
+    ],
+  });
+  const d = new MkvDemuxer(new BufferSource(bytes));
+  await d.open();
+  assert.equal(await d.locate(1_000_000), d.segmentDataStart + cluster1Offset);
+  assert.ok(cluster1Offset > cluster0Offset);
+  const result = await d.seek(1_000_000);
+  assert.equal(result.actualTimestampUs, 1_000_000);
+  assert.equal((await d.readSample(1))?.timestamp, 1_000_000);
+  assert.equal((await d.readSample(2))?.timestamp, 1_000_000);
+});
+
+test('multi-track Cues: target before a known track first Cue falls back to earliest cluster', async () => {
+  const { bytes, cluster0Offset } = buildWithCues({
+    trackNumbers: [1, 2],
+    c0: clusterWithBlocks(500, [
+      { trackNumber: 1, relTimecode: 250, frame: U8([1, 2, 3, 4]) },
+    ]),
+    c1: cluster(1000, U8([5, 6, 7, 8]), 2),
+    cueBodies: (_o0, o1) => [cuePoint(1000, [{ track: 2, clusterPos: o1 }])],
+  });
+  const d = new MkvDemuxer(new BufferSource(bytes));
+  await d.open();
+  assert.equal(await d.locate(750_000), d.segmentDataStart + cluster0Offset);
+  const result = await d.seek(750_000);
+  assert.equal(result.actualTimestampUs, 750_000);
+  assert.equal((await d.readSample(1))?.timestamp, 750_000, 'uncued target-time sample remains reachable');
+  assert.equal((await d.readSample(2))?.timestamp, 1_000_000, 'track is read from the first cluster before its first Cue');
 });
 
 test('CueTrackPositions 内混入合法未知 EBML 元素 → 被容忍、CuePoint 正常解析', async () => {

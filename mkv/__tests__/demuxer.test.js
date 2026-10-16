@@ -170,16 +170,17 @@ test('事件：media-info 恰一次；两轨 EOS 后 end(eos)', async () => {
 // ── seek ────────────────────────────────────────────────
 
 test('seek：Cues 定位 + actualTimestampUs + 迭代窗口重置', async () => {
-  const { bytes, cuesOffsetInSegmentForCluster1 } = makeMinimalWebm();
+  const { bytes } = makeMinimalWebm();
   const d = new MkvDemuxer(new BufferSource(bytes));
   await d.open();
 
   // CueTime 以 TimecodeScale 为单位（tick），本 fixture scale=1e6 → CueTime 2000 = 2000ms。
-  // 取 2s 作为目标，使其明确命中第二个 CuePoint（cluster1）：
-  // locate 语义为「取 ≤ target 的最后一个 CuePoint」，若用 1.6s 则正确落点应是 0ms 的 cluster0。
+  // 取 2s 命中视频轨第二个 CuePoint（cluster1）。
+  // 无 Cue 的音频轨使共享 locate 保守返回首簇；seek 时各轨仍从各自锚点读取。
   const r = await d.seek(2_000_000);
   assert.equal(r.actualTimestampUs, 2_000_000);
-  assert.equal(await d.locate(2_000_000), d.segmentDataStart + cuesOffsetInSegmentForCluster1);
+  // The shared locate offset includes the uncued audio track; seek still uses the video track's Cue.
+  assert.equal(await d.locate(2_000_000), d.firstClusterOffset);
 
   // 视频轨从新窗口拉取：首样本即落点关键帧
   const s1 = await d.readSample(1);

@@ -1,5 +1,26 @@
 # 维护进度
 
+## Attempt 113：按轨道 Cue 锚点修复 Matroska 多轨 seek 漏样本
+
+### 问题与修复
+- 当同一 CueTime 的不同 CueTrackPositions 指向不同 Cluster 时，旧 locate() 仅按时间二分并取排序中最后一项；seek() 再把这一个簇偏移用于所有轨的前向扫描，可能跳过较早 Cluster 里仍在目标时间可播放的其他轨样本。
+- mkv/src/demuxer.js：建立按 TrackNumber 分组的有序 Cue 索引；每条已知轨在 seek 时使用其不晚于目标的最近 Cue（同时间的多项选最早簇），各轨 reader 从各自锚点读取。locate() 返回所有已知轨锚点的最早共享文件偏移；缺 Cue 或目标早于该轨首 Cue 时回退首簇，未知 CueTrack 不作为已知轨道锚点。
+- mkv/__tests__/demuxer.test.js：更新带无 Cue 音频轨夹具的共享 locate 断言；各轨 seek 仍使用自身锚点。
+
+### 回归测试
+- mkv/__tests__/mkv-cues-extra.test.js：覆盖相同 CueTime 指向不同 Cluster、轨间错开的 CueTime、真实无 Cue 轨道、未知 CueTrack 不污染已知轨定位，以及目标早于首个轨道 Cue；block 时间和 CueBlockNumber 与夹具中的 SimpleBlock 对齐。
+
+### 验证
+- 相关定向 Cues/seek 测试：47/47；最终完整 Matroska 套件：232/232；最终全量 npm run check：3287/3287 测试通过、549 个 JS 文件 lint 通过。
+- Chromium 中运行同一 Matroska demuxer：合成两轨、同 CueTime、不同 cluster offset；locate 从第一个簇开始，seek(1s) 后两轨均读到 timestamp=1,000,000µs，无页面异常。
+- 通用 player WebCodecs harness 对本地 WebM 的入口探测未能运行：宿主 registry 缺失 createDemuxer 注册；改用 Chromium 直接构造 EBML 缓冲区并验证 demuxer 的 locate/seek/readSample，不把它表述成完整 UI 播放验收。
+
+### 提交和推送
+- 独立提交并推送到 maintenance/round-6。
+
+### 风险
+- 为保证无 Cue 或早于首 Cue 的轨道不漏样本，这类轨道 seek 时会从首 Cluster 扫描；含未索引音频/字幕/加密轨的文件可能付出更高 seek 成本。本轮优先保证正确性，未新增 benchmark 或猜测缺 Cue 的轨道时间覆盖。
+
 ## Attempt 112：保留 TS 分片间 fMP4 的共同解码时间基
 
 ### 问题与修复
