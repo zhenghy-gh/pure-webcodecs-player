@@ -164,40 +164,29 @@ test('decodeLacing 敌意头：受控错误收敛；encodeSignedVint 全宽度 r
     }
     assert.ok(Date.now() - t0 < 500, `${name} 未限时收敛`);
   }
-  // signedVint 语义边界（直接有符号位宽求值，不经过 readSize 的无符号安全域）：
-  // 全 1 位型=-1、bit 置位点=最小值、其前驱=最大值（n≤7：n=8 的 2^56-1 位型
-  // 已超 Number 精度，浮点会先舍成 2^56）
+  // Signed EBML VINT uses signed = raw - (2^(7n-1)-1), including the all-ones payload.
   for (let n = 1; n <= 7; n++) {
     const bits = 7 * n;
-    assert.equal(signedVintValue(2 ** bits - 1, n), -1, `n=${n} 全 1 位型`);
-    assert.equal(signedVintValue(2 ** (bits - 1), n), -(2 ** (bits - 1)), `n=${n} 最小值位型`);
-    assert.equal(signedVintValue(2 ** (bits - 1) - 1, n), 2 ** (bits - 1) - 1, `n=${n} 最大值`);
+    const bias = 2 ** (bits - 1) - 1;
+    assert.equal(signedVintValue(0, n), -bias, `n=${n} minimum`);
+    assert.equal(signedVintValue(bias, n), 0, `n=${n} zero`);
+    assert.equal(signedVintValue(2 ** bits - 1, n), bias + 1, `n=${n} maximum`);
   }
-  // encodeSignedVint round-trip 限于安全域（n≤6 全边界；大位宽 readSize 回读
-  // 必经 >MAX_SAFE 拒绝路，属编码/解码各自的合法域差异，登记为观察）
-  for (let n = 1; n <= 6; n++) {
-    const bits = 7 * n;
-    const vals = [0, 1, -1, -(2 ** (bits - 1)), 2 ** (bits - 1) - 1, 2 ** (bits - 1), -(2 ** (bits - 1)) - 1];
-    for (const v of vals) {
+  for (const n of [1, 2, 3, 4, 5, 6]) {
+    const bias = 2 ** (7 * n - 1) - 1;
+    for (const v of [-bias, -2, -1, 0, 1, bias + 1]) {
       const enc = encodeSignedVint(v);
       const raw = readSize(enc, 0, enc.length);
       const rawVal = raw.unknown ? 2 ** (7 * raw.length) - 1 : raw.value;
       assert.equal(signedVintValue(rawVal, raw.length), v, `signedVint n=${n} v=${v}`);
     }
   }
-  // 8 档越界守卫（本波补齐：旧式无守卫产出错乱的 9 字节编码。取 2^56 而非
-  // 2^55+ε：后者在 Number 精度下会舍回 2^55 界内值）
   for (const v of [2 ** 56, -(2 ** 56), 2 ** 60, -(2 ** 60)]) {
     assert.throws(() => encodeSignedVint(v), EbmlError, `signedVint 越界 v=${v}`);
   }
-  // 安全域内 8 档正值 round-trip（8 档负值编码 raw=v+2^56 必然 >MAX_SAFE，
-  // 属无符号 readSize 合法域之外的组合，lacing 实际差值远小于此——登记观察）
-  for (const v of [0, 1, 2 ** 52]) {
-    const enc = encodeSignedVint(v);
-    const raw = readSize(enc, 0, enc.length);
-    const rawVal = raw.unknown ? 2 ** (7 * raw.length) - 1 : raw.value;
-    assert.equal(signedVintValue(rawVal, raw.length), v, `signedVint 8B v=${v}`);
-  }
+  const largestSignedVint = encodeSignedVint(Number.MAX_SAFE_INTEGER);
+  assert.equal(largestSignedVint.length, 8);
+  assert.throws(() => signedVintValue((1n << 56n) - 1n, 8), /安全整数范围/);
 });
 
 test('iterElements：seeded 敌意序列收敛且描述符不变量成立', () => {

@@ -166,15 +166,14 @@ test('EbmlWriter 各类型输出字节正确', () => {
 
 // ── Lacing ───────────────────────────────────────────────
 
-test('signedVintValue：数据位宽内二补码', () => {
-  assert.equal(signedVintValue(63, 1), 63);
-  assert.equal(signedVintValue(64, 1), -64);
-  assert.equal(signedVintValue(127, 1), -1); // 全 1 位型
-  assert.equal(signedVintValue(0, 2), 0);
-  assert.equal(signedVintValue(8191, 2), 8191);
-  assert.equal(signedVintValue(8192, 2), -8192);
-  assert.equal(signedVintValue(16383, 2), -1); // 全 1 位型
-  assert.equal(signedVintValue(16382, 2), -2);
+test('signedVintValue：数据位按 EBML 有符号偏置映射', () => {
+  assert.equal(signedVintValue(61, 1), -2);
+  assert.equal(signedVintValue(63, 1), 0);
+  assert.equal(signedVintValue(127, 1), 64); // 全 1 位型是合法最大值
+  assert.equal(signedVintValue(0, 2), -8191);
+  assert.equal(signedVintValue(8190, 2), -1);
+  assert.equal(signedVintValue(8191, 2), 0);
+  assert.equal(signedVintValue(16383, 2), 8192);
 });
 
 test('lacing none：单帧直通', () => {

@@ -24,7 +24,7 @@
 
 **Block 结构**：`[轨道号 VINT][相对时间码 int16BE][flags][帧数据…]`
 - flags：bit7=关键帧（仅 SimpleBlock）、bit2-1=Lacing 类型、bit0=可丢弃；
-- Lacing 三式：Xiph 锁存字节链 / fixed 等分 / EBML 差值（有符号 VINT=数据位宽二补码，见「已知限制」）；
+- Lacing 三式：Xiph 锁存字节链 / fixed 等分 / EBML 差值（Signed VINT 按规范偏置解码）；
 - 时间换算：`(ClusterTimecode + 相对时间码) × TimecodeScale`，本模块统一换算 **µs 整数**后输出（契约 §0.5）；
 - 关键帧判定：SimpleBlock 看 flags；BlockGroup 内 Block 以**是否存在 ReferenceBlock** 区分参考/非参考帧。
 
@@ -163,7 +163,7 @@ cd mkv && python3 -m http.server 8090   # 或根目录 npm run demo
 
 ## 七、已知限制与路线
 
-1. **EBML Lacing 有符号尺寸互操作校验点**："有符号 VINT" 采用主流理解——同宽度标记、数据位按位宽二补码解释（全 1 位型即 -1）。fixture roundtrip 已验；真实文件如遇偏差请对照 `mkvinfo` 反馈。
+1. **EBML Lacing Signed VINT**：Signed 值 = 数据位无符号值 − (2^(7n−1)−1)；例如一字节数据位 61 编码 -2，全 1 位型是合法最大正值。解码器直接测试外部字节向量，encoder/decoder 往返仅作补充覆盖。
 2. 多 Segment 文件仅取第一个；未处理 BlockAdditions 与 Chapter 深层结构（安全跳过）。
 3. VP9/AV1 精确 codec 串需解析帧头参数集，当前降级基础串（README 如实标注）。
 4. 无 Cues 且未预扫描时首个 seek 会做一次线性簇索引（header-only 扫描，开销小）。

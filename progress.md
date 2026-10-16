@@ -1,6 +1,30 @@
 # 维护进度
 
+## Attempt 109：修复 Matroska EBML lacing signed-delta 解码并避免整组丢帧
+
+### 问题与修复
+- EBML lacing 中间帧长度 delta 是有符号 VINT，映射规则是 `raw - (2^(7*n-1)-1)`，不是二补码。旧 decoder 将首帧 5、delta -2 的合法单字节 raw 61（VINT `0xBD`）解为 +61，随后报 lacing 长度越界；Matroska demuxer 因此跳过整个 Block，丢掉其中所有视频/音频帧。
+- `mkv/src/lacing.js`：按 VINT 位宽及标记解析 signed payload，避免把 Signed VINT 的全 1 数据位误认作 unsigned Size 的 unknown 哨兵；解码/编码统一采用 EBML bias，使用 BigInt 保持 8 字节字段的精确位运算，并防止负帧长、数值越界和超出 Block body。
+- `mkv/README.md` 与旧边界测试同步更正，避免 encoder/decoder 相互同错的 round-trip 掩盖互操作问题。
+
+### 回归测试
+- `mkv/__tests__/mkv-lacing.test.js`：外部原始 1-byte `0xBD`、2-byte `0x5FFD` 和 8-byte signed delta 均解出 `[5,3,1]`；验证全 1 signed 位型是最大正数、8-byte encoder 原始字节、负 BigInt payload 拒绝；真实 BlockGroup 集成测试以字面 Block 字节确认 demuxer 交付全部三帧及精确 payload。
+- `mkv/__tests__/ebml.test.js` 与 `mkv/__tests__/vint-directed-boundary.test.js`：更新 bias 语义及范围、编码器、安全整数与 hostile-input 断言。
+
+### 验证
+- MKV 全部定向/模块测试：226/226；signed lacing、EBML 与 hostile VINT 回归：49/49。
+- 全量 `npm run check`：3277/3277 测试通过；548 个 JS 文件 lint 通过。
+- Chromium WebCodecs：15/15；Chromium MSE：19/19。
+
+### 提交和推送
+- 独立提交并推送到 `maintenance/round-6`。
+
+### 风险
+- 公开 signedVintValue helper 仍返回 Number；无法安全表示的输入明确抛出 EbmlError。实际 lacing frame size 与 delta 限于安全整数及输入 Block 大小。
+
+
 ## Attempt 108：修复字幕行内对齐及 WebCodecs 音频倍速
+
 
 ### 问题与修复
 - ASS 内联样式把一行拆成多个 text run。Canvas 的 `textAlign` 对每次 `fillText` 分别生效，旧实现给每段增加前序宽度却仍复用居中/右对齐锚点，导致各 run 重复锚定、整行向右漂移。

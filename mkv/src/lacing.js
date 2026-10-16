@@ -8,13 +8,12 @@
  *   0b11 EBML   首帧无符号 VINT，后续帧为与前帧的差值（有符号 VINT），末帧由余量推得
  *
  * 【互操作校验点】"有符号 VINT" 的规范语义：
- *   与普通 VINT 同样带长度标记位，数据位按该位宽的「二补码有符号数」解释。
- *   例：2 字节 VINT 数据位 14 位，范围 -8192..+8191；raw=0x3FFF(数据位全 1) = -1。
- *   本实现按此规则解码/编码，并在 __tests__ 中以自洽 roundtrip 验证；
- *   若与真实世界文件存在偏差，请对照 mkvinfo 输出反馈给模块维护者调整。
+ *   有符号值 = VINT 数据位的无符号值 - (2^(7*n-1)-1)。
+ *   例：1 字节偏置为 63，raw=61 表示 -2，raw=63 表示 0，raw=127 表示 +64。
+ *   全 1 数据位在此语境是合法最大正值，不是 Size VINT 的未知长度哨兵。
  */
 
-import { readSize, encodeSize, EbmlError } from './ebml.js';
+import { readSize, encodeSize, vintLength, EbmlError } from './ebml.js';
 
 export const LACING_NONE = 0;
 export const LACING_XIPH = 1;
@@ -78,20 +77,25 @@ export function decodeLacing(laceType, data) {
       if (first.unknown) throw new Error('EBML lacing 首帧尺寸非法（未知长度）');
       const sizes = [first.value];
       let p = 1 + first.length;
-      // 中间帧：有符号 VINT 差值（数据位二补码；全 1 位型即 -1）
+      // 中间帧：有符号 VINT 差值。全 1 数据位在此语境是合法最大
+      // 正值，不能按 Size VINT 的 unknown 哨兵处理。
       for (let i = 1; i < frameCount - 1; i++) {
-        const raw = readSize(data, p);
-        const signed = raw.unknown ? -1 : signedVintValue(raw.value, raw.length);
-        sizes.push(sizes[sizes.length - 1] + signed);
+        const raw = readSignedVint(data, p);
+        const nextSize = sizes[sizes.length - 1] + raw.value;
+        if (!Number.isSafeInteger(nextSize)) throw new Error('EBML lacing 帧长超出安全整数范围');
+        if (nextSize < 0) throw new Error(`EBML lacing 出现负帧长: #${i}`);
+        sizes.push(nextSize);
         p += raw.length;
       }
       let consumed = p;
       for (let i = 0; i < sizes.length; i++) {
-        if (sizes[i] < 0) throw new Error(`EBML lacing 出现负帧长: #${i}`);
+        if (!Number.isSafeInteger(sizes[i]) || sizes[i] < 0) {
+          throw new Error(`EBML lacing 出现非法帧长: #${i}=${sizes[i]}`);
+        }
+        if (sizes[i] > data.length - consumed) throw new Error('EBML lacing 长度越界');
         consumed += sizes[i];
       }
       const lastSize = data.length - consumed;
-      if (lastSize < 0) throw new Error('EBML lacing 长度越界');
       sizes.push(lastSize);
       const frames = [];
       let off = p;
@@ -104,27 +108,55 @@ export function decodeLacing(laceType, data) {
   }
 }
 
-/**
- * 有符号 VINT：给定掩码后的原始值与字节数，按数据位宽二补码求值。
- * readSize 返回的 unknown（全 1）在 lacing 语境即该位宽最小值 -2^(7n-1)。
- */
-export function signedVintValue(rawValue, byteLen) {
-  const bits = 7 * byteLen;
-  const half = 2 ** (bits - 1);
-  return rawValue >= half ? rawValue - 2 ** bits : rawValue;
+/** 读取 EBML 有符号 VINT（偏置映射，而非二补码/Size unknown 语义）。 */
+function readSignedVint(bytes, pos) {
+  if (pos >= bytes.length) throw new EbmlError('Signed VINT 越界');
+  const len = vintLength(bytes[pos]);
+  if (pos + len > bytes.length) throw new EbmlError(`Signed VINT 越界: 需要 ${len} 字节`);
+  let raw = BigInt(bytes[pos] & (len === 8 ? 0x00 : 0xff >> len));
+  for (let i = 1; i < len; i++) raw = (raw << 8n) | BigInt(bytes[pos + i]);
+  const value = raw - ((1n << BigInt(7 * len - 1)) - 1n);
+  if (value < BigInt(Number.MIN_SAFE_INTEGER) || value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new EbmlError(`Signed VINT 超出安全整数范围: ${value}`);
+  }
+  return { value: Number(value), length: len };
 }
 
-/** 有符号 VINT 编码（供 fixture / mux 使用）；-1 等值按数据位二补码直接编码（允许全 1 位型） */
+/** 有符号 VINT 数据位的标准偏置映射：signed = raw - (2^(7n-1)-1)。 */
+export function signedVintValue(rawValue, byteLen) {
+  if (!Number.isSafeInteger(byteLen) || byteLen < 1 || byteLen > 8) {
+    throw new EbmlError(`有符号 VINT 字节数非法: ${byteLen}`);
+  }
+  let raw;
+  if (typeof rawValue === 'bigint' && rawValue >= 0n) raw = rawValue;
+  else if (Number.isSafeInteger(rawValue) && rawValue >= 0) raw = BigInt(rawValue);
+  else throw new EbmlError(`有符号 VINT 原始值必须是非负安全整数: ${rawValue}`);
+  if (raw > (1n << BigInt(7 * byteLen)) - 1n) {
+    throw new EbmlError(`有符号 VINT 原始值超出 ${byteLen} 字节范围: ${raw}`);
+  }
+  const signed = raw - ((1n << BigInt(7 * byteLen - 1)) - 1n);
+  if (signed < BigInt(Number.MIN_SAFE_INTEGER) || signed > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new EbmlError(`有符号 VINT 超出安全整数范围: ${signed}`);
+  }
+  return Number(signed);
+}
+
+/** 有符号 VINT 编码（偏置编码；全 1 数据位是合法的最大正值）。 */
 export function encodeSignedVint(value) {
+  if (!Number.isSafeInteger(value)) throw new EbmlError(`有符号 VINT 必须是安全整数: ${value}`);
+  const signed = BigInt(value);
   let len = 1;
-  while (value < -(2 ** (7 * len - 1)) || value > 2 ** (7 * len - 1) - 1) len++;
-  // 8 档（56 数据位）封顶：越界若无守卫会产出错乱的 9 字节编码（第二百一十四波
-  // 定向 round-trip 命中；encodeSize 同型防御在其内部，此处对齐）
+  while (len <= 8) {
+    const bias = (1n << BigInt(7 * len - 1)) - 1n;
+    const min = -bias;
+    const max = bias + 1n;
+    if (signed >= min && signed <= max) break;
+    len++;
+  }
   if (len > 8) throw new EbmlError(`有符号 VINT 超出 8 字节容量: ${value}`);
-  const raw = value >= 0 ? value : value + 2 ** (7 * len);
+  let raw = signed + (1n << BigInt(7 * len - 1)) - 1n;
   const bytes = new Uint8Array(len);
-  let v = raw;
-  for (let i = len - 1; i >= 0; i--) { bytes[i] = v & 0xff; v = Math.floor(v / 256); }
+  for (let i = len - 1; i >= 0; i--) { bytes[i] = Number(raw & 0xffn); raw >>= 8n; }
   bytes[0] &= len === 8 ? 0x01 : 0xff >> len;
   bytes[0] |= (1 << (8 - len)) & 0xff;
   return bytes;
