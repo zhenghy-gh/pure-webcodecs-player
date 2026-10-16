@@ -484,7 +484,12 @@ export function findAudioSpecificConfig(initSegment) {
   const esdsBox = moov ? findMp4aEsds(initSegment, moov) : topBoxes.find((box) => box.type === 'esds');
   if (!esdsBox) return null;
   const boxEnd = esdsBox.contentEnd;
-  const descriptorStart = esdsBox.contentStart + 4; // skip esds FullBox version/flags
+  if (esdsBox.contentStart + 4 > boxEnd) return null;
+  const version = initSegment[esdsBox.contentStart];
+  const fullBoxFlags = (initSegment[esdsBox.contentStart + 1] << 16) |
+    (initSegment[esdsBox.contentStart + 2] << 8) | initSegment[esdsBox.contentStart + 3];
+  if (version !== 0 || fullBoxFlags !== 0) return null;
+  const descriptorStart = esdsBox.contentStart + 4; // skip validated esds FullBox version/flags
   const end = Math.min(boxEnd, descriptorStart + 512);
   const es = readDescriptor(initSegment, descriptorStart, end);
   if (!es || es.tag !== 0x03) return null;

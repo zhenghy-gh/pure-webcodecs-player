@@ -73,6 +73,24 @@ test('findAudioSpecificConfig：standalone largesize esds 正确使用 16-byte �
   assert.deepEqual([...findAudioSpecificConfig(extended)], [0x12, 0x10]);
 });
 
+test('findAudioSpecificConfig：截断或未知 version/flags 的 esds FullBox 返回 null', () => {
+  const valid = new Uint8Array([
+    0, 0, 0, 39, 0x65, 0x73, 0x64, 0x73, 0, 0, 0, 0,
+    0x03, 25, 0x05, 0x02, 0, 0x04, 17,
+    0x40, 0x15, 0, 0, 0, 0x05, 0x02, 0xaa, 0xbb, 0, 0, 0, 0,
+    0x05, 0x02, 0x12, 0x10, 0x06, 1, 2,
+  ]);
+  const truncated = valid.slice(0, 11);
+  new DataView(truncated.buffer).setUint32(0, truncated.length);
+  assert.equal(findAudioSpecificConfig(truncated), null);
+  for (const [version, flags] of [[1, 0], [0, 1]]) {
+    const invalid = valid.slice();
+    invalid[8] = version;
+    invalid[11] = flags;
+    assert.equal(findAudioSpecificConfig(invalid), null);
+  }
+});
+
 test('findAudioSpecificConfig：跳过 ES_Descriptor 的可选字段', () => {
   const esds = new Uint8Array([
     0, 0, 0, 46, 0x65, 0x73, 0x64, 0x73, 0, 0, 0, 0,

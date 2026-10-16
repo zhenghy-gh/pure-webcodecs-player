@@ -2016,3 +2016,26 @@
 
 ### 风险
 - ESDS 保持标准单层 ISO BMFF 盒头；不可表示或不完整 largesize 会由 box iterator 按既有截断行为忽略。
+
+## Attempt 91：仅解析受支持版本的 ESDS FullBox
+
+### 发现
+- 复现条件：`esds` box 声明非零 version、保留 flags，或自身 fullbox header 截断，却在后续字节包含看似合法的 descriptor/ASC。
+- 根因：ASC helper 直接跳过 4-byte fullbox header，不检查 box 内是否完整，也未验证 ESDS 规范要求的 version=0、flags=0。
+- 用户影响：未知/畸形 header 下的任意后续字节可能被误解释为 AAC decoderSpecificInfo。
+
+### 修改
+- cmaf/src/isobmff.js：读取 descriptor 前要求 box-local fullbox header 完整，并仅接受 version=0、flags=0。
+- cmaf/__tests__/cmaf-box.test.js：新增 truncated fullbox、version 1、nonzero flags 必须返回 null；合法大尺寸 esds 与 AAC ASC 用例仍保留。
+
+### 验证
+- CMAF box / init / extras 定向测试：52/52 通过。
+- CMAF box / init / extras 定向测试：52/52 通过。
+- 全量 npm run check：fixtures 通过；3234/3234 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 非零 flags 或未知 version 按当前受支持范围返回 null；未知未来规范扩展需显式解析后再支持。
