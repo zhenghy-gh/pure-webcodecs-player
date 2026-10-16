@@ -560,7 +560,7 @@ export class Mp4Demuxer extends Demuxer {
     if (this._fragmented) state.fragmentReadIndex = pickIdx;
     const mappedDtsUs = state.editMap?.get(pickIdx)?.dtsUs;
     const actualUs = found >= 0 ? pickedDtsUs :
-      (mappedDtsUs !== undefined && timestampUs < mappedDtsUs ? timestampUs : 0);
+      (mappedDtsUs !== undefined && timestampUs < mappedDtsUs ? timestampUs : pickedDtsUs);
     // 多轨必须相对视频实际 DTS 落点定位，而不是原始请求时间；
     // 否则关键帧回退时音频也会从请求时间才开始，MSE 轨道间出现时间缺口。
     for (const [id, st] of this._trackState) {
@@ -570,7 +570,7 @@ export class Mp4Demuxer extends Demuxer {
       }
     }
     this.emit('seek', { timestampUs, trackId: targetId });
-    return { actualTimestampUs: Math.min(actualUs, timestampUs) };
+    return { actualTimestampUs: actualUs };
   }
 
   _requireTrack(trackId) {

@@ -60,6 +60,42 @@ test('时间戳：集群时间码 + 负相对时间码 → 正确 µs', async ()
   assert.equal(s.timestamp, 500_000);
 });
 
+test('DefaultDuration：为每个 SimpleBlock 帧及每个 lace 样本提供 duration', async () => {
+  const timedTrack = (w) => w.master(ID.TrackEntry, (t) => {
+    t.u(ID.TrackNumber, 1); t.u(ID.TrackType, 1); t.s(ID.CodecID, 'V_VP9');
+    t.u(ID.DefaultDuration, 40_000_000);
+    t.master(ID.Video, (v) => { v.u(ID.PixelWidth, 64); v.u(ID.PixelHeight, 64); });
+  });
+  const block = (relTimecode, frames, lacing = 'none') => new EbmlWriter().leaf(ID.SimpleBlock,
+    makeBlock({ trackNumber: 1, relTimecode, keyframe: true, lacing, frames: frames.map((value) => U8([value])) })).done();
+  const bytes = buildMini({
+    tracksBuild: timedTrack,
+    clusterChildren: [block(0, [1]), block(40, [2]), block(80, [3, 4, 5], 'xiph')],
+  });
+  const d = new MkvDemuxer(new BufferSource(bytes));
+  await d.open();
+  const samples = [];
+  for (;;) {
+    const sample = await d.readSample(1);
+    if (sample === null) break;
+    samples.push(sample);
+  }
+  assert.equal(d.tracks.find((track) => track.id === 1).frameRate, 25);
+  assert.deepEqual(samples.map((sample) => sample.timestamp), [0, 40_000, 80_000, 80_000, 80_000]);
+  assert.deepEqual(samples.map((sample) => sample.duration), [40_000, 40_000, 40_000, 40_000, 40_000]);
+
+  const explicitGroup = new EbmlWriter().master(ID.BlockGroup, (g) => {
+    g.leaf(ID.Block, makeBlock({ trackNumber: 1, relTimecode: 120, lacing: 'xiph', frames: [U8([6]), U8([7])] }));
+    g.u(ID.BlockDuration, 60);
+  }).done();
+  const explicitBytes = buildMini({ tracksBuild: timedTrack, clusterChildren: [explicitGroup] });
+  const explicitDemuxer = new MkvDemuxer(new BufferSource(explicitBytes));
+  await explicitDemuxer.open();
+  const explicit = [await explicitDemuxer.readSample(1), await explicitDemuxer.readSample(1)];
+  assert.deepEqual(explicit.map((sample) => sample.duration), [30_000, 30_000],
+    'explicit BlockDuration remains authoritative over per-frame DefaultDuration');
+});
+
 test('时间戳：TimecodeScale 缩放生效（2e6 → µs = ticks/2）', async () => {
   // 默认 scale=1e6 下 relTimecode 单位为毫秒；scale=2e6 时 tick=2ms
   const block = new EbmlWriter().leaf(

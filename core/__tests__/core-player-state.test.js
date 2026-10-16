@@ -22,6 +22,7 @@ import { Demuxer } from '../src/demuxer.js';
 import { MemoryDataSource } from '../src/data-source.js';
 import { createSample } from '../src/types.js';
 import { PlayerError } from '../src/errors.js';
+import { Emitter } from '../src/emitter.js';
 
 /* ------------------------------ 假 demuxer ------------------------------ */
 
@@ -1348,6 +1349,25 @@ test('码率统计：now 返回非有限值时保持有限且不污染窗口', (
 });
 
 /* ------------------------------ destroy ------------------------------ */
+
+test('destroy：detach all pipeline subscriptions before teardown', async () => {
+  const pipeline = new Emitter();
+  Object.assign(pipeline, {
+    pushSample: async () => {},
+    destroy: async () => {},
+  });
+  const player = makePlayer({ pipelineFactory: async () => pipeline });
+  await player.load(new Uint8Array([1]));
+  const forwardedEvents = ['firstframe', 'stall', 'underrun', 'cue', 'audio-unavailable', 'catchup', 'error'];
+  for (const event of forwardedEvents) assert.equal(pipeline.listenerCount(event), 1, event);
+
+  await player.destroy();
+  for (const event of forwardedEvents) assert.equal(pipeline.listenerCount(event), 0, event);
+  let forwardedAfterDestroy = 0;
+  player.on('firstframe', () => forwardedAfterDestroy++);
+  pipeline.emit('firstframe', {});
+  assert.equal(forwardedAfterDestroy, 0, 'late pipeline events must not reach destroyed Player');
+});
 
 test('destroy：派发 end(aborted)、移除全部监听器、幂等、中断样本泵', async () => {
   const calls = [];

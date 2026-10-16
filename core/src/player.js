@@ -140,6 +140,7 @@ export class Player extends Emitter {
     this.mediaInfoValue = null;
     this.routeValue = 'none';
     this.pipeline = null;
+    this._pipelineUnsubscribers = [];
     this.endedValue = false;
     this.currentTimeValue = 0;
     this.clock = options.clock ?? new PlaybackClock(options.clockOptions);
@@ -266,6 +267,7 @@ export class Player extends Emitter {
     if (this._loadPromise) return this._loadPromise;
     const generation = ++this._loadGeneration;
     this._loadPromise = this._load(input, generation).catch(async (error) => {
+      this._detachPipelineListeners();
       try { await this.pipeline?.destroy?.(); } catch {}
       try { await this.demuxer?.destroy?.(); } catch {}
       this.pipeline = null;
@@ -356,10 +358,17 @@ export class Player extends Emitter {
     this.pipeline = pipeline;
     if (typeof this.pipeline?.on === 'function') {
       // 只转发契约事件名（§5）；管线错误由编排层统一进入 error 态
+      const subscribe = (event, listener) => {
+        const off = this.pipeline.on(event, listener);
+        if (typeof off === 'function') this._pipelineUnsubscribers.push(off);
+        else if (typeof this.pipeline.off === 'function') {
+          this._pipelineUnsubscribers.push(() => this.pipeline?.off?.(event, listener));
+        }
+      };
       for (const event of ['firstframe', 'stall', 'underrun', 'cue', 'audio-unavailable', 'catchup']) {
-        this.pipeline.on(event, (payload) => this.emit(event, payload));
+        subscribe(event, (payload) => this.emit(event, payload));
       }
-      this.pipeline.on('error', (error) => {
+      subscribe('error', (error) => {
         const e = asPlayerError(error, '播放管线失败');
         if (this._activeSeekContext) {
           this._activeSeekContext.pipelineError = e;
@@ -565,6 +574,12 @@ export class Player extends Emitter {
     }
   }
 
+  _detachPipelineListeners() {
+    for (const unsubscribe of this._pipelineUnsubscribers.splice(0)) {
+      try { unsubscribe(); } catch {}
+    }
+  }
+
   async destroy() {
     if (this.stateValue === PLAYER_STATES.DESTROYED) return;
     this._destroying = true;
@@ -572,6 +587,7 @@ export class Player extends Emitter {
     this._seekToken++;
     this._loadGeneration += 1;
     this._trackSwitchToken += 1;
+    this._detachPipelineListeners();
     try { await this.pipeline?.destroy?.(); } catch {}
     try { await this.demuxer?.destroy?.(); } catch {}
     this.pipeline = null;

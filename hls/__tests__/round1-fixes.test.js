@@ -83,8 +83,8 @@ test('SegmentLoader：BYTERANGE 映射为 Range 请求头', async () => {
       return {
         ok: true,
         status: 206,
-        headers: { get: () => null },
-        arrayBuffer: async () => new ArrayBuffer(4),
+        headers: { get: (name) => name.toLowerCase() === 'content-range' ? 'bytes 1000-76231/80000' : '75232' },
+        arrayBuffer: async () => new ArrayBuffer(75232),
       };
     },
   });
@@ -184,22 +184,19 @@ test('BYTERANGE 长度非正整数 → 解析期 PARSE_ERROR（不产出非法 R
   }
 });
 
-test('SegmentLoader：byteRange.length<=0 跳过 Range 头（防御性兜底）', async () => {
-  const seen = [];
+test('SegmentLoader：拒绝非正 BYTERANGE 长度且不发请求', async () => {
+  let called = false;
   const loader = new SegmentLoader({
-    fetchImpl: async (url, init = {}) => {
-      seen.push(init.headers?.['Range']);
-      return {
-        ok: true,
-        status: 200,
-        headers: { get: () => null },
-        arrayBuffer: async () => new ArrayBuffer(4),
-      };
+    fetchImpl: async () => {
+      called = true;
+      throw new Error('invalid range must be rejected before fetch');
     },
   });
-  // length=0 即便绕过得解析校验，也不得发出 "bytes=100-99" 之类非法头
-  await loader.load('https://cdn/a.mp4', { byteRange: { length: 0, offset: 100 } });
-  assert.equal(seen[0], undefined, 'length<=0 不得设置 Range 请求头');
+  await assert.rejects(
+    () => loader.load('https://cdn/a.mp4', { byteRange: { length: 0, offset: 100 } }),
+    (error) => error.code === 'SOURCE_ERROR',
+  );
+  assert.equal(called, false);
 });
 
 /* ---------------- 严重③残余：_startPipeline 不得抹掉续播下标 ---------------- */

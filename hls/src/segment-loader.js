@@ -7,7 +7,7 @@
  *  - AbortController 取消，供清晰度切换 / 销毁时中断在途请求
  *
  * 注意：跨域地址要求服务端返回 CORS 头（Access-Control-Allow-Origin）；
- *       Range 跨域还依赖 Access-Control-Expose-Headers: Content-Length 等。
+ *       BYTERANGE 跨域还依赖 Access-Control-Expose-Headers: Content-Range, Content-Length。
  */
 
 import { logger } from './utils.js';
@@ -103,6 +103,12 @@ export class SegmentLoader {
    */
   async load(url, opts = {}) {
     const { byteRange, signal, onProgress } = opts;
+    if (byteRange &&
+        (!Number.isSafeInteger(byteRange.offset) || byteRange.offset < 0 ||
+         !Number.isSafeInteger(byteRange.length) || byteRange.length <= 0 ||
+         !Number.isSafeInteger(byteRange.offset + byteRange.length))) {
+      throw new LoadError(ErrorCode.SOURCE_ERROR, '非法 HLS byte range', { url, fatal: true });
+    }
     if (!this._fetch) {
       throw new LoadError(ErrorCode.NOT_SUPPORTED, '当前环境无 fetch 且未注入 fetchImpl', { url, fatal: true });
     }
@@ -123,17 +129,30 @@ export class SegmentLoader {
           headers['Range'] = `bytes=${byteRange.offset}-${byteRange.offset + byteRange.length - 1}`;
         }
         const res = await this._fetch(url, { headers: { ...headers }, signal: bounded.signal, mode: 'cors', credentials: this.credentials });
-        if (!res.ok && res.status !== 206) {
-          // 4xx 视为不可恢复资源错误，5xx 允许重试
-          const fatal = res.status >= 400 && res.status < 500;
+        if (byteRange && res.status !== 206) {
+          // BYTERANGE request ignored or otherwise unsupported; never pass a full object as a segment.
+          const fatal = res.status < 500;
           throw new LoadError(
             fatal ? ErrorCode.SOURCE_ERROR : ErrorCode.NETWORK_ERROR,
-            `HTTP ${res.status} ${url}`,
+            "HLS byte range response status mismatch: " + res.status,
+            { url, status: res.status, fatal },
+          );
+        }
+        if ((!res.ok && res.status !== 206) || (res.status === 206 && !byteRange)) {
+          // 4xx and unsolicited partial responses are fatal; retry server errors.
+          const fatal = res.status === 206 || (res.status >= 400 && res.status < 500);
+          throw new LoadError(
+            fatal ? ErrorCode.SOURCE_ERROR : ErrorCode.NETWORK_ERROR,
+            "HTTP " + res.status + " " + url,
             { url, status: res.status, fatal }
           );
         }
 
-        const totalHeader = Number(res.headers.get('content-length')) || null;
+        const rawContentLength = res.headers?.get?.('content-length');
+        const parsedContentLength = rawContentLength == null || rawContentLength === '' ? null : Number(rawContentLength);
+        const totalHeader = Number.isSafeInteger(parsedContentLength) && parsedContentLength >= 0
+          ? parsedContentLength
+          : null;
         let data;
         if (res.body && typeof res.body.getReader === 'function') {
           data = await readStream(res.body, (loaded) => onProgress && onProgress(loaded, totalHeader), {
@@ -147,6 +166,7 @@ export class SegmentLoader {
           data = new Uint8Array(buf);
           if (onProgress) onProgress(data.byteLength, totalHeader);
         }
+        if (byteRange) validatePartialResponse(res, data, byteRange, url, rawContentLength);
         return { data, byteLength: data.byteLength };
       } catch (err) {
         bounded?.done();
@@ -182,6 +202,27 @@ export class SegmentLoader {
   async loadText(url, signal) {
     const { data } = await this.load(url, { signal });
     return new TextDecoder().decode(data);
+  }
+}
+
+function validatePartialResponse(response, data, byteRange, url, rawContentLength) {
+  const start = byteRange.offset;
+  const end = start + byteRange.length - 1;
+  const raw = response.headers?.get?.("content-range");
+  const match = typeof raw === "string" ? /^bytes (\d+)-(\d+)\/(\d+|\*)$/i.exec(raw.trim()) : null;
+  const rangeStart = match ? Number(match[1]) : null;
+  const rangeEnd = match ? Number(match[2]) : null;
+  const total = match && match[3] !== "*" ? Number(match[3]) : null;
+  const hasDeclaredLength = rawContentLength != null && String(rawContentLength).trim() !== "";
+  const declaredLength = hasDeclaredLength ? Number(rawContentLength) : null;
+  if (!match || !Number.isSafeInteger(rangeStart) || !Number.isSafeInteger(rangeEnd) ||
+      rangeStart !== start || rangeEnd !== end || data.byteLength !== byteRange.length ||
+      (total !== null && (!Number.isSafeInteger(total) || total <= end)) ||
+      (hasDeclaredLength && (!/^\d+$/.test(String(rawContentLength).trim()) ||
+        !Number.isSafeInteger(declaredLength) || declaredLength !== byteRange.length))) {
+    throw new LoadError(ErrorCode.SOURCE_ERROR, "HLS partial response does not match requested byte range", {
+      url, status: response.status, fatal: true,
+    });
   }
 }
 

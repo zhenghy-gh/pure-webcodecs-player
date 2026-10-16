@@ -1,5 +1,30 @@
 # 维护进度
 
+## Attempt 115：修复 HLS 范围响应错配、管线监听器泄漏、Matroska 默认帧时长及 fMP4 seek 落点
+
+### 问题与修复
+- HLS BYTERANGE 请求此前接受被服务器忽略的 200 完整对象，也接受缺少/错位 Content-Range、短/超长 body 的 206，可能把其它字节当作媒体片段。hls/src/segment-loader.js 现在对 Range 只接受精确 206，验证 inclusive start/end、total、实际 body length 以及可见 Content-Length；无效响应作为 fatal SOURCE_ERROR，500+ 仍可按网络故障重试。跨域说明要求暴露 Content-Range 与 Content-Length。
+- core/src/player.js 曾丢弃 pipeline.on() 返回的 unsubscribe 函数；Player.destroy() 后 pipeline 仍保留回调并可转发迟到事件。现在持有并在 pipeline destroy 前解除订阅；load 失败路径同样清理，且兼容返回 unsubscribe 或提供 off() 的 emitter。
+- mkv/src/demuxer.js 已解析 DefaultDuration 并发布 frameRate，但无 BlockDuration 的 SimpleBlock / BlockGroup 样本 duration 仍为 0。现将正值 DefaultDurationNs 按每个 Matroska 帧换算为 µs，作为显式 BlockDuration 均摊的回退；laced block 每个 lace frame 各自使用该帧时长，不改变共享 PTS。
+- fMP4 seek 目标早于首个 RAP、而 indexed range 开头没有 RAP 时，cursor 会从之后的首个 RAP 开始，actualTimestampUs 却回报 0。mp4/src/demuxer.js 现在报告选中 RAP 的 DTS；渐进/编辑 timeline 的既有行为由回归套件覆盖。
+
+### 回归测试
+- hls/__tests__/segment-loader-gaps.test.js、hls/__tests__/round1-fixes.test.js：覆盖忽略 Range 的 200 fail-closed、准确 206 与 Content-Range wildcard total、缺失/错格式/错位/越界 total、短/超长 body、错误/不匹配 Content-Length、非正长度预检。
+- core/__tests__/core-player-state.test.js：检查 7 个 pipeline 事件的订阅在 destroy 后均解除，迟到 firstframe 不再转发。
+- mkv/__tests__/mkv-timestamp.test.js：DefaultDuration=40ms 的 SimpleBlock 与 3-frame Xiph-laced SimpleBlock 均按每帧 40ms；显式 BlockDuration 仍优先并按 lace 均分。mkv/__tests__/demuxer.test.js 更新既有声明 DefaultDuration fixture 的样本时长期望。
+- mp4/__tests__/mp4-demuxer-seek-cursor.test.js：把首 moof 三个样本标为非同步，seek(90ms) 后断言 actualTimestamp=120ms 且第一解码样本为 RAP index 3。
+
+### 验证
+- 定向：HLS 26/26，Core 新回归 1/1，Matroska 新回归与 BlockDuration 2/2，fMP4 no-prior-RAP 回归 1/1；模块套件此前通过 Core 616/616、HLS 218/218、MKV 233/233、MP4 193/193。
+- 真实 Chromium 1248 + 本地 sintel-trailer.mp4：WebCodecs 15/15，MSE 19/19；覆盖真实解码、播放推进、seek/resume、无 stall 与 destroy。E2E 截图在验证后恢复为运行前字节（sha256 已核对），没有截图产物纳入变更。
+- 最终完整 npm run check（最终源码）通过：fixture 检查全过、3307/3307 测试通过、549 个 JS 文件 lint 通过；全量门禁全部通过。最后一次只在 HLS validator 对 Content-Range start/end 增加安全整数检查，并由随后这次完整门禁覆盖。
+
+### 提交和推送
+- Round 64 独立提交与 origin/maintenance/round-6 推送待最终全量验证通过后执行。
+
+### 风险
+- BYTERANGE 的跨域响应必须通过 Access-Control-Expose-Headers 暴露 Content-Range；如果浏览器隐藏该头，加载器按 fail-closed 报 SOURCE_ERROR，以免错误字节进入解复用。
+- DefaultDuration 是每帧时长而不为 laced PTS 指定逐帧偏移；仍按现有 Matroska 策略将同一 Block 的各 lace sample 保持在同一 timestamp。
 ## Attempt 114：修复分片 MP4 冷 seek 与取消读取后的播放恢复
 
 ### 问题与修复

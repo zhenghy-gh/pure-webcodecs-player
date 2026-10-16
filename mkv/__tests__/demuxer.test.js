@@ -112,9 +112,9 @@ test('readSample：pull 主通道、EOS null、Sample 形状与关键帧规则',
     assert.ok(Number.isInteger(s.index));
   }
   assert.deepEqual(rows, [
-    [1, 0, true, 4, 0],
+    [1, 0, true, 4, 41_708],
     [1, 1_500_000, false, 6, 40_000],
-    [1, 2_000_000, true, 8, 0],
+    [1, 2_000_000, true, 8, 41_708],
   ]);
 
   // 音频轨关键帧恒 true（契约 §1.1）

@@ -207,6 +207,41 @@ test('seek 游标重定位：渐进模式从目标关键帧续读至 EOS', async
   await d.destroy();
 });
 
+test('分片 MP4：目标早于首个 RAP 时 seek 时间与解码游标一致', async () => {
+  const { bytes: fixture } = buildFragmentedFixture();
+  const bytes = fixture.slice();
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const readType = (offset) => String.fromCharCode(...bytes.subarray(offset + 4, offset + 8));
+  let offset = 0;
+  let firstMoof = null;
+  while (offset + 8 <= bytes.byteLength) {
+    const size = view.getUint32(offset, false);
+    if (size < 8) throw new Error('invalid fixture box size');
+    if (readType(offset) === 'moof') { firstMoof = { start: offset, end: offset + size }; break; }
+    offset += size;
+  }
+  assert.ok(firstMoof);
+  let trun = -1;
+  for (let pos = firstMoof.start + 8; pos + 8 <= firstMoof.end; pos++) {
+    if (readType(pos) === 'trun') { trun = pos; break; }
+  }
+  assert.notEqual(trun, -1);
+  const trunContentStart = trun + 8;
+  for (let i = 0; i < 3; i++) {
+    view.setUint32(trunContentStart + 12 + 8 + i * 16, 0x01010000, false);
+  }
+
+  const demuxer = new Mp4Demuxer(new MemoryDataSource(bytes), { lazySamples: true });
+  await demuxer.open();
+  const seek = await demuxer.seek(90 * TICK_US);
+  assert.equal(seek.actualTimestampUs, 120 * TICK_US);
+  const first = await demuxer.readSample(1);
+  assert.equal(first.index, 3);
+  assert.equal(first.dts, 120 * TICK_US);
+  assert.equal(first.keyframe, true);
+  await demuxer.destroy();
+});
+
 test('分片 MP4：fresh-open seek 先扫描目标区间并落到最近 RAP', async () => {
   const { bytes } = buildFragmentedFixture();
   const d = new Mp4Demuxer(new MemoryDataSource(bytes), { lazySamples: true });

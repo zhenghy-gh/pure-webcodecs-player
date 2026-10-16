@@ -1107,7 +1107,8 @@ export class MkvDemuxer extends Demuxer {
         trackId: bh.trackNumber,
         track,
         timestampUs,
-        durationUs: durationUnits !== null ? frameDurations[fi] ?? 0 : 0,
+        durationUs: durationUnits !== null ? frameDurations[fi] ?? 0 :
+          (track?.defaultDurationNs > 0 ? Math.round(track.defaultDurationNs / 1000) : 0),
         keyframe,
         discardable: bh.discardable,
         discardPaddingUs: discardPaddingNs ? Math.round(discardPaddingNs / 1000) : 0,
