@@ -1971,3 +1971,25 @@
 
 ### 风险
 - sample-entry parser 目前基于标准 VisualSampleEntry 78-byte 固定字段；非标准扩展或未知 visual entry 不会通过猜测内部标签恢复配置。
+
+## Attempt 89：移除视频配置扫描法带来的 sample-entry 伪造命中
+
+### 发现
+- round 90 修复后进一步发现：前一轮 `findVideoDecoderConfig()` 的实现在源码尚有全局 stsd fourcc 搜索，hvcC payload 可构造完整伪 avc1 + avcC 子结构，且伪尺寸落在 sample-entry 范围内。
+- 根因：按标签字节扫描只能过滤跨 moov 的伪造，不能证明 codec type/config tag 真的是 stsd/visual-entry 的真实 box 节点。
+- 用户影响：WebCodecs 收到错误 codec entry/config，导致 configure 失败或轨道错误归类。
+
+### 修改
+- cmaf/src/isobmff.js：完全改为遍历 moov/trak/mdia/minf/stbl/stsd，按声明 entry_count 解析 sample entries；只从 VisualSampleEntry 的真实直系子盒识别 avcC/hvcC/dvcC/vpcC；校验 child box 列表完整和边界。iterateBoxes() 同时暴露 headerSize，支持规范 box header 信息。
+- cmaf/__tests__/cmaf-box.test.js：hvcC payload 内嵌伪造 avc1/avcC；必须仍返回真实 hvc1/hvcC；既有截断配置拒绝用例继续通过。
+
+### 验证
+- CMAF box / init / parse 定向测试：52/52 通过。
+- 完整 npm run check：fixtures 通过；3232/3232 tests；lint 548 个 JS 文件通过；exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实 H.264 解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 此轮是 round 91 对 round 90 同一修复面的直接后续，合并为独立提交推送。
+
+### 风险
+- VisualSampleEntry 采用 ISO 固定 78-byte 前缀；尚未支持非标准结构扩展。
