@@ -22,8 +22,11 @@ class PcmRingWorklet extends AudioWorkletProcessor {
     this.rings = [];            // 每声道一个 Float32Array 环形缓冲
     this.writePos = 0;
     this.bufferedFrames = 0;
-    this.playedFrames = 0;      // 当前时钟代的已消费帧数
+    this.playedFrames = 0;      // 当前时钟代的已消费源帧数
     this.clockGeneration = 0;
+    this.playbackRate = 1;
+    this.readFraction = 0;
+    this.framesSinceReport = 0;
     this.underruns = 0;
     this.capacity = 0;
     this.port.onmessage = (e) => {
@@ -82,11 +85,16 @@ class PcmRingWorklet extends AudioWorkletProcessor {
         }
         this.writePos = (this.writePos + frames) % this.capacity;
         this.bufferedFrames += frames;
+      } else if (msg.type === 'rate') {
+        if (!Number.isFinite(msg.value) || msg.value <= 0) return;
+        this.playbackRate = msg.value;
       } else if (msg.type === 'clear') {
         if (!Number.isSafeInteger(msg.generation) || msg.generation <= this.clockGeneration) return;
         this.clockGeneration = msg.generation;
         this.bufferedFrames = 0;
         this.playedFrames = 0;
+        this.readFraction = 0;
+        this.framesSinceReport = 0;
         this.writePos = 0;
       } else if (msg.type === 'query') {
         this.report();
@@ -112,16 +120,28 @@ class PcmRingWorklet extends AudioWorkletProcessor {
     const chCount = output.length;
 
     for (let i = 0; i < block; i++) {
+      const readPos = this.capacity > 0
+        ? (this.writePos - this.bufferedFrames + this.capacity) % this.capacity
+        : 0;
       if (this.bufferedFrames > 0) {
-        const readPos =
-          (this.writePos - this.bufferedFrames + this.capacity) % this.capacity;
+        const nextPos = this.capacity > 0 ? (readPos + 1) % this.capacity : 0;
         for (let ch = 0; ch < chCount; ch++) {
           const ring = this.rings[ch % Math.max(1, this.rings.length)];
-          output[ch][i] = ring && this.rings.length > 0 ? ring[readPos] : 0;
+          if (ring && this.rings.length > 0) {
+            const first = ring[readPos];
+            const second = this.bufferedFrames > 1 ? ring[nextPos] : first;
+            output[ch][i] = first + (second - first) * this.readFraction;
+          } else {
+            output[ch][i] = 0;
+          }
         }
-        this.bufferedFrames -= 1;
-        this.playedFrames += 1;
+        const advance = this.readFraction + this.playbackRate;
+        const consumed = Math.min(this.bufferedFrames, Math.floor(advance));
+        this.bufferedFrames -= consumed;
+        this.playedFrames += consumed;
+        this.readFraction = advance - Math.floor(advance);
       } else {
+        this.readFraction = 0;
         for (let ch = 0; ch < chCount; ch++) output[ch][i] = 0;
         if (i === 0 && this.playedFrames > 0) {
           this.underruns += 1;
@@ -129,8 +149,13 @@ class PcmRingWorklet extends AudioWorkletProcessor {
         }
       }
     }
-    // 每 ~10ms 上报一次统计，供主线程推算播放时钟
-    if ((this.playedFrames & 1023) < block) this.report();
+    // 按输出帧（不是 rate-scaled 输入帧）定期上报，避免高倍速跨过阈值后不再更新。
+    this.framesSinceReport += block;
+    const reportInterval = Math.max(1, Math.floor(sampleRate / 100));
+    if (this.framesSinceReport >= reportInterval) {
+      this.framesSinceReport %= reportInterval;
+      this.report();
+    }
     return true;
   }
 }
@@ -204,6 +229,7 @@ export class AudioWorkletPlayer extends Emitter {
     this._underruns = 0;
     this._anchorCtxTime = 0; // playedFrames 对应的 context.currentTime 锚点
     this._startedAt = 0;
+    this._playbackRate = 1;
   }
 
   /** 创建 AudioContext 并装载 worklet；必须先于 push/play 调用 */
@@ -220,6 +246,7 @@ export class AudioWorkletPlayer extends Emitter {
       outputChannelCount: [Math.max(1, this.channelCount)],
     });
     this.node.port.onmessage = (e) => this._onWorkletMessage(e.data);
+    if (this._playbackRate !== 1) this.node.port.postMessage({ type: 'rate', value: this._playbackRate });
     if (this._clockGeneration > 0) {
       this.node.port.postMessage({ type: 'clear', generation: this._clockGeneration });
     }
@@ -347,6 +374,15 @@ export class AudioWorkletPlayer extends Emitter {
     if (this.gainNode) this.gainNode.gain.value = Math.max(0, Math.min(1, v));
   }
 
+  setPlaybackRate(rate) {
+    if (!Number.isFinite(rate) || rate <= 0) throw stateError(`invalid playbackRate: ${rate}`);
+    const now = this.context?.currentTime ?? 0;
+    if (this.playing && Number.isFinite(now)) this._startedAt += Math.max(0, now - this._anchorCtxTime) * this._playbackRate;
+    this._anchorCtxTime = now;
+    this._playbackRate = rate;
+    this.node?.port.postMessage({ type: 'rate', value: rate });
+  }
+
   /**
    * 音频主钟（契约 §7 定稿口径）：整数微秒。
    * AudioOutput.currentTimeUs 是全系统主时钟源；A/V 同步一律以此为准。
@@ -362,7 +398,7 @@ export class AudioWorkletPlayer extends Emitter {
     if (this.playing && Number.isFinite(this.context.currentTime)
       && Number.isFinite(this._anchorCtxTime) && Number.isFinite(this._startedAt)) {
       const elapsed = Math.max(0, this.context.currentTime - this._anchorCtxTime);
-      return Number.isFinite(elapsed) ? this._startedAt + elapsed : consumed;
+      return Number.isFinite(elapsed) ? this._startedAt + elapsed * this._playbackRate : consumed;
     }
     return Number.isFinite(consumed) ? consumed : 0;
   }

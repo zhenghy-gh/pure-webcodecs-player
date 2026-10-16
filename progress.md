@@ -1,6 +1,31 @@
 # 维护进度
 
+## Attempt 108：修复字幕行内对齐及 WebCodecs 音频倍速
+
+### 问题与修复
+- ASS 内联样式把一行拆成多个 text run。Canvas 的 `textAlign` 对每次 `fillText` 分别生效，旧实现给每段增加前序宽度却仍复用居中/右对齐锚点，导致各 run 重复锚定、整行向右漂移。
+- `subtitle/src/renderer.js`：先测量每段样式下的宽度，确定整行 left/center/right 共享边界后，为每段设置各自的对齐锚点；背景框、下划线和删除线按各段的实际左边缘绘制。
+- WebCodecs 路线将 playbackRate 只传给系统时钟和 A/V 同步器，AudioWorklet 仍每个输出帧消费一个输入帧，实际音频固定 1×。`core/src/pipeline-webcodecs.js` 现在将 rate 传给音频输出并保留到异步创建；`core/src/audio-worklet-player.js` 用线性插值和分数帧步进按速率消费 PCM，并以输出帧周期汇报进度、按速率推进音频主钟。
+
+### 回归测试
+- `subtitle/__tests__/subtitle-renderer.test.js`：验证两段样式文本在 center/right 锚点的位置分别组成连续的完整行。
+- `core/__tests__/core-audio-worklet-env.test.js`：驱动真实内联 Worklet 处理器逻辑，验证 2×/0.5× 源帧消耗、0.5× 插值、非法 rate 忽略；验证 init 前设置倍速、切速后的主钟重锚及非法值拒绝。
+- `core/__tests__/core-webcodecs-pipeline-env.test.js`：验证 WebCodecs rate 到达真实 PCM 输出控制。
+
+### 验证
+- 定向 core：598/598；subtitle：353/353 通过。
+- 全量 `npm run check`：3274/3274 测试通过；548 个 JS 文件 lint 通过。
+- Chromium WebCodecs（TS harness，仓库可用 Sintel MP4）：15/15；Chromium MSE：19/19。
+
+### 提交和推送
+- 独立提交并推送到 `maintenance/round-6`。
+
+### 风险
+- Worklet 使用线性插值以支持分数速率；rate 必须是有限正数，和 Player 公开 setter 的输入契约一致。
+
+
 ## Attempt 107：解密 AES-128 加密的 fMP4 初始化段
+
 
 ### 问题与修复
 - AES-128 `EXT-X-KEY` 的作用范围包括后续 `EXT-X-MAP`，但 HLS 播放器先把 init bytes 原样 append 到 MSE，media segment 才走解密路径；加密 init 会导致 fMP4 初始化失败。

@@ -63,6 +63,32 @@ test('PCM worklet：环形缓冲扩容保留未消费样本与顺序', () => {
   assert.equal(processor.bufferedFrames, 0);
 });
 
+test('PCM worklet: playback rate consumes source frames at the requested media speed', () => {
+  let Processor;
+  const context = {
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage() {} }; } },
+    registerProcessor(_name, ctor) { Processor = ctor; },
+    currentSampleRate: 48000, sampleRate: 48000, currentTime: 0,
+  };
+  runInNewContext(PCM_WORKLET_CODE, context);
+  const processor = new Processor();
+  processor.port.onmessage({ data: { type: 'push', channels: [new Float32Array(512).map((_, i) => i)], frames: 512 } });
+  processor.port.onmessage({ data: { type: 'rate', value: 2 } });
+  processor.process([], [[new Float32Array(128)]]);
+  assert.equal(processor.playedFrames, 256);
+  assert.equal(processor.bufferedFrames, 256);
+  processor.port.onmessage({ data: { type: 'clear', generation: 1 } });
+  processor.port.onmessage({ data: { type: 'push', channels: [new Float32Array([0, 10, 20, 30, 40, 50, 60, 70])], frames: 8 } });
+  processor.port.onmessage({ data: { type: 'rate', value: 0.5 } });
+  const output = [new Float32Array(4)];
+  processor.process([], [output]);
+  assert.deepEqual([...output[0]], [0, 5, 10, 15]);
+  assert.equal(processor.playedFrames, 2);
+  assert.equal(processor.bufferedFrames, 6);
+  const invalidRate = processor.playbackRate;
+  processor.port.onmessage({ data: { type: 'rate', value: Infinity } });
+  assert.equal(processor.playbackRate, invalidRate, 'non-finite rate must be ignored');
+});
 test('PCM worklet：clear starts a new clock generation and resets consumed-frame stats', () => {
   let Processor;
   const messages = [];
@@ -402,6 +428,23 @@ test('destroy()：AudioContext close 返回 rejected Promise 时不产生未处�
   });
 });
 
+test('setPlaybackRate: rate changes are applied before init and reanchor media time', async (t) => {
+  await withPlayer(t, {}, async (player, fakes) => {
+    player.setPlaybackRate(2);
+    await player.init();
+    const node = fakes.nodeInstances[0];
+    assert.deepEqual(node.port.sent.map((entry) => entry.msg), [{ type: 'rate', value: 2 }]);
+    player.play();
+    const ctx = fakes.ctxInstances[0];
+    ctx.currentTime = 1;
+    assert.equal(player.currentTimeSec(), 2);
+    player.setPlaybackRate(0.5);
+    ctx.currentTime = 3;
+    assert.equal(player.currentTimeSec(), 3);
+    assert.deepEqual(node.port.sent.at(-1).msg, { type: 'rate', value: 0.5 });
+    assert.throws(() => player.setPlaybackRate(0), (error) => error.code === ErrorCode.STATE_ERROR);
+  });
+});
 test('currentTimeSec 三态：无 ctx 用已消费帧；非 playing 用已消费帧；playing 用 ctx 时钟', async (t) => {
   await withPlayer(t, { sampleRate: 48000 }, async (player, fakes) => {
     const consumed = 96000 / 48000;

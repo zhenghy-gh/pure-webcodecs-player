@@ -49,6 +49,7 @@ class FakeAudioOutput {
     this.pushed = [];
     this.cleared = 0;
     this.volume = 1;
+    this.playbackRates = [];
     this.playing = false;
   }
   async init() {}
@@ -57,6 +58,7 @@ class FakeAudioOutput {
   pause() { this.playing = false; }
   clearBuffer() { this.cleared += 1; }
   setVolume(v) { this.volume = v; }
+  setPlaybackRate(rate) { this.playbackRates.push(rate); }
   destroy() { this.destroyed = true; }
   get currentTimeUs() { return this._currentTimeUs; }
 }
@@ -668,6 +670,7 @@ test('setVolume/setMuted/setPlaybackRate 透传音频输出与时钟', async () 
   pipeline.setPlaybackRate(2);
   assert.deepEqual(clockRate, [2]);
   assert.deepEqual(avSyncRate, [2]);
+  assert.deepEqual(audioOutput.playbackRates, [2], 'rate reaches the actual PCM output');
 });
 
 test('init：音频输出初始化失败会销毁已创建的临时输出并降级静音', async () => {

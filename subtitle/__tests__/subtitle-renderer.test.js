@@ -235,7 +235,7 @@ test('Renderer：underline / strikeout 各绘制一条 fillRect（primary 色）
   assert.ok(rects.every((c) => c[1].fill === 'rgba(255,255,255,1)'));
 });
 
-test('Renderer：行内多 run 触发累计水平偏移分支（fillText 两次）', () => {
+test('Renderer：行内多 run 分别绘制（fillText 两次）', () => {
   const { canvas, ctx } = makeFakeCanvas();
   const def = createDefaultStyle();
   def.shadow = 0; def.outlineWidth = 0; def.borderStyle = 1; // 仅主填充，避免阴影/描边干扰计数
@@ -265,6 +265,43 @@ test('Renderer：行内多 run 触发累计水平偏移分支（fillText 两次�
 
 /* ---------------- paint 变换 / 裁剪 / alpha 早退 ---------------- */
 
+test('Renderer: inline runs remain centered on a shared cue anchor', () => {
+  const { canvas, ctx } = makeFakeCanvas();
+  const def = createDefaultStyle();
+  def.shadow = 0; def.outlineWidth = 0; def.borderStyle = 1;
+  const style = {
+    fontName: def.fontname, fontSize: 20, bold: false, italic: false, underline: false, strikeout: false, spacing: 0,
+    primary: def.primary, outlineColor: def.outlineColor, outlineWidth: 0, scaleX: 100, scaleY: 100, rotation: 0,
+  };
+  const cue = {
+    startUs: 0, endUs: 5_000_000, text: 'AABB', style: 'Default', geom: { an: 2 }, settings: {},
+    segments: [{ type: 'text', text: 'AA', style }, { type: 'text', text: 'BB', style }],
+  };
+  const r = new SubtitleCanvasRenderer(canvas, { defaultStyle: def });
+  r.setCues({ cues: [cue], styles: [], info: {} });
+  r.renderAt(1_000_000);
+  const calls = ctx._calls.filter((call) => call[0] === 'fillText').map((call) => [call[1].t, call[1].x]);
+  assert.deepEqual(calls, [['AA', 310], ['BB', 330]]);
+});
+
+test('Renderer: inline runs remain contiguous at a right-aligned cue anchor', () => {
+  const { canvas, ctx } = makeFakeCanvas();
+  const def = createDefaultStyle();
+  def.shadow = 0; def.outlineWidth = 0; def.borderStyle = 1;
+  const style = {
+    fontName: def.fontname, fontSize: 20, bold: false, italic: false, underline: false, strikeout: false, spacing: 0,
+    primary: def.primary, outlineColor: def.outlineColor, outlineWidth: 0, scaleX: 100, scaleY: 100, rotation: 0,
+  };
+  const cue = {
+    startUs: 0, endUs: 5_000_000, text: 'AABB', style: 'Default', geom: { an: 3 }, settings: {},
+    segments: [{ type: 'text', text: 'AA', style }, { type: 'text', text: 'BB', style }],
+  };
+  const r = new SubtitleCanvasRenderer(canvas, { defaultStyle: def });
+  r.setCues({ cues: [cue], styles: [], info: {} });
+  r.renderAt(1_000_000);
+  const calls = ctx._calls.filter((call) => call[0] === 'fillText').map((call) => [call[1].t, call[1].x]);
+  assert.deepEqual(calls, [['AA', 610], ['BB', 630]]);
+});
 test('Renderer：alpha<=0 的 drawable 整体跳过（不 fillText）', () => {
   const { canvas, ctx } = makeFakeCanvas();
   const st = createDefaultStyle();

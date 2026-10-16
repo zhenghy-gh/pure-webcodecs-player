@@ -97,6 +97,7 @@ export class WebCodecsPipeline extends Emitter {
     this._framePumping = false;
     this._frameTimer = null;
     this._offsetUs = 0;
+    this._playbackRate = 1;
     /** 直播边缘：已灌入的最新视频样本时间戳（µs），-1 表示尚无视频样本 */
     this._liveEdgeUs = -1;
     this._firstFrameEmitted = false;
@@ -253,6 +254,7 @@ export class WebCodecsPipeline extends Emitter {
     this._audioDecoder = decoder;
     this._audioConfig = audioConfig;
     this.audioOutput = nextOutput;
+    if (this._playbackRate !== 1) this.audioOutput?.setPlaybackRate?.(this._playbackRate);
     return true;
   }
 
@@ -556,7 +558,7 @@ export class WebCodecsPipeline extends Emitter {
 
   setVolume(v) { this.audioOutput?.setVolume?.(v); }
   setMuted(m) { this.audioOutput?.setVolume?.(m ? 0 : (this.player?.volume ?? 1)); }
-  setPlaybackRate(rate) { this._clock.setRate(rate); this.avSync.setRate(rate); }
+  setPlaybackRate(rate) { this._clock.setRate(rate); this.avSync.setRate(rate); this._playbackRate = rate; this.audioOutput?.setPlaybackRate?.(rate); }
 
   /**
    * 切换活动轨：清缓冲 + 重建该类型解码链（视频/音频），字幕只换选中。

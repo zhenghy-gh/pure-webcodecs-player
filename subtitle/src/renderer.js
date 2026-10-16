@@ -231,21 +231,28 @@ function paint(ctx, d) {
 
 /** 绘制一行内的多个样式片段 */
 function drawLineRuns(ctx, d, runs, y, alpha, baseStyle) {
+  // Measure each styled run first, then position it inside a shared line box.
+  // Canvas textAlign applies to every fillText call, so offsetting anchored runs
+  // from d.x would re-anchor each run and push centered/right text out of place.
+  const textRuns = [];
   for (const run of runs) {
     if (run.type !== 'text') continue; // tags 片段无可见内容
+    ctx.font = fontString(run.style.fontSize, run.style);
+    textRuns.push({ run, width: ctx.measureText(run.text).width });
+  }
+  const totalWidth = textRuns.reduce((sum, entry) => sum + entry.width, 0) +
+    textRuns.slice(0, -1).reduce((sum, entry) => sum + (entry.run.style.spacing ?? 0), 0);
+  const lineLeft = d.alignH === 'center' ? d.x - totalWidth / 2 :
+    d.alignH === 'right' ? d.x - totalWidth : d.x;
+  let cursor = 0;
+
+  for (let i = 0; i < textRuns.length; i++) {
+    const { run, width } = textRuns[i];
     const st = run.style;
     ctx.font = fontString(st.fontSize, st);
-
-    // 行内水平定位：left 从盒左起排，center/right 需要累计偏移
-    let x = d.x;
-    const idx = runs.indexOf(run);
-    if (idx > 0) {
-      // 同一行前序片段宽度累计（近似测宽即可满足演示精度）
-      x += runs.slice(0, idx)
-        .filter((r) => r.type === 'text')
-        .reduce((acc, r) => acc + ctx.measureText(/** @type {any} */ (r).text).width +
-          (/** @type {any} */ (r).style.spacing ?? 0), 0);
-    }
+    const left = lineLeft + cursor;
+    const x = left + (d.alignH === 'center' ? width / 2 : d.alignH === 'right' ? width : 0);
+    cursor += width + (i + 1 < textRuns.length ? (st.spacing ?? 0) : 0);
 
     ctx.globalAlpha = alpha * (st.primary.alpha ?? 1);
 
@@ -253,7 +260,7 @@ function drawLineRuns(ctx, d, runs, y, alpha, baseStyle) {
     if ((baseStyle.borderStyle ?? 1) === 3) {
       const w = ctx.measureText(run.text).width;
       ctx.fillStyle = rgbaToCss(baseStyle.back);
-      ctx.fillRect(x - 4, y - st.fontSize * 0.95, w + 8, st.fontSize * 1.25);
+      ctx.fillRect(left - 4, y - st.fontSize * 0.95, w + 8, st.fontSize * 1.25);
     } else if (baseStyle.shadow > 0) {
       // 阴影层（偏移 shadow px）
       ctx.fillStyle = rgbaToCss(baseStyle.back);
@@ -276,11 +283,11 @@ function drawLineRuns(ctx, d, runs, y, alpha, baseStyle) {
     const tw = ctx.measureText(run.text).width;
     if (st.underline) {
       ctx.fillStyle = rgbaToCss(st.primary);
-      ctx.fillRect(x, y + st.fontSize * 0.12, tw, Math.max(1, st.fontSize / 16));
+      ctx.fillRect(left, y + st.fontSize * 0.12, tw, Math.max(1, st.fontSize / 16));
     }
     if (st.strikeout) {
       ctx.fillStyle = rgbaToCss(st.primary);
-      ctx.fillRect(x, y - st.fontSize * 0.3, tw, Math.max(1, st.fontSize / 16));
+      ctx.fillRect(left, y - st.fontSize * 0.3, tw, Math.max(1, st.fontSize / 16));
     }
     ctx.globalAlpha = 1;
   }
