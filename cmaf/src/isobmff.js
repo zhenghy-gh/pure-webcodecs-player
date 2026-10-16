@@ -204,16 +204,18 @@ export function parseTrun(buf, contentStart, contentEnd) {
   }
 
   const rows = [];
-  // 敌意 sample_count 防御（第二百零八波）：per-sample 标志全 0 时每行零消费，
-  // sampleCount（可达 2^32-1）会驱动无界循环；stride>0 时 DataView 越界读又会漏
-  // 裸 RangeError。统一钳制：stride===0 以 DEFAULT_MAX_TRUN_SAMPLES 封顶（规范
-  // 语义保留——全零行交由 tfhd 默认回退）；stride>0 钳到框体内可容纳的完整行数。
+  // 敌意 sample_count 防御：限制无逐样本字段时的隐式行数，并要求有逐样本
+  // 字段时每个声明行都完整存在于 trun box 内。不能静默截断，否则样本会丢失且
+  // 后续 tfdt/轨道时间轴表面正常但实际不完整。
   const perSampleBytes =
     (hasDuration ? 4 : 0) + (hasSize ? 4 : 0) + (hasFlags ? 4 : 0) + (hasCts ? 4 : 0);
   const maxByBytes = perSampleBytes > 0
-    ? Math.floor((contentEnd - p) / perSampleBytes)
+    ? Math.min(DEFAULT_MAX_TRUN_SAMPLES, Math.floor((contentEnd - p) / perSampleBytes))
     : DEFAULT_MAX_TRUN_SAMPLES;
-  const rowCount = Math.min(sampleCount, maxByBytes);
+  if (sampleCount > maxByBytes) {
+    throw notSupported(`trun sample_count 超出安全范围或完整样本行不足: count=${sampleCount}, max=${maxByBytes}`);
+  }
+  const rowCount = sampleCount;
   for (let i = 0; i < rowCount; i++) {
     const row = { duration: 0, size: 0, flags: 0, cts: 0 };
     if (hasDuration) { row.duration = dv.getUint32(p); p += 4; }

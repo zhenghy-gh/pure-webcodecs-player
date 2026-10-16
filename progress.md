@@ -1676,3 +1676,25 @@
 
 ### 风险
 - mdat 中未被任何 sample 引用的 padding/其他合法 payload 仍允许存在；当前只保证样本区间彼此不重叠。
+
+## Attempt 76：拒绝 trun 中被静默截断的样本计数
+
+### 发现
+- 复现条件：trun.sample_count 大于框体中完整可读的 per-sample 行数，或无行字段时 sample_count 超过安全上限。
+- 根因：parseTrun() 先前将声明计数钳到可读行数/默认上限并正常返回；截断 fragment 会被当作合法的部分样本表继续处理，丢弃尾部样本而不报错。
+- 用户影响：媒体时间轴可能仍显示片段有效，但样本内容缺失，导致音视频不完整或 seek/同步行为异常；超大计数也掩盖 malformed input。
+
+### 修改
+- cmaf/src/isobmff.js：per-sample 行字段存在时按完整行数与安全上限取最大值，声明 sample_count 超出即 NOT_SUPPORTED；无 per-sample 行字段时仍保留 DEFAULT_MAX_TRUN_SAMPLES 防护并快速拒绝超限。
+- cmaf/__tests__/cmaf-defect-regression.test.js：替换“钳制并接受部分结果”的历史用例，覆盖无字段巨量计数快速失败及带字段截断行数拒绝。
+
+### 验证
+- CMAF defect regression / box / moof flags / fragment 定向测试：50/50 通过。
+- 全量 npm run check：首轮 fixtures 重建期间为 3202/3202；随后独立 npm test 与第二轮完整 npm run check 均稳定 3214/3214；lint 548 个 JS 文件通过，完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 无 per-sample 字段时 sample_count 的上限仍按 DEFAULT_MAX_TRUN_SAMPLES；进一步缩紧需评估超大合法 fragment 的兼容性。

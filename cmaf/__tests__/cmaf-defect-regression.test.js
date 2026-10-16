@@ -15,7 +15,6 @@ import assert from 'node:assert/strict';
 import { _internalForTest as fmp4 } from '../../hls/src/fmp4-muxer.js';
 import { splitChunks } from '../src/chunk-parser.js';
 import { parseTrun, iterateBoxes } from '../src/isobmff.js';
-import { DEFAULT_MAX_TRUN_SAMPLES } from '../../core/src/limits.js';
 
 /* ---------------- 字节构造助手 ---------------- */
 
@@ -208,25 +207,19 @@ test('回归 A：手工 moof 中 data_offset(moof 基准) 直接定位到 mdat �
 
 /* ---------------- 缺陷 C（isobmff.js parseTrun，已修）：敌意 sample_count 无 界解析 ---------------- */
 
-test('parseTrun 缺陷C：sample_count 巨大但无 per-sample 标志不得挂起（钳到行数上界）', () => {
-  // flags=0：无 dataOffset/无 per-sample 字段；sampleCount=0xFFFFFFFF，框体仅 16 字节。
-  // 注意不得清零——全零行是 tfhd 默认回退的规范载体（chunk-parser materializeSamples 消费）。
+test('parseTrun 缺陷C：无逐样本字段的敌意巨大 sample_count 快速拒绝', () => {
+  // flags=0：无行字段，sampleCount=0xFFFFFFFF；不循环、不静默制造部分样本。
   const b = fullBox('trun', 0, 0x000000, u32(0xffffffff));
   const t0 = Date.now();
-  const r = parseTrun(b, 8, b.length);
-  assert.ok(Date.now() - t0 < 2000, '不得进入无界循环');
-  assert.equal(r.rows.length, DEFAULT_MAX_TRUN_SAMPLES, '钳到上界而非清零');
-  assert.equal(r.sampleCount, 0xffffffff, 'sample_count 原样回显，仅作信息');
+  assert.throws(() => parseTrun(b, 8, b.length), (err) => err.code === 'NOT_SUPPORTED');
+  assert.ok(Date.now() - t0 < 2000, '超限输入须立即失败');
 });
 
-test('parseTrun 缺陷C：sample_count 超框体时按 contentEnd 收敛且不抛裸 RangeError', () => {
-  // hasDuration|hasSize(stride=8)，声明 1000 样本，但框体只容得下 2 行。
+test('parseTrun 缺陷C：声明样本数超过框体完整行数时拒绝而不返回局部结果', () => {
+  // hasDuration|hasSize(stride=8)，声明 3 样本，但框体只容得下 2 行。
   const b = fullBox('trun', 0, 0x000100 | 0x000200,
-    u32(1000), u32(10), u32(20), u32(30), u32(40));
-  const r = parseTrun(b, 8, b.length);
-  assert.equal(r.rows.length, 2, '截断到框体内可容纳的完整行');
-  assert.equal(r.rows[0].duration, 10);
-  assert.equal(r.rows[1].size, 40);
+    u32(3), u32(10), u32(20), u32(30), u32(40));
+  assert.throws(() => parseTrun(b, 8, b.length), (err) => err.code === 'NOT_SUPPORTED');
 });
 
 test('parseTrun 缺陷C：有效 trun 全字段解析不受钳制影响', () => {
