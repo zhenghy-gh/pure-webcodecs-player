@@ -238,7 +238,13 @@ export function parseTrun(buf, contentStart, contentEnd) {
 export function parseTfdt(buf, contentStart) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const { version } = readVersionFlags(buf, contentStart);
-  if (version === 1) return Number(dv.getBigUint64(contentStart + 4));
+  if (version === 1) {
+    const ticks = dv.getBigUint64(contentStart + 4);
+    if (ticks > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw notSupported(`tfdt baseMediaDecodeTime 超出安全整数范围: ${ticks}`);
+    }
+    return Number(ticks);
+  }
   return dv.getUint32(contentStart + 4);
 }
 

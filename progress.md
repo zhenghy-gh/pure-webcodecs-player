@@ -1698,3 +1698,26 @@
 
 ### 风险
 - 无 per-sample 字段时 sample_count 的上限仍按 DEFAULT_MAX_TRUN_SAMPLES；进一步缩紧需评估超大合法 fragment 的兼容性。
+
+## Attempt 77：拒绝不精确的 CMAF 64 位解码时间
+
+### 发现
+- 复现条件：tfdt version 1 的 baseMediaDecodeTime 大于 Number.MAX_SAFE_INTEGER；或样本 duration 累加使 DTS 越过该范围。
+- 根因：parseTfdt() 将 uint64 BigInt 直接转 Number，超过安全整数后低位静默丢失；materializeSamples() 也未验证 DTS/PTS 累加是否仍精确。
+- 用户影响：EncodedChunk 时间戳被舍入到错误 tick，可能造成严重时间轴偏移、呈现时序错误或跨样本时间戳重复。
+
+### 修改
+- cmaf/src/isobmff.js：tfdt v1 在 BigInt 转 Number 前验证不超过 MAX_SAFE_INTEGER，超出则 NOT_SUPPORTED。
+- cmaf/src/chunk-parser.js：每个样本提交前验证 DTS 与 DTS+CTS (PTS) 为安全整数，并在累计 duration 后重新检查 DTS。
+- cmaf/__tests__/cmaf-moof-flags.test.js：新增不安全 tfdt uint64 与安全范围末端 DTS 累计溢出拒绝测试，原有跨 2^32 有效时间测试继续保留。
+
+### 验证
+- CMAF box / moof flags / fragment / roundtrip 定向测试：48/48 通过。
+- 全量 npm run check：fixtures 通过；3216/3216 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 验证完成后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 极长/异常媒体若合法 tick 时间超过 Number 安全整数范围将拒绝；支持该量级需要端到端 BigInt→时间基换算契约，而不仅是本解析器局部变更。

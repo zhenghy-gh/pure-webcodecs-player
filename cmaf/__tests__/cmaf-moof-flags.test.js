@@ -175,6 +175,15 @@ test('parseMoof：tfdt v0 以 u32 读取 baseMediaDecodeTime（可超过 2^31）
   }
 });
 
+test('parseMoof：tfdt v1 超过 Number.MAX_SAFE_INTEGER 时拒绝精度丢失', () => {
+  const stream = buildMoofStream([
+    traf(1, 0x20_0000_0000_0000n, 1, trun(0, { dataOffset: 8, rows: [{ duration: 1, size: 1 }] })),
+  ]);
+  const moof = Array.from(iterateBoxes(stream)).find((b) => b.type === 'moof');
+  assert.throws(() => parseMoof(stream, moof.contentStart, moof.contentEnd),
+    (err) => err.code === 'NOT_SUPPORTED');
+});
+
 test('parseMoof：tfdt v1 以 u64 读取（跨 2^32 的 baseTime）', () => {
   const stypLen = styp().length;
   const stream = buildMoofStream([
@@ -189,6 +198,19 @@ test('parseMoof：tfdt v1 以 u64 读取（跨 2^32 的 baseTime）', () => {
 });
 
 /* ---------------- materializeSamples 缺省回落 ---------------- */
+
+test('splitChunks：样本累计 DTS 超出安全整数时拒绝', () => {
+  const stream = buildMoofStream([
+    traf(Number(1), Number.MAX_SAFE_INTEGER, 1, trun(0, {
+      dataOffset: 8,
+      rows: [
+        { duration: 1, size: 1, flags: 0x02000000 },
+        { duration: 1, size: 1, flags: 0x02000000 },
+      ],
+    })),
+  ]);
+  assert.throws(() => splitChunks(stream), (err) => err.code === 'NOT_SUPPORTED');
+});
 
 test('splitChunks：trun 显式 duration 覆盖 tfhd 默认，缺省行回落默认值', () => {
   // tfhd 默认 duration=1024；行0 显式 3003，行1 省略

@@ -181,6 +181,10 @@ function materializeSamples(buf, moofBox, traf) {
           cursor < mdatDataStart || cursor + row.size > mdatDataEnd) {
         throw notSupported(`样本数据超出 mdat: start=${cursor}, size=${row.size}`);
       }
+      const ptsOffset = dtsOffset + row.cts;
+      if (!Number.isSafeInteger(dtsOffset) || !Number.isSafeInteger(ptsOffset)) {
+        throw notSupported(`样本 DTS/PTS 超出安全整数范围: dts=${dtsOffset}, cts=${row.cts}`);
+      }
       out.push({
         durationUs: 0,
         durationTicks: row.duration,
@@ -192,6 +196,9 @@ function materializeSamples(buf, moofBox, traf) {
       });
       cursor += row.size;
       dtsOffset += row.duration;
+      if (!Number.isSafeInteger(dtsOffset)) {
+        throw notSupported(`样本解码时间累计溢出安全整数: ${dtsOffset}`);
+      }
     }
     previousRunEnd = cursor;
   }
