@@ -343,6 +343,21 @@ test('splitChunks：跨 traf 指向重叠 mdat 样本范围时拒绝', () => {
   assert.throws(() => splitChunks(stream), (err) => err.code === 'NOT_SUPPORTED');
 });
 
+test('parseTfhd：可选 base_data_offset 截断于 tfhd 边界时拒绝', () => {
+  const truncated = fullBox('tfhd', 0, 0x000001, u32(1), u32(0));
+  assert.throws(() => parseTfhd(truncated, 8, truncated.length), (err) => err.code === 'NOT_SUPPORTED');
+});
+
+test('parseTfhd：缺失 track_ID 时不得从后续 box 读取字段', () => {
+  const truncated = fullBox('tfhd', 0, 0, new Uint8Array(2));
+  assert.throws(() => parseTfhd(truncated, 8, truncated.length), (err) => err.code === 'NOT_SUPPORTED');
+});
+
+test('parseTfhd：base_data_offset 超出安全整数范围时拒绝精度损失', () => {
+  const truncated = fullBox('tfhd', 0, 0x000001, u32(1), u64(0x20_0000_0000_0000n));
+  assert.throws(() => parseTfhd(truncated, 8, truncated.length), (err) => err.code === 'NOT_SUPPORTED');
+});
+
 test('parseTfhd：无默认字段时 default* 为 null（不误读 trackId 后字节）', () => {
   const b = tfhd(9);
   const t = parseTfhd(b, 8, b.length);

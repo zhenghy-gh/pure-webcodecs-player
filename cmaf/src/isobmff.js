@@ -251,8 +251,13 @@ export function parseTfdt(buf, contentStart) {
 /** 解析 tfhd → {trackId, defaultSampleDuration, defaultSampleSize, defaultSampleFlags, baseDataOffset} */
 export function parseTfhd(buf, contentStart, contentEnd) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  if (contentStart + 4 > contentEnd) throw notSupported('tfhd fullbox header 被截断');
   const { flags } = readVersionFlags(buf, contentStart);
   let p = contentStart + 4;
+  const requireBytes = (count, field) => {
+    if (p + count > contentEnd) throw notSupported(`tfhd ${field} 字段被截断`);
+  };
+  requireBytes(4, 'track_ID');
   const out = {
     trackId: dv.getUint32(p),
     baseDataOffset: null,
@@ -261,12 +266,17 @@ export function parseTfhd(buf, contentStart, contentEnd) {
     defaultSampleFlags: null,
   };
   p += 4;
-  if (flags & 0x000001) { out.baseDataOffset = Number(dv.getBigUint64(p)); p += 8; }
-  if (flags & 0x000002) p += 4; // sample_description_index
-  if (flags & 0x000008) { out.defaultSampleDuration = dv.getUint32(p); p += 4; }
-  if (flags & 0x000010) { out.defaultSampleSize = dv.getUint32(p); p += 4; }
-  if (flags & 0x000020) { out.defaultSampleFlags = dv.getUint32(p); p += 4; }
-  void contentEnd;
+  if (flags & 0x000001) {
+    requireBytes(8, 'base_data_offset');
+    const offset = dv.getBigUint64(p);
+    if (offset > BigInt(Number.MAX_SAFE_INTEGER)) throw notSupported(`tfhd base_data_offset 超出安全整数范围: ${offset}`);
+    out.baseDataOffset = Number(offset);
+    p += 8;
+  }
+  if (flags & 0x000002) { requireBytes(4, 'sample_description_index'); p += 4; }
+  if (flags & 0x000008) { requireBytes(4, 'default_sample_duration'); out.defaultSampleDuration = dv.getUint32(p); p += 4; }
+  if (flags & 0x000010) { requireBytes(4, 'default_sample_size'); out.defaultSampleSize = dv.getUint32(p); p += 4; }
+  if (flags & 0x000020) { requireBytes(4, 'default_sample_flags'); out.defaultSampleFlags = dv.getUint32(p); p += 4; }
   return out;
 }
 

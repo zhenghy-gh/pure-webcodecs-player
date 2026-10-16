@@ -1744,3 +1744,26 @@
 
 ### 风险
 - 极长/异常媒体若合法 tick 时间超过 Number 安全整数范围将拒绝；支持该量级需要端到端 BigInt→时间基换算契约，而不仅是本解析器局部变更。
+
+## Attempt 79：tfhd optional fields 不得越过 box 边界读取
+
+### 发现
+- 复现条件：tfhd 声明 base_data_offset 或 default 字段，但自身 box 在字段中途结束，后续相邻 box 恰好仍有足够字节。
+- 根因：parseTfhd() 虽接收 contentEnd，却只按整个输入 Uint8Array 建立 DataView 并读取可选字段；截断时可能把 sibling box header/body 当作当前字段，静默误解析。
+- 用户影响：恶意碎片可以跨 box 边界伪造 track defaults/offset，造成错误样本寻址，或导致裸 RangeError 代替稳定解析错误。
+
+### 修改
+- cmaf/src/isobmff.js：先验证 tfhd fullbox header 与 track_ID 完整存在；每个可选字段读取前根据 contentEnd 校验字节数；base_data_offset 另拒绝超过 Number.MAX_SAFE_INTEGER 的 uint64。
+- cmaf/__tests__/cmaf-moof-flags.test.js：新增 track_ID 截断、base_data_offset 截断、base_data_offset 精度溢出拒绝覆盖。
+
+### 验证
+- CMAF moof flags / fragment / defect regression / box 定向测试：56/56 通过。
+- CMAF 定向测试：56/56 通过。
+- 阶段性全量 npm run check：fixtures 通过；3220/3220 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 当前仅处理 parseTfhd 被上层限定为 tfhd box 的调用契约；类似边界检查需继续审查其他 full-box parsers。
