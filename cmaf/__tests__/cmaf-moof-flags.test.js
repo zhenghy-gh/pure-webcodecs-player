@@ -267,6 +267,17 @@ test('splitChunks：同一 traf 的多个 trun 合并且沿用连续 DTS 与数�
   assert.equal(samples[1].dataStart, samples[0].dataStart + samples[0].size, '无新 data_offset 的 run 紧跟前一个 run');
 });
 
+test('splitChunks：同一 traf 的后续 trun 指向已使用样本范围时拒绝', () => {
+  const multiRunTraf = box('traf',
+    tfhd(7, { duration: 3003, size: 16, flags: 0x02000000 }),
+    tfdt(1, 0),
+    trun(0, { dataOffset: 8, rows: [{ duration: 3003, size: 16 }] }),
+    trun(0, { dataOffset: 8, rows: [{ duration: 3003, size: 16 }] }),
+  );
+  const stream = buildMoofStream([multiRunTraf]);
+  assert.throws(() => splitChunks(stream), (err) => err.code === 'NOT_SUPPORTED');
+});
+
 test('splitChunks：单 moof 双 traf → 单 chunk 内两条轨，各自默认与样本独立', () => {
   const stream = buildMoofStream([
     // 视频 traf：trun 全显式

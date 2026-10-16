@@ -1632,3 +1632,25 @@
 
 ### 风险
 - 正确区分字段缺失与显式零依赖 parseTrun 返回的 has* 标志；外部调用方直接消费解析对象时新增属性是兼容性扩展。
+
+## Attempt 74：拒绝同一 traf 内重叠或倒退的样本 run
+
+### 发现
+- 复现条件：同一 traf 的两个 trun 都显式指定 data_offset，第二个 offset 指回第一 run 已消费的 mdat 字节范围。
+- 根因：虽已验证每个样本独立落在 mdat payload 内，但没有比较不同 run 的数据区间。两个 run 因而可以重复引用同一批压缩字节，形成伪造/重复样本表。
+- 用户影响：同一输入字节可能被多次送进 decoder，造成视频重复帧、时间轴错位，或令攻击者构造高开销解析路径。
+
+### 修改
+- cmaf/src/chunk-parser.js：在单 traf 内追踪上一 run 消耗的末端；任何后续显式 data_offset 回退到该末端之前即以 NOT_SUPPORTED 拒绝。相邻连续 run（无 data_offset）仍由前 run 末端开始。
+- cmaf/__tests__/cmaf-moof-flags.test.js：增加两个 trun 重复 data_offset 的拒绝用例；保留原合法连续 run 样本、DTS 与数据相邻断言。
+
+### 验证
+- CMAF moof flags / fragment / defect regression / roundtrip 定向测试：36/36 通过。
+- 全量 npm run check：fixtures 通过；3213/3213 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 本轮覆盖同一 traf 相邻 runs；跨不同 traf 的数据区间重叠仍未建立全 moof 级共享区间账本。
