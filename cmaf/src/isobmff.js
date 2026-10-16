@@ -509,8 +509,14 @@ export function findAudioSpecificConfig(initSegment) {
     const child = readDescriptor(initSegment, childStart, es.end);
     if (!child || child.end <= childStart) return null;
     if (child.tag === 0x04) {
+      if (child.payloadStart + 13 > child.end) return null;
+      const objectTypeIndication = initSegment[child.payloadStart];
+      const streamTypeAndFlags = initSegment[child.payloadStart + 1];
+      const streamType = streamTypeAndFlags >>> 2;
+      const isAacObjectType = objectTypeIndication === 0x40 ||
+        objectTypeIndication === 0x66 || objectTypeIndication === 0x67 || objectTypeIndication === 0x68;
+      if (!isAacObjectType || streamType !== 5 || !(streamTypeAndFlags & 1)) return null;
       const decoderDataStart = child.payloadStart + 13;
-      if (decoderDataStart > child.end) return null;
       let descriptorStart = decoderDataStart;
       let decoderSpecificInfo = null;
       while (descriptorStart < child.end) {

@@ -2076,8 +2076,7 @@
 
 ### 验证
 - CMAF box / init / extras 定向测试：54/54 通过。
-- CMAF box / init / extras 定向测试：54/54 通过。
-- 全量 npm run check：fixtures 通过；3236/3236 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 完成后复跑的全量 npm run check：fixtures 通过；3236/3236 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
 - 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实 H.264 解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
 
 ### 提交和推送
@@ -2085,3 +2084,25 @@
 
 ### 风险
 - DecoderConfig 固定字段仍按标准 13-byte 前缀解析；遇到更短或描述符 framing 损坏时采取拒绝策略。
+
+## Attempt 94：验证 ESDS DecoderConfig 确为 MPEG-4 Audio
+
+### 发现
+- 复现条件：`DecoderConfigDescriptor` 使用非 AAC objectTypeIndication（如视觉 codec），或 `streamType` 不是 audio；但其子树仍含结构完整的 tag 0x05 descriptor。
+- 根因：ASC 提取器此前只验证 13-byte DecoderConfig 固定字段存在，然后寻找 DSI；它未检查 objectTypeIndication、streamType 与 AudioStream 保留位，可能把非音频 decoder-specific 字节作为 AAC AudioSpecificConfig 返回。
+- 用户影响：错误 AAC 配置交给 WebCodecs audio decoder，导致音频轨配置失败或错误处理。
+
+### 修改
+- cmaf/src/isobmff.js：要求 objectTypeIndication 为 AAC 的 MPEG-4 Audio OTI（0x40、0x66、0x67、0x68）；streamType 必须为 5 (AudioStream)，AudioStream reserved bit 必须为 1，之后才遍历 DSI。
+- cmaf/__tests__/cmaf-box.test.js：新增有效 AAC OTI 正例与非 AAC OTI、非音频 streamType、缺失 reserved bit 三个拒绝用例；同时修正上轮尾随字节回归，把未声明 byte 放在 DecoderConfig 内部的真实边界。
+
+### 验证
+- CMAF box / init / extras 定向测试：55/55 通过。
+- 全量 npm run check：fixtures 通过；3237/3237 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实 H.264 解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 当前只从 MPEG-4 Audio OTI 中提取 AAC ASC；其他 codec/OTI 必须使用相应专用配置提取逻辑。

@@ -57,6 +57,21 @@ test('findAudioSpecificConfig：只接受 DecoderConfig 中的 DSI 描述符', (
   assert.deepEqual([...findAudioSpecificConfig(esds)], [0x12, 0x10]);
 });
 
+test('findAudioSpecificConfig：仅接受 AAC DecoderConfig 与有效 AudioStream 字段', () => {
+  const valid = new Uint8Array([
+    0, 0, 0, 39, 0x65, 0x73, 0x64, 0x73, 0, 0, 0, 0,
+    0x03, 25, 0x05, 0x02, 0, 0x04, 17,
+    0x40, 0x15, 0, 0, 0, 0x05, 0x02, 0xaa, 0xbb, 0, 0, 0, 0,
+    0x05, 0x02, 0x12, 0x10, 0x06, 1, 2,
+  ]);
+  assert.deepEqual([...findAudioSpecificConfig(valid)], [0x12, 0x10]);
+  for (const [offset, value] of [[19, 0x6b], [20, 0x19], [20, 0x14]]) {
+    const malformed = valid.slice();
+    malformed[offset] = value;
+    assert.equal(findAudioSpecificConfig(malformed), null);
+  }
+});
+
 test('findAudioSpecificConfig：standalone largesize esds 正确使用 16-byte 头', () => {
   const standard = new Uint8Array([
     0, 0, 0, 39, 0x65, 0x73, 0x64, 0x73, 0, 0, 0, 0,
@@ -81,8 +96,9 @@ test('findAudioSpecificConfig：拒绝 DecoderSpecificInfo 后 DecoderConfig 未
     0x05, 0x02, 0x12, 0x10, 0x06, 1, 2,
   ]);
   const nestedPadding = new Uint8Array(valid.length + 1);
-  nestedPadding.set(valid);
-  nestedPadding[39] = 0x7f;
+  nestedPadding.set(valid.subarray(0, 36));
+  nestedPadding[36] = 0x7f; // Insert an undeclared byte inside DecoderConfig.
+  nestedPadding.set(valid.subarray(36), 37);
   new DataView(nestedPadding.buffer).setUint32(0, nestedPadding.length);
   nestedPadding[13] = 26; // ES descriptor now includes enlarged DecoderConfig descriptor.
   nestedPadding[18] = 18; // DecoderConfig includes one undeclared trailing byte.
