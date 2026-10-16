@@ -20,7 +20,7 @@
 - 最终完整 npm run check（最终源码）通过：fixture 检查全过、3307/3307 测试通过、549 个 JS 文件 lint 通过；全量门禁全部通过。最后一次只在 HLS validator 对 Content-Range start/end 增加安全整数检查，并由随后这次完整门禁覆盖。
 
 ### 提交和推送
-- Round 64 独立提交与 origin/maintenance/round-6 推送待最终全量验证通过后执行。
+- Round 64 独立实现提交 `00372a6`（`fix: close Round 64 playback edge cases`）已推送至 `origin/maintenance/round-6`；工作树当时与远端同步。
 
 ### 风险
 - BYTERANGE 的跨域响应必须通过 Access-Control-Expose-Headers 暴露 Content-Range；如果浏览器隐藏该头，加载器按 fail-closed 报 SOURCE_ERROR，以免错误字节进入解复用。
