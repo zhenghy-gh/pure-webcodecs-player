@@ -1,5 +1,27 @@
 # 维护进度
 
+## Attempt 110：统一容器默认轨道与实际播放轨道选择
+
+### 问题与修复
+- Player 先前依据 `default` 标记更新 `selectedTracks`，但 WebCodecs/MSE 管线各自按清单首轨建解码器/SourceBuffer；UI 所示轨和实际消费轨会分离，用户选中的默认轨样本可能因此被丢弃。Matroska demuxer 虽解析 `FlagDefault`，公共视图却只暴露 `flagDefault`，Player 随后忽略它。
+- `core/src/track-selection.js`：增加统一选择器，支持规范 `default` 与 Matroska `flagDefault`，并让显式选择轨 ID 优先于默认标记。Player 在创建管线前确定首选轨，将同一组 ID 传入管线工厂并用于 `selectedTracks`；WebCodecs 的 decoder 和 MSE 的 SourceBuffer 均从对应活动轨创建。
+- `mkv/src/demuxer.js` 同时公开 `Track.default` 和既有 `flagDefault`；`core/src/types.js` 将 `default` 记入 Track 契约。
+
+### 回归测试
+- 覆盖 Player 对多媒体类型 Matroska `FlagDefault` 的解析及首选 ID 传递；WebCodecs 验证活动轨和 decoder codec 一致，MSE 验证只为默认标记轨创建 SourceBuffer/init segment；直接建管线和显式轨选择也各有回归。
+- MKV TrackEntry 测试验证 canonical `default` 与原生 `flagDefault` 同步。
+
+### 验证
+- 定向 Player/WebCodecs/MSE/MKV 测试：95/95；全量 `npm run check`：3281/3281 测试通过，549 个 JS 文件 lint 通过。
+- Chromium WebCodecs：15/15；Chromium MSE：19/19。浏览器验收生成的截图在提交前恢复，不纳入变更。
+
+### 提交和推送
+- 本轮变更将独立提交并推送到 `maintenance/round-6`，不 amend 前一轮。
+
+### 风险
+- 容器若未提供默认标记，仍按既有兼容行为选择第一条匹配轨；运行时显式选择优先于初始默认。
+
+
 ## Attempt 109：修复 Matroska EBML lacing signed-delta 解码并避免整组丢帧
 
 ### 问题与修复

@@ -111,6 +111,29 @@ const caps = {
 
 /* ------------------------------ 默认管线工厂选择 ------------------------------ */
 
+test('load honors Matroska flagDefault and passes the same preferred IDs to pipeline construction', async () => {
+  const matroska = { ...mediaInfo, container: 'mkv', tracks: [
+    { id: 1, type: 'video', codec: 'avc1.64001f', flagDefault: false },
+    { id: 4, type: 'video', codec: 'avc1.64001f', flagDefault: true },
+    { id: 2, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2, flagDefault: false },
+    { id: 5, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2, flagDefault: true },
+    { id: 3, type: 'text', format: 'webvtt', flagDefault: false },
+    { id: 6, type: 'text', format: 'webvtt', flagDefault: true },
+  ] };
+  let pipelineTracks;
+  const p = new Player({
+    capabilities: caps,
+    demuxerFactory: async () => ({ open: async () => matroska, destroy: async () => {} }),
+    pipelineFactory: async (ctx) => {
+      pipelineTracks = ctx.selectedTracks;
+      return { destroy: async () => {} };
+    },
+  });
+  await p.load({ read: async () => new Uint8Array([1]) });
+  assert.deepEqual(p.selectedTracks, { video: 4, audio: 5, text: 6 });
+  assert.deepEqual(pipelineTracks, p.selectedTracks);
+  await p.destroy();
+});
 test('默认 WC 管线：detectForMedia 合并媒体 codec 深探测后裁决 webcodecs 并建 WebCodecsPipeline', async () => {
   await withGlobals({
     VideoDecoder: FakeVideoDecoder,

@@ -132,6 +132,20 @@ test('init：双轨建 SourceBuffer 并写 init segment，mime 按轨类型组�
   assert.equal(pipeline.counters.initSegments, 2);
 });
 
+test('init selects default-flagged video/audio tracks and builds only their SourceBuffers', async () => {
+  const mediaInfo = { ...avInfo, tracks: [
+    { id: 1, type: 'video', codec: 'avc1.42E01E' },
+    { id: 4, type: 'video', codec: 'avc1.640028', default: true },
+    { id: 2, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 },
+    { id: 5, type: 'audio', codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2, flagDefault: true },
+  ] };
+  const { pipeline, mse, remuxer } = build({ mediaInfo });
+  assert.deepEqual(pipeline.active, { video: 4, audio: 5, text: null });
+  await pipeline.init();
+  assert.deepEqual([...mse.tracks.keys()].sort(), ['a5', 'v4']);
+  assert.deepEqual(remuxer.inits, [4, 5]);
+  await pipeline.destroy();
+});
 test('init：并发调用共享同一 Promise，不重复创建轨道或写 init', async () => {
   let releaseOpen;
   const openGate = new Promise((resolve) => { releaseOpen = resolve; });

@@ -90,7 +90,7 @@ function scriptedAvSync(actions) {
   };
 }
 
-function harness({ mediaInfo = videoInfo, avSync, options = {} } = {}) {
+function harness({ mediaInfo = videoInfo, avSync, options = {}, selectedTracks } = {}) {
   const decoders = [];
   const audio = new FakeAudioOutput();
   const timers = []; // {fn, ms, cancelled}
@@ -98,6 +98,7 @@ function harness({ mediaInfo = videoInfo, avSync, options = {} } = {}) {
     route: 'webcodecs',
     mediaInfo,
     player: null,
+    selectedTracks,
     options: {
       videoDecoderFactory: (init) => { const d = new FakeDecoder(init); decoders.push(d); return d; },
       audioDecoderFactory: (init) => { const d = new FakeDecoder(init); decoders.push(d); return d; },
@@ -116,6 +117,25 @@ function harness({ mediaInfo = videoInfo, avSync, options = {} } = {}) {
   return { pipeline, audio, decoders, timers, renderer: pipeline.renderer };
 }
 
+test('constructor selects default-marked tracks and honors Player preference', async () => {
+  const mediaInfo = {
+    container: 'mkv', durationUs: 1_000_000, seekable: true, live: false,
+    tracks: [
+      { id: 1, type: 'video', codec: 'avc1.42E01E', default: false },
+      { id: 5, type: 'video', codec: 'avc1.640028', flagDefault: true },
+    ],
+  };
+  const { pipeline, decoders } = harness({ mediaInfo });
+  assert.deepEqual(pipeline.active, { video: 5, audio: null, text: null });
+  await pipeline.init();
+  assert.equal(pipeline._videoConfig.codec, 'avc1.640028');
+  await pipeline.destroy();
+  assert.equal(decoders[0].config.codec, 'avc1.640028');
+
+  const preferred = harness({ mediaInfo, selectedTracks: { video: 1, audio: null, text: null } });
+  assert.equal(preferred.pipeline.active.video, 1, 'explicit Player choice takes precedence over demuxer default');
+  await preferred.pipeline.destroy();
+});
 /* ------------------------------ 背压 _waitQueue ------------------------------ */
 
 test('背压：decodeQueueSize 超限期间经 schedule 让出，回落后样本照常解码', async () => {

@@ -562,6 +562,7 @@ export class MkvDemuxer extends Demuxer {
       durationUs: this.durationUs ?? undefined,
       timescale: Math.round(1e9 / this.timecodeScaleNs), // 仅诊断（§0.5）
       language: t.language || 'und',
+      default: t.flagDefault,
       flagDefault: t.flagDefault,
       encrypted: t.encrypted || undefined,
       supported: t.supported,

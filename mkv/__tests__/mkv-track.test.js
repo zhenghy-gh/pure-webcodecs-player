@@ -82,6 +82,7 @@ test('轨道：默认 flagDefault=true；language 缺省 und；encrypted 标记'
   await d.open();
   const enc = d.tracks[0];
   assert.equal(enc.flagDefault, true);
+  assert.equal(enc.default, true);
   assert.equal(enc.encrypted, true);
   assert.equal(enc.supported, false);
   assert.equal(enc.extensions.mkvCodecId, 'A_OPUS');

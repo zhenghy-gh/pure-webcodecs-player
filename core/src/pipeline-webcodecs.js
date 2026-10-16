@@ -15,6 +15,7 @@ import { Emitter } from './emitter.js';
 import { decodeError, notSupported, stateError } from './errors.js';
 import { AvSyncController, PlaybackClock } from './clock.js';
 import { annexbToAvcc } from './nal.js';
+import { defaultTrackForType } from './track-selection.js';
 
 const NOOP = () => {};
 
@@ -81,8 +82,10 @@ export class WebCodecsPipeline extends Emitter {
     this._tracks = new Map((this.mediaInfo.tracks ?? []).map((t) => [t.id, t]));
     /** 当前选中轨（按类型）：未选中的同类轨样本直接丢弃 */
     this.active = { video: null, audio: null, text: null };
-    for (const t of this._tracks.values()) {
-      if (this.active[t.type] == null) this.active[t.type] = t.id;
+    for (const type of ['video', 'audio', 'text']) {
+      this.active[type] = defaultTrackForType(
+        [...this._tracks.values()], type, ctx.selectedTracks?.[type],
+      )?.id ?? null;
     }
 
     this._videoDecoder = null;
@@ -126,8 +129,8 @@ export class WebCodecsPipeline extends Emitter {
     initPromise = Promise.resolve().then(async () => {
       try {
         if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
-        const video = [...this._tracks.values()].find((t) => t.type === 'video');
-        const audio = [...this._tracks.values()].find((t) => t.type === 'audio');
+        const video = this._tracks.get(this.active.video);
+        const audio = this._tracks.get(this.active.audio);
         if (video && this._setupVideo(video, generation) === false) return this;
         if (generation !== this._lifecycleGeneration || this.state === 'destroyed') return this;
         if (audio) await this._setupAudio(audio, generation);

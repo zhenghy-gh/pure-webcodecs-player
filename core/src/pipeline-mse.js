@@ -15,6 +15,7 @@
 import { Emitter } from './emitter.js';
 import { decodeError, notSupported, stateError } from './errors.js';
 import { buildMseMimeType } from './codec-string.js';
+import { defaultTrackForType } from './track-selection.js';
 
 function defaultSchedule(fn, ms) {
   const t = setTimeout(fn, ms);
@@ -67,8 +68,10 @@ export class MsePipeline extends Emitter {
     this._tracks = new Map((this.mediaInfo.tracks ?? []).map((t) => [t.id, t]));
     /** 当前选中轨（按类型）：未选中的同类轨样本不进 SourceBuffer */
     this.active = { video: null, audio: null, text: null };
-    for (const t of this._tracks.values()) {
-      if (this.active[t.type] == null) this.active[t.type] = t.id;
+    for (const type of ['video', 'audio', 'text']) {
+      this.active[type] = defaultTrackForType(
+        [...this._tracks.values()], type, ctx.selectedTracks?.[type],
+      )?.id ?? null;
     }
 
     this.element = this.options.mediaElement ?? this.options.video ?? null;

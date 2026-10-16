@@ -96,13 +96,14 @@ const info = {
   ],
 };
 
-function build({ mediaInfo = info, options = {}, mse = new FakeMseHelper() } = {}) {
+function build({ mediaInfo = info, options = {}, mse = new FakeMseHelper(), selectedTracks } = {}) {
   const element = new FakeMediaElement();
   const remuxer = new FakeRemuxer();
   const pipeline = new MsePipeline({
     route: 'mse',
     mediaInfo,
     player: null,
+    selectedTracks,
     options: { mediaElement: element, mse, remuxer, schedule: (fn) => { fn(); return () => {}; }, ...options },
   });
   return { pipeline, mse, remuxer, element };
@@ -114,8 +115,25 @@ const vsample = (trackId, over = {}) => createSample({
 
 /* ------------------------------ 活动轨选择 ------------------------------ */
 
-test('构造：每类轨默认选中第一条（active 初始化）', () => {
-  const { pipeline } = build();
+test('构造：每类轨默认首选容器声明的 default 标记轨', () => {
+  const flagged = { ...info, tracks: [
+    { id: 1, type: 'video', codec: 'avc1.42E01E' },
+    { id: 5, type: 'video', codec: 'avc1.42E01E', default: true },
+    { id: 2, type: 'audio', codec: 'mp4a.40.2' },
+    { id: 6, type: 'audio', codec: 'mp4a.40.2', flagDefault: true },
+  ] };
+  const { pipeline } = build({ mediaInfo: flagged });
+  assert.deepEqual(pipeline.active, { video: 5, audio: 6, text: null });
+});
+
+test('构造：Player 显式选择的轨优先于默认标记', () => {
+  const mediaInfo = { ...info, tracks: [
+    { id: 1, type: 'video', codec: 'avc1.42E01E' },
+    { id: 5, type: 'video', codec: 'avc1.42E01E', default: true },
+    { id: 2, type: 'audio', codec: 'mp4a.40.2' },
+    { id: 6, type: 'audio', codec: 'mp4a.40.2', flagDefault: true },
+  ] };
+  const { pipeline } = build({ mediaInfo, selectedTracks: { video: 1, audio: 2, text: null } });
   assert.deepEqual(pipeline.active, { video: 1, audio: 2, text: null });
 });
 

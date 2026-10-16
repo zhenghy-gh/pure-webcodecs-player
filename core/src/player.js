@@ -10,6 +10,7 @@ import { BlobDataSource } from './data-source.js';
 import { detectCapabilities, chooseRoute, DEFAULT_VIDEO_CODECS, DEFAULT_AUDIO_CODECS } from './capabilities.js';
 import { PlaybackClock } from './clock.js';
 import { Stats } from './stats.js';
+import { defaultTrackForType } from './track-selection.js';
 import { PlayerError, stateError, notSupported, abortedError } from './errors.js';
 import { webcodecsPipelineFactory } from './pipeline-webcodecs.js';
 import { msePipelineFactory } from './pipeline-mse.js';
@@ -335,9 +336,13 @@ export class Player extends Emitter {
         : this.routeValue === 'mse' && hasMseCtor()
           ? DEFAULT_MSE_PIPELINE
           : null);
+    const selectedTracks = { video: null, audio: null, text: null };
+    for (const type of ['video', 'audio', 'text']) {
+      selectedTracks[type] = defaultTrackForType(info.tracks, type)?.id ?? null;
+    }
     let pipeline;
     try {
-      pipeline = (await factory?.({ route: this.routeValue, mediaInfo: info, player: this, options: this.options })) ?? null;
+      pipeline = (await factory?.({ route: this.routeValue, mediaInfo: info, player: this, options: this.options, selectedTracks })) ?? null;
     } catch (error) {
       if (!isCurrent()) throw abortedError('load() aborted');
       throw error;
@@ -359,11 +364,7 @@ export class Player extends Emitter {
         this.emit('error', e);
       });
     }
-    for (const type of ['video', 'audio', 'text']) {
-      const list = info.tracks.filter((t) => t.type === type);
-      const picked = list.find((t) => t.default) ?? list[0];
-      this.selectedTracks[type] = picked ? picked.id : null;
-    }
+    Object.assign(this.selectedTracks, selectedTracks);
     this.endedValue = false;
     this.currentTimeValue = 0;
     this._transition(PLAYER_STATES.READY);

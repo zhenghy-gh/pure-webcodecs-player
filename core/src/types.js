@@ -60,6 +60,7 @@ export const BitstreamFormat = Object.freeze({
  * @property {number}                        [presentationDurationUs] 存在 ISO-BMFF elst 时的呈现时长（µs）
  * @property {number}                        [timescale] 原生时间基（仅诊断）
  * @property {string}                        [language] ISO-639-2/T，未知 'und'
+ * @property {boolean}                       [default] 容器声明的首选/default 轨
  * // video：width/height/[frameRate]/[rotation]/[sampleEntryType]
  * // audio：sampleRate/numberOfChannels/[channelLayout]
  * // ---- 过渡别名（§2.4，M2 接入波次清理）----
