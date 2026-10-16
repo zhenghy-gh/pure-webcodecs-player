@@ -432,8 +432,16 @@ export function findTagInBuf(buf, start, end, tag) {
  * 只从 ES_Descriptor / DecoderConfigDescriptor 的嵌套结构读取 DSI。
  */
 export function findAudioSpecificConfig(initSegment) {
-  const pos = findTagInBuf(initSegment, 0, initSegment.length, 'esds');
-  if (pos < 4) return null;
+  const topBoxes = [...iterateBoxes(initSegment)];
+  const moov = topBoxes.find((box) => box.type === 'moov');
+  // Production init data is searched only inside moov; retain standalone esds support
+  // for callers that pass the descriptor box itself.
+  const searchStart = moov?.contentStart ?? 0;
+  const searchEnd = moov?.contentEnd ?? initSegment.length;
+  const standaloneEsds = !moov && topBoxes.some((box) => box.type === 'esds');
+  if (!moov && !standaloneEsds) return null;
+  const pos = findTagInBuf(initSegment, searchStart, searchEnd, 'esds');
+  if (pos < searchStart + 4) return null;
   const boxStart = pos - 4;
   const view = new DataView(initSegment.buffer, initSegment.byteOffset, initSegment.byteLength);
   const boxSize = view.getUint32(boxStart);

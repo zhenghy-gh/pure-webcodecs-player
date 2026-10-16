@@ -1903,3 +1903,26 @@
 
 ### 风险
 - 对不完整 init metadata 仍按现有容错策略跳过单条轨道字段，而不拒绝整个 init；上层会继续使用兼容默认 timescale 或缺省轨道元数据。
+
+## Attempt 86：findAudioSpecificConfig 不得在 moov 外提取伪造 esds
+
+### 发现
+- 复现条件：合法视频 init 后追加一个顶层伪造 `esds` box，其中嵌套看似完整的 ES_Descriptor/DecoderConfig/DSI；整个文件扫描会把视频流伪装成带音频 ASC。
+- 根因：findAudioSpecificConfig() 从 initSegment 全局搜索第一个 `esds` 标签，不要求其属于 moov/stsd/sample entry 的真实音频配置树。
+- 用户影响：伪造字节可注入错误音频 decoder config，使无音频流被误报为音频轨，或引起音频解码失败。
+
+### 修改
+- cmaf/src/isobmff.js：init segment 现仅在结构化 `moov` 范围搜索 esds；保留仅传入独立顶层 esds box 的历史 helper 用法。
+- cmaf/__tests__/cmaf-box.test.js：新增视频 moov + 顶层有效形状假 esds payload 回归，必须返回 null；合法 standalone 与真实音频 init 覆盖继续通过。
+
+### 验证
+- CMAF box / init / parse / extras 定向测试：60/60 通过。
+- CMAF box / init / parse / extras 定向测试：60/60 通过。
+- 全量 npm run check：fixtures 通过；3230/3230 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- moov 内仍使用 bounded fourcc 搜索而非完整 stsd/sample-entry 递归解析；当前范围足以消除跨顶层伪匹配，嵌套结构验证可继续加固。
