@@ -1,5 +1,23 @@
 # 维护进度
 
+## Attempt 104：串行化无 Range HTTP 源的并发顺序读取
+
+### 问题与修复
+- MKV `FetchSource` 在服务器不支持 Range 时共用单一流 reader 与缓冲区。并发 `read(offset,length)` 会争用游标；尤其回退读取需要取消并重开流，可令已挂起的前向读取误判 EOF 并返回短数据。惰性 probe 并发也曾可能发起多个 HEAD/GET 初始化。
+- `mkv/src/source.js`：为惰性 probe 共享 promise，并为 sequential 模式增加按调用顺序恢复的 promise 队列，确保 seek/backtrack 的取消和缓冲重置不会破坏其他读取。Range 模式保留原并发随机读行为。
+- `mkv/__tests__/source-gaps.test.js`：用可控流读取器覆盖并发首次读取共享单个 GET，以及挂起前向读期间回退 read 触发 restart 的场景。
+
+### 验证
+- MKV 全套：223/223 通过；全量 `npm run check`：3265/3265 测试、548 个 JS 文件 lint 全通过。
+- Chromium MSE 实浏览器验收：19/19 通过（解码、播放、seek、stall 恢复、destroy）。
+
+### 提交和推送
+- 验证后独立提交并推送 `maintenance/round-6`。
+
+### 风险
+- 无 Range 模式的读取变为串行以保护单一有序流；并发请求仍按提交顺序正确完成，但互不并行读取底层 reader。
+
+
 ## Attempt 103：拒绝未映射的 fragmented MP4 编辑列表
 
 ### 问题与修复

@@ -119,6 +119,65 @@ test('FetchSource read 越界（byteLength 已知）→ OUT_OF_RANGE', async () 
   );
 });
 
+test('FetchSource sequential mode: backward read cannot cancel an in-flight forward read', async () => {
+  const bytes = (start, length) => Uint8Array.from({ length }, (_, i) => (start + i) & 0xff);
+  let getCount = 0;
+  let releaseForward;
+  let notifyPending;
+  const pendingStarted = new Promise((resolve) => { notifyPending = resolve; });
+  const fetchImpl = async (_url, init) => {
+    if (init.method === 'HEAD') {
+      return fakeRes({ headers: { 'content-length': '128', 'accept-ranges': 'none' } });
+    }
+    getCount++;
+    if (getCount === 1) {
+      let reads = 0;
+      return fakeRes({
+        body: {
+          getReader: () => ({
+            read: async () => {
+              reads++;
+              if (reads === 1) return { done: false, value: bytes(0, 10) };
+              notifyPending();
+              return new Promise((resolve) => { releaseForward = resolve; });
+            },
+            cancel: async () => { releaseForward?.({ done: true }); },
+          }),
+        },
+      });
+    }
+    let offset = 0;
+    return fakeRes({
+      body: {
+        getReader: () => ({
+          read: async () => {
+            if (offset >= 128) return { done: true };
+            const value = bytes(offset, Math.min(10, 128 - offset));
+            offset += value.length;
+            return { done: false, value };
+          },
+          cancel: async () => {},
+        }),
+      },
+    });
+  };
+  const src = new FetchSource('http://x/test.mkv', { fetchImpl });
+  const [firstByte, secondByte] = await Promise.all([src.read(0, 1), src.read(1, 1)]);
+  assert.deepEqual([...firstByte], [0]);
+  assert.deepEqual([...secondByte], [1]);
+  assert.equal(getCount, 1); // concurrent lazy reads share a single stream open
+  const forward = src.read(100, 4);
+  await pendingStarted;
+  const backward = src.read(0, 4);
+  await new Promise((resolve) => setImmediate(resolve));
+  releaseForward?.({ done: false, value: bytes(10, 118) });
+  const [forwardBytes, backwardBytes] = await Promise.all([forward, backward]);
+  assert.deepEqual([...forwardBytes], [100, 101, 102, 103]);
+  assert.deepEqual([...backwardBytes], [0, 1, 2, 3]);
+  assert.equal(getCount, 2);
+  src.close();
+});
+
 test('FetchSource 顺序模式 GET 失败 → HTTP_BAD_STATUS', async () => {
   const fetchImpl = async (_url, init) => {
     if (init?.method === 'HEAD') throw new TypeError('Failed to fetch');

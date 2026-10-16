@@ -113,15 +113,32 @@ export class FetchSource {
     this.#chunks = [];
     this.#streamOffset = 0; // #chunks 覆盖的起始偏移
     this.#closed = false;
+    this.#sequentialReadQueue = Promise.resolve();
+    this.#probePromise = null;
   }
 
-  #mode; #reader; #chunks; #streamOffset; #closed;
+  #mode; #reader; #chunks; #streamOffset; #closed; #sequentialReadQueue; #probePromise;
 
   /** 探测头部信息（HEAD 失败自动退化 GET Range:0-0） */
   static async open(url, opts) {
     const src = new FetchSource(url, opts);
-    await src.#probe();
+    await src.#ensureProbe();
     return src;
+  }
+
+  async #ensureProbe() {
+    if (!this.#probePromise) {
+      const pending = this.#probe();
+      this.#probePromise = pending;
+      try {
+        await pending;
+      } catch (error) {
+        if (this.#probePromise === pending) this.#probePromise = null;
+        throw error;
+      }
+    } else {
+      await this.#probePromise;
+    }
   }
 
   async #probe() {
@@ -171,10 +188,15 @@ export class FetchSource {
     if (this.byteLength !== null && offset >= this.byteLength) {
       throw new SourceError(`越界读取: offset=${offset} ≥ size=${this.byteLength}`, 'OUT_OF_RANGE');
     }
-    if (this.#mode === 'new') await this.#probe(); // 惰性探测，允许直接 new 后使用
+    if (this.#mode === 'new') await this.#ensureProbe(); // 惰性探测，允许直接 new 后使用
 
     if (this.#mode === 'range') return this.#readRange(offset, length);
-    return this.#readSequential(offset, length);
+    const pending = this.#sequentialReadQueue.then(() => {
+      if (this.#closed) throw new SourceError('源已关闭', 'CLOSED');
+      return this.#readSequential(offset, length);
+    });
+    this.#sequentialReadQueue = pending.then(() => undefined, () => undefined);
+    return pending;
   }
 
   async #readRange(offset, length) {
