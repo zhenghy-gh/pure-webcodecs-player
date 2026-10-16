@@ -34,6 +34,41 @@ function findBox(buf, type) {
 
 /* ---------------- moof/mdat 与 data_offset 回填 ---------------- */
 
+function regularBox(type) {
+  const out = new Uint8Array(8);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, 8);
+  out.set([...type].map((char) => char.charCodeAt(0)), 4);
+  return out;
+}
+
+function extendedBox(type) {
+  const out = new Uint8Array(16);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, 1);
+  out.set([...type].map((char) => char.charCodeAt(0)), 4);
+  view.setBigUint64(8, 16n);
+  return out;
+}
+
+test('splitChunks：largesize styp 与 ftyp 的 range offset 指向 16-byte header', () => {
+  const styp = extendedBox('styp');
+  const media = fmp4.buildFragment({ trackId: 1, samples: makeFrames(0, 1) });
+  const moof = findBox(media, 'moof');
+  const fragmentBoxes = media.subarray(moof.boxStart);
+  const prefixed = new Uint8Array(styp.length + fragmentBoxes.length);
+  prefixed.set(styp); prefixed.set(fragmentBoxes, styp.length);
+  const chunked = splitChunks(prefixed);
+  assert.equal(chunked.chunks[0].startOffset, 0);
+
+  const ftyp = extendedBox('ftyp');
+  const moov = regularBox('moov');
+  const initialized = new Uint8Array(ftyp.length + moov.length);
+  initialized.set(ftyp); initialized.set(moov, ftyp.length);
+  const parsed = splitChunks(initialized);
+  assert.deepEqual(parsed.initRange, { startOffset: 0, byteLength: initialized.length });
+});
+
 test('fragment：两遍 data_offset 回填正确，mdat 载荷等于帧拼接', () => {
   const frames = makeFrames(0, 2);
   const frag = fmp4.buildFragment({ trackId: 1, samples: frames });

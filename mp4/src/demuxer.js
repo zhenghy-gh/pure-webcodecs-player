@@ -137,17 +137,30 @@ export class Mp4Demuxer extends Demuxer {
       const track = this._buildTrack(trak);
       if (track) {
         tracks.push(track);
-        this._prepareTrackState(track, trak);
+        this._prepareTrackState(track, trak, moov.mvhd.timescale);
       }
     }
 
     const timescale = moov.mvhd.timescale;
+    const hasProgressiveEdits = this._usesProgressiveEditTimeline() && !this._fragmented &&
+      moov.traks.some((trak) => trak.elst?.entries?.length > 0);
     const knownDurationTicks = this._fragmented
       ? moov.mvex?.mehd?.fragmentDuration ?? moov.mvhd.duration
       : moov.mvhd.duration;
     const live = false; // 本仓 MP4 均为点播文件/渐进流
-    const durationUs =
-      !this._fragmented || moov.mvex?.mehd?.fragmentDuration
+    const editedMovieDurationUs = hasProgressiveEdits
+      ? moov.traks.reduce((duration, trak) => {
+        const track = tracks.find((candidate) => candidate.id === trak.tkhd?.trackId);
+        const trackDuration = track?.presentationDurationUs ??
+          (trak.tkhd?.duration != null && trak.tkhd.duration !== 0xffffffff
+            ? ticksToUs(trak.tkhd.duration, timescale)
+            : 0);
+        return Math.max(duration, trackDuration);
+      }, 0)
+      : null;
+    const durationUs = hasProgressiveEdits
+      ? editedMovieDurationUs || null
+      : !this._fragmented || moov.mvex?.mehd?.fragmentDuration
         ? ticksToUs(knownDurationTicks || 0, timescale) || null
         : null;
 
@@ -194,6 +207,8 @@ export class Mp4Demuxer extends Demuxer {
   }
 
   /** trak 结构树 → 契约 Track（µs 时间基字段） */
+  _usesProgressiveEditTimeline() { return true; }
+
   _buildTrack(trak) {
     const { tkhd, mdhd, hdlr, sampleEntry } = trak;
     if (!tkhd || !mdhd || !hdlr) return null;
@@ -246,18 +261,38 @@ export class Mp4Demuxer extends Demuxer {
   /**
    * 准备轨状态：渐进模式展开完整样本表（内部 ticks）；分片模式记录 trex 默认值。
    */
-  _prepareTrackState(track, trak) {
+  _prepareTrackState(track, trak, movieTimescale) {
     if (this._fragmented) {
       const trex = this._moov.mvex.trexByTrack[track.id] ?? {};
       this._trackState.set(track.id, { track, samples: [], keyframes: [], trex, resumeIndex: 0, fragmentReadIndex: 0 });
       return;
     }
     const table = expandSampleTable(trak.stbl);
+    let edits = null;
+    if (this._usesProgressiveEditTimeline() && trak.elst?.entries?.length) {
+      try {
+        edits = buildProgressiveEditMap(table.samples, trak.elst.entries, track.timescale, movieTimescale);
+        track.presentationDurationUs = ticksToUs(edits.durationTicks, movieTimescale);
+        track.editListApplied = true;
+      } catch (error) {
+        const fallbackReasons = new Set([
+          'elst mapping requires variable composition offsets',
+          'elst mapping does not support negative composition offsets',
+          'elst media edit 终点不得裁切样本',
+          'elst media edit 终点必须精确落在样本边界',
+          'elst 映射后的样本时间非法或 DTS 为负',
+        ]);
+        if (error?.code !== 'NOT_SUPPORTED' || !fallbackReasons.has(error.message)) throw error;
+        track.editListApplied = false;
+        track.editListUnsupportedReason = error.message;
+      }
+    }
     this._trackState.set(track.id, {
       track,
       samples: table.samples, // {offset,size,dts,cts,delta,keyframe} ticks
+      editMap: edits?.bySample ?? null,
       keyframes: table.samples
-        .map((s, i) => (s.keyframe ? i : -1))
+        .map((s, i) => (s.keyframe && (!edits || edits.bySample.get(i)?.visible) ? i : -1))
         .filter((i) => i >= 0),
       resumeIndex: 0, // seek 续读起点（样本表 index），由 _doSeek 写入、迭代器生成时消费
     });
@@ -288,13 +323,15 @@ export class Mp4Demuxer extends Demuxer {
     // 跳过的样本不读数据。表在 open 时已完整，index 保持原表编号。
     for (let index = state.resumeIndex ?? 0; index < state.samples.length; index++) {
       const raw = state.samples[index];
+      const edit = state.editMap?.get(index);
+      if (state.editMap && !edit) continue;
       const sample = createSample({
         trackId,
         codec: track.codec,
-        timestamp: ticksToUs(raw.dts + raw.cts, ts),
-        duration: ticksToUs(raw.delta, ts),
+        timestamp: edit?.timestampUs ?? ticksToUs(raw.dts + raw.cts, ts),
+        duration: edit?.durationUs ?? ticksToUs(raw.delta, ts),
         keyframe: raw.keyframe,
-        dts: ticksToUs(raw.dts, ts),
+        dts: edit?.dtsUs ?? ticksToUs(raw.dts, ts),
         size: raw.size,
         index,
         offset: raw.offset,
@@ -476,15 +513,15 @@ export class Mp4Demuxer extends Demuxer {
     }
 
     const ts = state.track.timescale || 1000;
-    const targetTicks = usToTicks(timestampUs, ts);
-
     let lo = 0;
     let hi = state.keyframes.length - 1;
     let found = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      const kdts = kfDtsTicks(state.samples[state.keyframes[mid]], ts);
-      if (kdts <= targetTicks) {
+      const keyframeIndex = state.keyframes[mid];
+      const keyframeTimeUs = state.editMap?.get(keyframeIndex)?.timestampUs ??
+        ticksToUs(kfDtsTicks(state.samples[keyframeIndex], ts) + (state.samples[keyframeIndex].cts ?? 0), ts);
+      if (keyframeTimeUs <= timestampUs) {
         found = mid;
         lo = mid + 1;
       } else {
@@ -492,10 +529,24 @@ export class Mp4Demuxer extends Demuxer {
       }
     }
 
-    const pickIdx = found >= 0 ? state.keyframes[found] : state.keyframes[0];
+    let pickIdx;
+    if (state.editMap) {
+      const editedKeyframes = state.keyframes.map((index) => ({ index, edit: state.editMap.get(index) }));
+      const targetEntry = found >= 0
+        ? editedKeyframes[found]
+        : editedKeyframes[0];
+      pickIdx = targetEntry.index;
+      if (found < 0 && timestampUs < targetEntry.edit.timestampUs) {
+        // Seek into the leading empty edit: decode from media edit start, report request.
+      }
+    } else {
+      pickIdx = found >= 0 ? state.keyframes[found] : state.keyframes[0];
+    }
     state.resumeIndex = pickIdx;
     if (this._fragmented) state.fragmentReadIndex = pickIdx;
-    const actualUs = ticksToUs(kfDtsTicks(state.samples[pickIdx], ts), ts);
+    const mappedUs = state.editMap?.get(pickIdx)?.timestampUs;
+    const actualUs = mappedUs === undefined ? ticksToUs(kfDtsTicks(state.samples[pickIdx], ts), ts) :
+      (found < 0 && timestampUs < mappedUs ? timestampUs : mappedUs);
     // 多轨必须相对视频实际落点定位，而不是原始请求时间。否则请求落在
     // 关键帧之间时，音频会从请求时间才开始，MSE 在视频落点处出现无声缺口。
     for (const [id, st] of this._trackState) {
@@ -518,18 +569,116 @@ export class Mp4Demuxer extends Demuxer {
 /* ------------------------------ 辅助函数 ------------------------------ */
 
 /**
+ * Map progressive samples through the rate-1 edit-list subset. Empty edits
+ * advance movie time; media edits select presentation timestamps in their range.
+ */
+function buildProgressiveEditMap(samples, entries, mediaTimescale, movieTimescale) {
+  if (!Number.isSafeInteger(mediaTimescale) || mediaTimescale <= 0 ||
+      !Number.isSafeInteger(movieTimescale) || movieTimescale <= 0) {
+    throw notSupported('elst media/movie timescale 非法');
+  }
+  let movieCursor = 0;
+  let mediaEditSeen = false;
+  const bySample = new Map();
+  for (const entry of entries) {
+    const { segmentDuration, mediaTime, mediaRateInteger, mediaRateFraction } = entry;
+    if (!Number.isSafeInteger(segmentDuration) || segmentDuration < 0 ||
+        !Number.isSafeInteger(mediaTime) ||
+        !Number.isInteger(mediaRateInteger) || !Number.isInteger(mediaRateFraction)) {
+      throw notSupported('elst entry 字段非法');
+    }
+    if (mediaRateInteger !== 1 || mediaRateFraction !== 0) {
+      throw notSupported(`elst media rate 不支持: ${mediaRateInteger}.${mediaRateFraction}`);
+    }
+    if (mediaTime < 0 && mediaTime !== -1) {
+      throw notSupported(`elst empty edit media_time 非法: ${mediaTime}`);
+    }
+    if (mediaTime === -1) {
+      if (mediaEditSeen) throw notSupported('elst empty edit 仅支持出现在 media edit 之前');
+    } else if (segmentDuration > 0) {
+      if (mediaEditSeen) throw notSupported('渐进 MP4 暂不支持多个非空 elst media edit');
+      const mediaEndNumerator = BigInt(mediaTime) * BigInt(movieTimescale) +
+        BigInt(segmentDuration) * BigInt(mediaTimescale);
+      const mediaEndDenominator = BigInt(movieTimescale);
+      if (mediaEndNumerator > BigInt(Number.MAX_SAFE_INTEGER) * mediaEndDenominator) {
+        throw notSupported('elst media 时间范围溢出');
+      }
+      const cts = samples[0]?.cts ?? 0;
+      if (samples.some((sample) => sample.cts !== cts)) {
+        throw notSupported('elst mapping requires variable composition offsets');
+      }
+      if (cts < 0) throw notSupported('elst mapping does not support negative composition offsets');
+      const firstIndex = samples.findIndex((sample) => sample.dts + sample.cts === mediaTime);
+      if (firstIndex < 0 || mediaEndNumerator <= BigInt(mediaTime) * mediaEndDenominator) {
+        throw notSupported('elst media edit 起点必须精确落在样本 presentation boundary');
+      }
+      const endsAtSampleBoundary = samples.some((sample) =>
+        BigInt(sample.dts + sample.cts + sample.delta) * mediaEndDenominator === mediaEndNumerator);
+      if (!endsAtSampleBoundary) throw notSupported('elst media edit 终点必须精确落在样本边界');
+      if (!samples[firstIndex].keyframe) {
+        throw notSupported('elst media edit 起点必须是 sync sample（不支持额外 decode preroll）');
+      }
+      const selected = [];
+      for (let index = firstIndex; index < samples.length; index++) {
+        if (BigInt(samples[index].dts + samples[index].cts) * mediaEndDenominator >= mediaEndNumerator) break;
+        selected.push(index);
+      }
+      let previous = null;
+      for (const index of selected) {
+        const sample = samples[index];
+        const timestampUs = editTimeToUs(movieCursor, movieTimescale, sample.dts + sample.cts - mediaTime, 1, mediaTimescale);
+        const dtsUs = editTimeToUs(movieCursor, movieTimescale, sample.dts - mediaTime, 1, mediaTimescale);
+        const endUs = editTimeToUs(movieCursor, movieTimescale, sample.dts + sample.delta - mediaTime, 1, mediaTimescale);
+        const durationUs = endUs - dtsUs;
+        if (!Number.isSafeInteger(timestampUs) || !Number.isSafeInteger(dtsUs) ||
+            !Number.isSafeInteger(durationUs) || durationUs <= 0 || dtsUs < 0) {
+          throw notSupported('elst 映射后的样本时间非法或 DTS 为负');
+        }
+        if (previous && (sample.dts !== previous.dts + previous.delta || dtsUs !== previous.endUs)) {
+          throw notSupported('elst 映射后的样本 DTS 不连续或倒退');
+        }
+        bySample.set(index, { timestampUs, dtsUs, durationUs, visible: true });
+        previous = { dts: sample.dts, delta: sample.delta, endUs };
+      }
+      mediaEditSeen = true;
+    }
+    movieCursor += segmentDuration;
+    if (!Number.isSafeInteger(movieCursor)) throw notSupported('elst segmentDuration 累计溢出');
+  }
+  return { bySample, durationTicks: movieCursor };
+}
+
+function editTimeToUs(movieTicks, movieTimescale, mediaTicks, mediaDenominator, mediaTimescale) {
+  const mediaDivisor = BigInt(mediaDenominator ?? 1);
+  const mediaScale = BigInt(mediaTimescale ?? mediaDenominator);
+  const numerator = BigInt(movieTicks) * 1_000_000n * mediaDivisor * mediaScale +
+    BigInt(mediaTicks) * 1_000_000n * BigInt(movieTimescale);
+  const denominator = BigInt(movieTimescale) * mediaDivisor * mediaScale;
+  const rounded = numerator >= 0n
+    ? (numerator + denominator / 2n) / denominator
+    : -((-numerator + denominator / 2n) / denominator);
+  if (rounded > BigInt(Number.MAX_SAFE_INTEGER) || rounded < BigInt(Number.MIN_SAFE_INTEGER)) {
+    throw notSupported('elst timestamp 转 microseconds 超出安全整数范围');
+  }
+  return Number(rounded);
+}
+
+/**
  * 按时间定位轨的 seek 续读起点：解码序 dts ≤ 目标时间的最后一个样本 index。
  * 样本按 dts 单调递增（渐进表/分片表均成立）；无匹配（目标早于全部已扫样本）
  * 回退 0（从表头重放）。返回值写入 state.resumeIndex。
  */
 function _locateResumeIndex(state, timestampUs) {
   const ts = state.track.timescale || 1000;
-  const target = usToTicks(timestampUs, ts);
+  const target = timestampUs;
   let found = -1;
   for (let i = 0; i < state.samples.length; i++) {
-    if (kfDtsTicks(state.samples[i], ts) <= target) found = i;
+    if (state.editMap && !state.editMap.has(i)) continue;
+    const dtsUs = state.editMap?.get(i)?.dtsUs ?? ticksToUs(kfDtsTicks(state.samples[i], ts), ts);
+    if (dtsUs <= target) found = i;
   }
-  return found >= 0 ? found : 0;
+  if (found >= 0) return found;
+  return state.editMap ? (state.editMap.keys().next().value ?? state.samples.length) : 0;
 }
 
 /** 条目 DTS（ticks）：渐进表为原始 ticks 结构；分片表为契约 Sample（dts 为 µs，需回转） */

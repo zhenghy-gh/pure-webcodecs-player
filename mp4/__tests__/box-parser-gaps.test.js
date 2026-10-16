@@ -192,6 +192,13 @@ test('parseMoov：size=0 头按容器实际长度收口', () => {
   assert.equal(moov.mvhd.timescale, 600);
 });
 
+test('parseElst：拒绝保留 flags 与未知版本', () => {
+  const badFlags = box('elst', new Uint8Array([0, 0, 0, 1, 0, 0, 0, 0]));
+  const badVersion = box('elst', new Uint8Array([2, 0, 0, 0, 0, 0, 0, 0]));
+  assert.throws(() => parseTrak(box('trak', box('edts', badFlags))), /elst flags/);
+  assert.throws(() => parseTrak(box('trak', box('edts', badVersion))), /elst version/);
+});
+
 test('parseTrak：edts → elst 嵌套扫描提取编辑列表', () => {
   const w = new ByteWriter();
   w.writeU8(0); w.writeU24(0);
@@ -206,4 +213,12 @@ test('parseTrak：edts → elst 嵌套扫描提取编辑列表', () => {
   assert.deepEqual(trak.elst.entries[0], {
     segmentDuration: 1000, mediaTime: -1024, mediaRateInteger: 1, mediaRateFraction: 0,
   });
+  const reverseWriter = new ByteWriter();
+  reverseWriter.writeU8(0); reverseWriter.writeU24(0); reverseWriter.writeU32(1);
+  reverseWriter.writeU32(1000); reverseWriter.writeU32(0);
+  reverseWriter.writeU16(0xffff); reverseWriter.writeU16(0); // signed rate -1.0
+  const reverseTrack = parseTrak(box('trak', box('edts', box('elst', reverseWriter.toUint8Array()))));
+  assert.equal(reverseTrack.elst.entries[0].mediaRateInteger, -1);
+  const invalidVersion = box('elst', new Uint8Array([2, 0, 0, 0, 0, 0, 0, 0]));
+  assert.throws(() => parseTrak(box('trak', box('edts', invalidVersion))), /elst version/);
 });

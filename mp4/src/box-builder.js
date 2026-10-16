@@ -119,7 +119,7 @@ export function buildEdts({ entries = [] } = {}) {
     for (const e of entries) {
       w.writeU32(e.segmentDuration ?? 0);
       w.writeI32(e.mediaTime ?? 0);
-      w.writeU16(e.mediaRateInteger ?? 1).writeU16(0);
+      w.writeU16((e.mediaRateInteger ?? 1) & 0xffff).writeU16((e.mediaRateFraction ?? 0) & 0xffff);
     }
   });
   return box('edts', (w) => w.writeRaw(elst));
@@ -326,6 +326,7 @@ export function buildMoov(spec) {
         width: track.width,
         height: track.height,
       }));
+      if (tables.edits?.length) w.writeRaw(buildEdts({ entries: tables.edits }));
       w.writeRaw(
         box('mdia', (mw) => {
           mw.writeRaw(buildMdhd({ timescale: track.timescale, duration: track.duration, language: track.language }));

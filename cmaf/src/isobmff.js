@@ -435,6 +435,7 @@ export function parseMoof(buf, contentStart, contentEnd, moofStart = null) {
       }
     }
     if (tfhdCount !== 1 || info.trackId === 0) throw notSupported('traf 必须包含一个有效 tfhd');
+    if (tfdtCount !== 1) throw notSupported('每个 traf 必须包含且仅包含一个 tfdt');
     if (info.defaults.sampleDescriptionIndex !== null && info.defaults.sampleDescriptionIndex !== 1) {
       throw notSupported(`tfhd sample_description_index 不支持: ${info.defaults.sampleDescriptionIndex}`);
     }

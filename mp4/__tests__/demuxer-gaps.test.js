@@ -46,7 +46,7 @@ function largesizeFreeBox() {
  * 极简单轨渐进 MP4（ftyp 仅 8 字节头 → parseFtypSafe 兜底 null）。
  * prefix 可塞额外顶层 box（如 largesize free）；withMoov=false 时只有 ftyp+mdat。
  */
-function buildSimpleMp4({ track, sizes, delta = 40, keyframeIndices = [0], prefix = null, withMoov = true }) {
+function buildSimpleMp4({ track, sizes, delta = 40, keyframeIndices = [0], edits = null, cttsOffsets = null, movieTimescale = 1000, movieDuration = sizes.length * delta, prefix = null, withMoov = true }) {
   const payloads = sizes.map((size, i) => {
     const d = new Uint8Array(size);
     for (let j = 0; j < size; j++) d[j] = (i * 17 + j) & 0xff;
@@ -54,8 +54,8 @@ function buildSimpleMp4({ track, sizes, delta = 40, keyframeIndices = [0], prefi
   });
   const total = sizes.length * delta;
   const meta = {
-    timescale: 1000,
-    duration: total,
+    timescale: movieTimescale,
+    duration: movieDuration,
     tracks: [
       {
         track: { id: 1, language: 'und', timescale: 1000, duration: total, ...track },
@@ -64,6 +64,8 @@ function buildSimpleMp4({ track, sizes, delta = 40, keyframeIndices = [0], prefi
         chunkOffsets: [0],
         samplesPerChunk: sizes.length,
         sttsRuns: [{ count: sizes.length, delta }],
+        ...(cttsOffsets ? { cttsOffsets } : {}),
+        ...(edits ? { edits } : {}),
       },
     ],
   };
@@ -242,6 +244,80 @@ test('hvc1 轨：description/codec 取自 hvcC', async () => {
   const track = info.tracks[0];
   assert.deepEqual(track.description, hvcC);
   assert.ok(track.codec.startsWith('hvc1.1.'), `codec=${track.codec}`);
+});
+
+test('渐进 MP4 elst：裁剪媒体起点并映射到 movie timeline', async () => {
+  const { bytes } = buildSimpleMp4({
+    track: { type: 'video', codecPrivate: makeAvcCFixture(), sampleEntryType: 'avc1', width: 320, height: 240, timescale: 2000 },
+    sizes: [1, 1, 1],
+    delta: 80,
+    movieTimescale: 1000,
+    movieDuration: 120,
+    keyframeIndices: [0, 1, 2],
+    edits: [
+      { segmentDuration: 20, mediaTime: -1, mediaRateInteger: 1, mediaRateFraction: 0 },
+      { segmentDuration: 80, mediaTime: 80, mediaRateInteger: 1, mediaRateFraction: 0 },
+    ],
+  });
+  const demuxer = new Mp4Demuxer(new MemoryDataSource(bytes));
+  const info = await demuxer.open();
+  assert.equal(info.durationUs, 100_000, 'movie duration follows total elst segment duration');
+  assert.equal(info.tracks[0].durationUs, 120_000, 'track duration remains media duration');
+  assert.equal(info.tracks[0].presentationDurationUs, 100_000);
+  const samples = [];
+  for (;;) { const sample = await demuxer.readSample(1); if (!sample) break; samples.push(sample); }
+  assert.deepEqual(samples.map((sample) => sample.index), [1, 2], 'samples before media_time are omitted');
+  assert.deepEqual(samples.map((sample) => sample.timestamp), [20_000, 60_000]);
+  assert.deepEqual(samples.map((sample) => sample.dts), [20_000, 60_000]);
+  assert.deepEqual(samples.map((sample) => sample.duration), [40_000, 40_000]);
+  const gapSeek = await demuxer.seek(10_000);
+  assert.equal(gapSeek.actualTimestampUs, 10_000, 'seek inside leading empty edit preserves requested movie position');
+  const firstMedia = await demuxer.readSample(1);
+  assert.equal(firstMedia.index, 1);
+  assert.equal(firstMedia.timestamp, 20_000);
+  await demuxer.seek(70_000);
+  const afterSeek = await demuxer.readSample(1);
+  assert.equal(afterSeek.index, 2);
+  assert.equal(afterSeek.timestamp, 60_000);
+});
+
+test('渐进 MP4 elst：拒绝非关键帧起点，非样本边界终点显式回退', async () => {
+  const { bytes: badStart } = buildSimpleMp4({
+    track: { type: 'video', codecPrivate: makeAvcCFixture(), sampleEntryType: 'avc1', width: 320, height: 240 },
+    sizes: [1, 1, 1], keyframeIndices: [0],
+    edits: [{ segmentDuration: 80, mediaTime: 40, mediaRateInteger: 1, mediaRateFraction: 0 }],
+  });
+  await assert.rejects(new Mp4Demuxer(new MemoryDataSource(badStart)).open(),
+    (error) => error.code === 'NOT_SUPPORTED' && /sync sample/.test(error.message));
+  const { bytes: partialEnd } = buildSimpleMp4({
+    track: { type: 'video', codecPrivate: makeAvcCFixture(), sampleEntryType: 'avc1', width: 320, height: 240 },
+    sizes: [1, 1, 1], keyframeIndices: [0, 1, 2],
+    edits: [{ segmentDuration: 60, mediaTime: 40, mediaRateInteger: 1, mediaRateFraction: 0 }],
+  });
+  const demuxer = new Mp4Demuxer(new MemoryDataSource(partialEnd));
+  const info = await demuxer.open();
+  assert.equal(info.tracks[0].editListApplied, false);
+  assert.match(info.tracks[0].editListUnsupportedReason, /终点/);
+});
+
+test('渐进 MP4 elst：拒绝非单位速率并显式回退可变 composition offset', async () => {
+  const { bytes: badRate } = buildSimpleMp4({
+    track: { type: 'video', codecPrivate: makeAvcCFixture(), sampleEntryType: 'avc1', width: 320, height: 240 },
+    sizes: [1, 1, 1], keyframeIndices: [0, 1, 2],
+    edits: [{ segmentDuration: 80, mediaTime: 40, mediaRateInteger: 2, mediaRateFraction: 0 }],
+  });
+  await assert.rejects(new Mp4Demuxer(new MemoryDataSource(badRate)).open(),
+    (error) => error.code === 'NOT_SUPPORTED' && /media rate/.test(error.message));
+  const { bytes: variableCts } = buildSimpleMp4({
+    track: { type: 'video', codecPrivate: makeAvcCFixture(), sampleEntryType: 'avc1', width: 320, height: 240 },
+    sizes: [1, 1, 1], keyframeIndices: [0, 1, 2],
+    edits: [{ segmentDuration: 80, mediaTime: 41, mediaRateInteger: 1, mediaRateFraction: 0 }],
+    cttsOffsets: [{ count: 1, offset: 0 }, { count: 2, offset: 1 }],
+  });
+  const demuxer = new Mp4Demuxer(new MemoryDataSource(variableCts));
+  const info = await demuxer.open();
+  assert.equal(info.tracks[0].editListApplied, false);
+  assert.match(info.tracks[0].editListUnsupportedReason, /variable composition offsets/);
 });
 
 test('分片迭代：moof 后无 mdat → PARSE_ERROR', async () => {

@@ -177,23 +177,27 @@ export function parseHdlr(s) {
 }
 
 export function parseElst(s) {
-  const { version } = readVersionFlags(s);
+  const { version, flags } = readVersionFlags(s);
+  if (version !== 0 && version !== 1) throw parseError(`elst version 不支持: ${version}`);
+  if (flags !== 0) throw parseError(`elst flags 不支持: ${flags}`);
   const count = readTableCount(s, 'elst');
+  const entryBytes = version === 1 ? 20 : 12;
+  if (s.remaining !== count * entryBytes) throw parseError('elst entry count 与 payload 长度不匹配');
   const entries = [];
   for (let i = 0; i < count; i++) {
     if (version === 1) {
       entries.push({
         segmentDuration: s.readU64Number(),
         mediaTime: s.readI64Number(),
-        mediaRateInteger: s.readU16(),
-        mediaRateFraction: s.readU16(),
+        mediaRateInteger: s.readI16(),
+        mediaRateFraction: s.readI16(),
       });
     } else {
       entries.push({
         segmentDuration: s.readU32(),
         mediaTime: s.readI32(),
-        mediaRateInteger: s.readU16(),
-        mediaRateFraction: s.readU16(),
+        mediaRateInteger: s.readI16(),
+        mediaRateFraction: s.readI16(),
       });
     }
   }

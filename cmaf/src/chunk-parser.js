@@ -86,7 +86,7 @@ export function splitChunks(buf) {
       current = {
         index: -1,
         styp: b.type === 'styp',
-        startOffset: b.contentStart - 8,
+        startOffset: b.boxStart,
         byteLength: 0,
         tracks: [],
       };
@@ -95,7 +95,7 @@ export function splitChunks(buf) {
       current = {
         index: -1,
         styp: false,
-        startOffset: b.contentStart - 8,
+        startOffset: b.boxStart,
         byteLength: 0,
         tracks: [],
       };

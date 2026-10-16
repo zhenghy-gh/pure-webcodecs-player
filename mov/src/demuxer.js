@@ -20,6 +20,8 @@ import {
 export class MovDemuxer extends Mp4Demuxer {
   static containerName = 'mov';
 
+  _usesProgressiveEditTimeline() { return false; }
+
   /**
    * 嗅探优先级：QuickTime 特征 > 通用 ISO-BMFF。
    * 与 Mp4Demuxer.probe 对同一文件打分后取高者（自动选路）。

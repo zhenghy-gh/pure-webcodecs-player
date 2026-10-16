@@ -1,5 +1,30 @@
 # 维护进度
 
+## Attempt 101：收紧渐进 MP4 elst 时间轴并修复 CMAF box 边界
+
+### 问题与修复
+- mp4/src/box-parser.js：完整校验 elst 版本、保留 flags、entry 数量及载荷长度，并按有符号 16-bit 解析 media rate；mp4/src/box-builder.js 增加 elst 测试构造。
+- mp4/src/demuxer.js：对渐进 MP4 的安全 elst 子集按 mvhd/movie 与 mdhd/media 两种 timescale 映射空隙、PTS/DTS、样本时长、呈现总时长和 seek。只支持前置 empty edit 与单一 rate-1 media edit；要求样本边界、sync 起点、无 composition reorder、非负连续 DTS。对 rate/格式错误明确拒绝，对变量 CTS、非整样本终点、负 DTS 等尚未支持的合法布局保留并显式标注既有原始时间线回退；MOV 继续既有 metadata-only 语义。
+- cmaf/src/chunk-parser.js：`ftyp`/`styp` chunk 起点使用 boxStart，修复 extended-size box 头部大于 8 字节时 range 偏移错误。
+- cmaf/src/isobmff.js：每个 `traf` 必须且仅能含一个 `tfdt`；更新空 traf 合法 fixture。
+
+### 回归测试
+- mp4/__tests__/box-parser-gaps.test.js：elst signed-rate、未知版本及保留 flags。
+- mp4/__tests__/demuxer-gaps.test.js：跨 timescale 的 leading-empty/media edit、时长区分、媒体裁剪与 gap seek、坏 rate 与边界/CTS 降级分支。
+- cmaf/__tests__/cmaf-fragment.test.js：largesize `ftyp`/`styp` range 起点；cmaf/__tests__/cmaf-moof-flags.test.js：缺失 tfdt 拒绝。
+
+### 验证
+- MP4 + MOV + CMAF 定向测试：486/486 通过。
+- 最终 `npm run check`：fixtures 通过；3258/3258 tests；lint 通过；exit code 0。
+- Chromium 1248 + MSE `sintel-trailer.mp4`：19/19 通过，真实解码/播放/seek/stall recovery/destroy；测试生成的 3 张截图已恢复。
+
+### 提交和推送
+- 最终全量检查、浏览器验收与生成截图恢复完成后，独立提交并推送 `maintenance/round-6`。
+
+### 风险
+- 渐进 MP4 elst 时间轴映射仅应用于可安全精确映射的单一单位速率 media edit；其他合法但尚未支持的 CTS、切片或负 DTS 布局回退至原始时间轴并在 track 上标注。
+- CMAF tfdt / largesize box 的新边界策略需跟随未来规范扩展与新 fixture 更新。
+
 ## Attempt 1：修复 MSE seek 后音视频时间缺口
 
 ### 发现

@@ -397,6 +397,13 @@ test('parseMoof：拒绝缺失或重复 tfhd，以及截断的 traf 子 box', ()
     (err) => err.code === 'NOT_SUPPORTED' && /box 列表/.test(err.message));
 });
 
+test('parseMoof：每个 traf 都必须包含 tfdt', () => {
+  const trafBox = box('moof', box('traf', tfhd(7), trun(0, { rows: [] })));
+  const moofBox = Array.from(iterateBoxes(trafBox))[0];
+  assert.throws(() => parseMoof(trafBox, moofBox.contentStart, moofBox.contentEnd),
+    (err) => err.code === 'NOT_SUPPORTED' && /tfdt/.test(err.message));
+});
+
 test('parseMoof：拒绝无效 content range 与非空 duration-is-empty traf', () => {
   const bytes = new Uint8Array(32);
   assert.throws(() => parseMoof(bytes, 8, Number.MAX_SAFE_INTEGER + 1),
@@ -412,7 +419,7 @@ test('parseMoof：拒绝无效 content range 与非空 duration-is-empty traf', 
 test('parseMoof：空 traf 的显式 data base 参与后续 traf 隐式继承', () => {
   const traf1 = box('traf', tfhd(1), tfdt(0, 0),
     trun(0, { dataOffset: 8, rows: [{ duration: 1, size: 4 }] }));
-  const traf2 = box('traf', fullBox('tfhd', 0, 0x000001, u32(2), u64(0)));
+  const traf2 = box('traf', fullBox('tfhd', 0, 0x000001, u32(2), u64(0)), tfdt(0, 0));
   const traf3 = box('traf', fullBox('tfhd', 0, 0, u32(3)), tfdt(0, 0),
     trun(0, { dataOffset: 0, rows: [{ duration: 1, size: 4 }] }));
   const stream = buildMoofStream([traf1, traf2, traf3]);

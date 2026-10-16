@@ -56,7 +56,8 @@ export const BitstreamFormat = Object.freeze({
  * @property {string} codec                  规范 codec 串（§3）；未知 ''
  * @property {Uint8Array|null} [description] 解码器私有初始化数据（avcC/hvcC/ASC/OpusHead…）
  * @property {'avc'|'annexb'} [bitstreamFormat] 视频专用码流形态
- * @property {number}                        [durationUs]
+ * @property {number}                        [durationUs] 媒体时间轴时长（µs）
+ * @property {number}                        [presentationDurationUs] 存在 ISO-BMFF elst 时的呈现时长（µs）
  * @property {number}                        [timescale] 原生时间基（仅诊断）
  * @property {string}                        [language] ISO-639-2/T，未知 'und'
  * // video：width/height/[frameRate]/[rotation]/[sampleEntryType]
