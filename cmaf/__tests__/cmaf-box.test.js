@@ -16,6 +16,7 @@ import {
   iterateBoxes,
   findBox,
   findTagInBuf,
+  findVideoDecoderConfig,
   parseTrun,
   parseTfdt,
   parseMfhd,
@@ -82,6 +83,23 @@ test('findAudioSpecificConfig：不从 moov 外的顶层伪造 esds 提取 ASC',
   input.set(videoInit);
   input.set(fakeEsds, videoInit.length);
   assert.equal(findAudioSpecificConfig(input), null, 'top-level fake esds must not become audio config');
+});
+
+test('findVideoDecoderConfig：不把 hvcC payload 中伪造的 avc1 当成真实 sample entry', () => {
+  const fakeAvcEntry = new Uint8Array([
+    0, 0, 0, 32, 0x61, 0x76, 0x63, 0x31,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 12, 0x61, 0x76, 0x63, 0x43, 0xaa, 0xbb, 0xcc, 0xdd,
+  ]);
+  const init = fmp4.buildInit([{
+    id: 1, type: 'video', codec: 'hvc1.1.6.L93.B0',
+    description: { tag: 'hvcC', bytes: fakeAvcEntry },
+    width: 64, height: 36, timescale: 90000,
+  }]);
+  const result = findVideoDecoderConfig(init);
+  assert.equal(result.entryType, 'hvc1');
+  assert.equal(result.fourcc, 'hvcC');
+  assert.deepEqual([...result.description], [...fakeAvcEntry]);
 });
 
 test('findAudioSpecificConfig：不从视频 avcC 嵌入的伪造 esds 提取 ASC', () => {
