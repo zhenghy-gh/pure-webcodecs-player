@@ -224,6 +224,7 @@ export function parseTrun(buf, contentStart, contentEnd) {
   let p = contentStart;
   requireBytes(4, 'fullbox header');
   const { version, flags } = readVersionFlags(buf, contentStart);
+  if (version !== 0 && version !== 1) throw notSupported(`trun version 不支持: ${version}`);
   p += 4;
   requireBytes(4, 'sample_count');
   const sampleCount = dv.getUint32(p); p += 4;
@@ -514,7 +515,8 @@ export function findAudioSpecificConfig(initSegment) {
       const streamTypeAndFlags = initSegment[child.payloadStart + 1];
       const streamType = streamTypeAndFlags >>> 2;
       const isAacObjectType = objectTypeIndication === 0x40 ||
-        objectTypeIndication === 0x66 || objectTypeIndication === 0x67 || objectTypeIndication === 0x68;
+        objectTypeIndication === 0x66 || objectTypeIndication === 0x67 ||
+        objectTypeIndication === 0x68 || objectTypeIndication === 0x69;
       if (!isAacObjectType || streamType !== 5 || !(streamTypeAndFlags & 1)) return null;
       const decoderDataStart = child.payloadStart + 13;
       let descriptorStart = decoderDataStart;

@@ -72,6 +72,16 @@ test('findAudioSpecificConfig：仅接受 AAC DecoderConfig 与有效 AudioStrea
   }
 });
 
+test('findAudioSpecificConfig：支持 MPEG-2 AAC LTP OTI 0x69 与 LTP ASC', () => {
+  const ltp = new Uint8Array([
+    0, 0, 0, 39, 0x65, 0x73, 0x64, 0x73, 0, 0, 0, 0,
+    0x03, 25, 0x05, 0x02, 0, 0x04, 17,
+    0x69, 0x15, 0, 0, 0, 0x05, 0x02, 0xaa, 0xbb, 0, 0, 0, 0,
+    0x05, 0x02, 0x22, 0x10, 0x06, 1, 2,
+  ]);
+  assert.deepEqual([...findAudioSpecificConfig(ltp)], [0x22, 0x10]);
+});
+
 test('findAudioSpecificConfig：standalone largesize esds 正确使用 16-byte 头', () => {
   const standard = new Uint8Array([
     0, 0, 0, 39, 0x65, 0x73, 0x64, 0x73, 0, 0, 0, 0,

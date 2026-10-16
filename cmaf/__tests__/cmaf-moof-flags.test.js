@@ -164,6 +164,12 @@ test('parseTrun：无 data-offset 标志 → dataOffset=0 且不读偏移字节'
   assert.deepEqual(r.rows.map((x) => x.size), [16, 17]);
 });
 
+test('parseTrun：拒绝不支持的 version 2，避免将 CTS 错读为有符号', () => {
+  const unsupported = trun(2, { dataOffset: 8, rows: [{ duration: 1, size: 1, flags: 1, cts: 0x80000000 }] });
+  assert.throws(() => parseTrun(unsupported, 8, unsupported.length),
+    (err) => err.code === 'NOT_SUPPORTED' && /version/.test(err.message));
+});
+
 test('parseTrun：v0 + composition offset 为无符号读取（与 v1 有符号区分）', () => {
   // 同一组字节 0xFFFFFFFF：v0 → 4294967295；v1 → -1
   const v0 = trun(0, { dataOffset: 8, rows: [{ duration: 1, size: 1, flags: 1, cts: 0xffffffff }] });

@@ -2106,3 +2106,26 @@
 
 ### 风险
 - 当前只从 MPEG-4 Audio OTI 中提取 AAC ASC；其他 codec/OTI 必须使用相应专用配置提取逻辑。
+
+## Attempt 95：支持 MPEG-2 AAC LTP 并拒绝未知 trun 版本
+
+### 发现
+- AAC 假阴性：本解析器支持 MPEG-2 AAC Main/LC/SSR OTI (0x66–0x68) 以及 MPEG-4 AAC OTI 0x40，却遗漏 MP4RA 注册的 MPEG-2 AAC LTP OTI 0x69；合法 ESDS 里的 ASC 因此被丢弃。注册表：https://mp4ra.org/registered-types/object-types。
+- trun 版本误解析：parseTrun() 未限制 ISO BMFF 仅定义的 version 0/1；所有非零值都把 composition_time_offset 解释成有符号值，version 2 输入可制造虚假负 CTS。
+- 用户影响：MPEG-2 AAC LTP 轨道无法获得有效解码配置；异常 trun 能污染时间轴/CTS 并令样本错误排序或被解码器拒收。
+
+### 修改
+- cmaf/src/isobmff.js：允许注册的 AAC LTP OTI 0x69；parseTrun() 只接受版本 0 或 1，其余返回 NOT_SUPPORTED。
+- cmaf/__tests__/cmaf-box.test.js：使用 OTI 0x69 与 AAC-LTP (AOT=4) AudioSpecificConfig 验证 ASC 正确透传；保留非 AAC OTI 和 stream type 拒绝用例。
+- cmaf/__tests__/cmaf-moof-flags.test.js：版本 2 的 trun 携带 0x80000000 CTS，必须以 NOT_SUPPORTED 拒绝；既有 v0 unsigned/v1 signed 用例保持。
+
+### 验证
+- CMAF box / init / moof-flags / parse 定向测试：82/82 通过。
+- round 100 阶段性全量 npm run check：fixtures 通过；3239/3239 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成阶段验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- OTI 0x69 的 ASC 只作字节级透传，不在本解析器内解码 MPEG-2 AAC LTP；WebCodecs 实际解码能力由运行时决定。
