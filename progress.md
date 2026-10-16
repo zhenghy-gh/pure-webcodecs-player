@@ -15,7 +15,7 @@
 - Chromium WebCodecs：15/15；Chromium MSE：19/19。浏览器生成截图已恢复，不纳入提交。
 
 ### 提交和推送
-- 本轮变更将独立提交并推送到 `maintenance/round-6`。
+- 已独立提交 `8457b84` 并推送到 `maintenance/round-6`。
 
 ### 规范
 - RFC 9559 §5.1.4.1.25 规定 CodecDelay 以 Matroska Ticks（纳秒）表示，必须从每个帧时间戳中扣除；§10.3.5 未定义 lace 首帧之后的帧时间戳，因此维持本 demuxer 对同一 Block 全部 laced frames 使用同一时间戳的既有行为。
