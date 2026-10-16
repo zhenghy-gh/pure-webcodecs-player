@@ -108,13 +108,23 @@ export function splitChunks(buf) {
     }
     if (b.type === 'moof') {
       sawMoofInCurrent = true;
+      const sampleRanges = [];
       for (const traf of parseMoof(buf, b.contentStart, b.contentEnd)) {
         const samples = materializeSamples(buf, b, traf);
+        for (const sample of samples) {
+          sampleRanges.push({ start: sample.dataStart, end: sample.dataStart + sample.size });
+        }
         current.tracks.push({
           trackId: traf.trackId,
           baseTime: traf.baseTime,
           samples,
         });
+      }
+      sampleRanges.sort((a, b) => a.start - b.start);
+      for (let i = 1; i < sampleRanges.length; i++) {
+        if (sampleRanges[i].start < sampleRanges[i - 1].end) {
+          throw notSupported(`不同 traf 样本数据范围重叠: start=${sampleRanges[i].start}, previousEnd=${sampleRanges[i - 1].end}`);
+        }
       }
     }
   }

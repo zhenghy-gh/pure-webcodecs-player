@@ -289,6 +289,13 @@ test('splitChunks：单 moof 双 traf → 单 chunk 内两条轨，各自默认�
     traf(2, 0, 1, trun(0, { dataOffset: 8, rows: [{}, {}] }),
       { duration: 1024, size: 12, flags: 0x02000000 }),
   ]);
+  const moofBox = Array.from(iterateBoxes(stream)).find((b) => b.type === 'moof');
+  const trafBoxes = Array.from(iterateBoxes(stream, moofBox.contentStart, moofBox.contentEnd))
+    .filter((b) => b.type === 'traf');
+  const audioRun = Array.from(iterateBoxes(stream, trafBoxes[1].contentStart, trafBoxes[1].contentEnd))
+    .find((b) => b.type === 'trun');
+  new DataView(stream.buffer, stream.byteOffset, stream.byteLength)
+    .setInt32(audioRun.contentStart + 8, moofBox.size + 8 + 40);
   const { chunks } = splitChunks(stream);
   assert.equal(chunks.length, 1, '同一 moof 的多 traf 归入同一 chunk');
   assert.equal(chunks[0].tracks.length, 2);
@@ -300,6 +307,18 @@ test('splitChunks：单 moof 双 traf → 单 chunk 内两条轨，各自默认�
   assert.deepEqual(a.samples.map((s) => s.dtsOffset), [0, 1024], '音频 dtsOffset 独立累计');
   assert.equal(v.samples[0].keyframe, true);
   assert.equal(a.samples[0].keyframe, true);
+});
+
+test('splitChunks：跨 traf 指向重叠 mdat 样本范围时拒绝', () => {
+  const stream = buildMoofStream([
+    traf(1, 0, 1, trun(1, {
+      dataOffset: 8,
+      rows: [{ duration: 3003, size: 40, flags: 0x02000000 }],
+    })),
+    traf(2, 0, 1, trun(0, { dataOffset: 8, rows: [{}, {}] }),
+      { duration: 1024, size: 12, flags: 0x02000000 }),
+  ]);
+  assert.throws(() => splitChunks(stream), (err) => err.code === 'NOT_SUPPORTED');
 });
 
 test('parseTfhd：无默认字段时 default* 为 null（不误读 trackId 后字节）', () => {

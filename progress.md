@@ -1654,3 +1654,25 @@
 
 ### 风险
 - 本轮覆盖同一 traf 相邻 runs；跨不同 traf 的数据区间重叠仍未建立全 moof 级共享区间账本。
+
+## Attempt 75：拒绝不同 traf 之间的样本数据重叠
+
+### 发现
+- 复现条件：moof 含视频和音频两个 traf，但两者 trun data_offset 均指向 mdat 中同一段压缩字节。
+- 根因：先前只在每个 traf 内验证 trun runs 的数据区间，未比较同一 moof 中不同轨道的样本范围；同一 mdat 区间可被跨轨重复消费。
+- 用户影响：错误 fragment 会把视频 payload 同时作为音频（或反之）解码，带来损坏媒体、时间轴错误和不必要的解码开销。
+
+### 修改
+- cmaf/src/chunk-parser.js：每个 moof 收集所有 traf 样本的半开区间，排序后线性扫描，发现跨 traf 重叠即以 NOT_SUPPORTED 拒绝；算法 O(n log n)，避免逐样本两两比较。
+- cmaf/__tests__/cmaf-moof-flags.test.js：将合法双轨用例布局为互不重叠的 mdat 区域；新增双 traf 共用同一 data_offset 的畸形拒绝回归。
+
+### 验证
+- CMAF moof flags / fragment / defect regression / roundtrip 定向测试：37/37 通过。
+- 全量 npm run check：fixtures 通过；3214/3214 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- mdat 中未被任何 sample 引用的 padding/其他合法 payload 仍允许存在；当前只保证样本区间彼此不重叠。
