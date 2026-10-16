@@ -320,7 +320,7 @@ export function buildMoov(spec) {
     return box('trak', (w) => {
       w.writeRaw(buildTkhd({
         trackId: track.id,
-        duration: track.duration,
+        duration: tables.tkhdDuration ?? track.duration,
         isVideo,
         isAudio,
         width: track.width,

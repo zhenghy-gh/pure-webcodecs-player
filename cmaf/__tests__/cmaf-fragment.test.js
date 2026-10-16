@@ -52,21 +52,27 @@ function extendedBox(type) {
 }
 
 test('splitChunks：largesize styp 与 ftyp 的 range offset 指向 16-byte header', () => {
+  const prefix = regularBox('free');
   const styp = extendedBox('styp');
   const media = fmp4.buildFragment({ trackId: 1, samples: makeFrames(0, 1) });
   const moof = findBox(media, 'moof');
   const fragmentBoxes = media.subarray(moof.boxStart);
-  const prefixed = new Uint8Array(styp.length + fragmentBoxes.length);
-  prefixed.set(styp); prefixed.set(fragmentBoxes, styp.length);
+  const prefixed = new Uint8Array(prefix.length + styp.length + fragmentBoxes.length);
+  prefixed.set(prefix); prefixed.set(styp, prefix.length);
+  prefixed.set(fragmentBoxes, prefix.length + styp.length);
   const chunked = splitChunks(prefixed);
-  assert.equal(chunked.chunks[0].startOffset, 0);
+  assert.equal(chunked.chunks[0].startOffset, prefix.length);
 
+  const ftypPrefix = new Uint8Array(styp.length + fragmentBoxes.length);
+  ftypPrefix.set(styp); ftypPrefix.set(fragmentBoxes, styp.length);
   const ftyp = extendedBox('ftyp');
   const moov = regularBox('moov');
-  const initialized = new Uint8Array(ftyp.length + moov.length);
-  initialized.set(ftyp); initialized.set(moov, ftyp.length);
+  const initialized = new Uint8Array(ftypPrefix.length + ftyp.length + moov.length);
+  initialized.set(ftypPrefix); initialized.set(ftyp, ftypPrefix.length);
+  initialized.set(moov, ftypPrefix.length + ftyp.length);
   const parsed = splitChunks(initialized);
-  assert.deepEqual(parsed.initRange, { startOffset: 0, byteLength: initialized.length });
+  assert.equal(parsed.chunks.length, 1);
+  assert.deepEqual(parsed.initRange, { startOffset: ftypPrefix.length, byteLength: ftyp.length + moov.length });
 });
 
 test('fragment：两遍 data_offset 回填正确，mdat 载荷等于帧拼接', () => {

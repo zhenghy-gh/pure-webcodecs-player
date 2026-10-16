@@ -1,5 +1,27 @@
 # 维护进度
 
+## Attempt 102：修复 CTS 重排 seek 并校正 elst 回退时长
+
+### 问题与修复
+- mp4/src/demuxer.js：关键帧按 sample/decode 顺序以单调 DTS 二分，避免 ctts 导致 PTS 非单调而选错 RAP；seek 返回 DTS 落点并以同一 decode 时间定位其他轨道。
+- elst 映射失败并回退原始样本时间线时，presentation duration 改为原始样本 PTS 结束的最大值，而不是 tkhd 的编辑后时长，避免公开 duration 短于实际输出样本。
+- 单项零时长 rate-1 media edit 按最大样本 PTS 结束跨度映射（与 MSE init 对单 edit duration 0 的规则一致）；多 edit / 后置 empty edit 等未支持布局显式保留原 timeline 并标注回退。
+- cmaf/__tests__/cmaf-fragment.test.js：将 extended `styp` 和 `ftyp` range 用例改为在非零前缀后验证绝对起点。
+
+### 回归测试
+- mp4/__tests__/demuxer-gaps.test.js：补变动 PTS 的原始及回退 seek、edit-derived tkhd duration 短于 fallback 输出、单项 duration-zero 映射、多 edit 回退。
+
+### 验证
+- MP4 + MOV + CMAF 定向套件：491/491 通过；新增 seek 与 duration 聚焦用例通过。
+- `npm run check`：fixtures 通过，3263/3263 测试通过，548 个 JS 文件 lint 通过。
+- Chromium MSE 实浏览器验收：19/19 通过（播放、seek、stall 恢复、destroy）。
+
+### 提交和推送
+- 验证完成；本轮变更待独立提交并推送至 `maintenance/round-6`。
+
+### 风险
+- 多 edit、CTS reordering 和非整数样本边界等编辑布局仍不参与新 timeline 映射；为避免误称时间轴而会明确标注并回退原始样本时间。
+
 ## Attempt 101：收紧渐进 MP4 elst 时间轴并修复 CMAF box 边界
 
 ### 问题与修复

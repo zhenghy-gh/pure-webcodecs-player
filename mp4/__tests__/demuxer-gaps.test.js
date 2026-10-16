@@ -46,7 +46,7 @@ function largesizeFreeBox() {
  * 极简单轨渐进 MP4（ftyp 仅 8 字节头 → parseFtypSafe 兜底 null）。
  * prefix 可塞额外顶层 box（如 largesize free）；withMoov=false 时只有 ftyp+mdat。
  */
-function buildSimpleMp4({ track, sizes, delta = 40, keyframeIndices = [0], edits = null, cttsOffsets = null, movieTimescale = 1000, movieDuration = sizes.length * delta, prefix = null, withMoov = true }) {
+function buildSimpleMp4({ track, sizes, delta = 40, keyframeIndices = [0], edits = null, cttsOffsets = null, tkhdDuration = null, movieTimescale = 1000, movieDuration = sizes.length * delta, prefix = null, withMoov = true }) {
   const payloads = sizes.map((size, i) => {
     const d = new Uint8Array(size);
     for (let j = 0; j < size; j++) d[j] = (i * 17 + j) & 0xff;
@@ -65,6 +65,7 @@ function buildSimpleMp4({ track, sizes, delta = 40, keyframeIndices = [0], edits
         samplesPerChunk: sizes.length,
         sttsRuns: [{ count: sizes.length, delta }],
         ...(cttsOffsets ? { cttsOffsets } : {}),
+        ...(tkhdDuration !== null ? { tkhdDuration } : {}),
         ...(edits ? { edits } : {}),
       },
     ],
@@ -281,6 +282,106 @@ test('渐进 MP4 elst：裁剪媒体起点并映射到 movie timeline', async ()
   assert.equal(afterSeek.timestamp, 60_000);
 });
 
+test('渐进 MP4 seek：CTTS 导致 PTS 非单调时仍按 DTS 二分选择 RAP', async () => {
+  const { bytes } = buildSimpleMp4({
+    track: { type: 'video', codecPrivate: makeAvcCFixture(), sampleEntryType: 'avc1', width: 320, height: 240, timescale: 1000 },
+    sizes: [1, 1, 1, 1, 1], delta: 40, keyframeIndices: [0, 2, 4],
+    cttsOffsets: [
+      { count: 2, offset: 0 }, { count: 1, offset: 120 },
+      { count: 1, offset: 0 }, { count: 1, offset: -80 },
+    ],
+  });
+  const demuxer = new Mp4Demuxer(new MemoryDataSource(bytes));
+  await demuxer.open();
+  const seek = await demuxer.seek(100_000);
+  assert.equal(seek.actualTimestampUs, 80_000);
+  const sample = await demuxer.readSample(1);
+  assert.equal(sample.index, 2, 'seek keeps decode-time RAP ordering even when PTS are reordered');
+  assert.equal(sample.timestamp, 200_000);
+  assert.equal(sample.dts, 80_000);
+});
+
+test('渐进 MP4 elst：多个媒体编辑及后置空编辑显式回退', async () => {
+  const unsupportedEdits = [
+    [
+      { segmentDuration: 40, mediaTime: 0, mediaRateInteger: 1, mediaRateFraction: 0 },
+      { segmentDuration: 40, mediaTime: 80, mediaRateInteger: 1, mediaRateFraction: 0 },
+    ],
+    [
+      { segmentDuration: 40, mediaTime: 0, mediaRateInteger: 1, mediaRateFraction: 0 },
+      { segmentDuration: 20, mediaTime: -1, mediaRateInteger: 1, mediaRateFraction: 0 },
+    ],
+  ];
+  for (const edits of unsupportedEdits) {
+    const { bytes } = buildSimpleMp4({
+      track: { type: 'video', codecPrivate: makeAvcCFixture(), sampleEntryType: 'avc1', width: 320, height: 240 },
+      sizes: [1, 1, 1], delta: 40, keyframeIndices: [0, 1, 2], edits,
+    });
+    const info = await new Mp4Demuxer(new MemoryDataSource(bytes)).open();
+    assert.equal(info.tracks[0].editListApplied, false);
+    assert.ok(info.tracks[0].editListUnsupportedReason);
+  }
+});
+
+test('渐进 MP4 seek：可变 CTS 的未编辑及回退轨均按 DTS 定位关键帧', async () => {
+  for (const edits of [null, [{ segmentDuration: 200, mediaTime: 0, mediaRateInteger: 1, mediaRateFraction: 0 }]]) {
+    const { bytes } = buildSimpleMp4({
+      track: { type: 'video', codecPrivate: makeAvcCFixture(), sampleEntryType: 'avc1', width: 320, height: 240, timescale: 1000 },
+      sizes: [1, 1, 1, 1, 1], delta: 40, keyframeIndices: [0, 2, 4],
+      cttsOffsets: [
+        { count: 2, offset: 0 }, { count: 1, offset: 120 },
+        { count: 1, offset: 0 }, { count: 1, offset: -80 },
+      ],
+      ...(edits ? { edits } : {}),
+    });
+    const demuxer = new Mp4Demuxer(new MemoryDataSource(bytes));
+    const info = await demuxer.open();
+    if (edits) assert.equal(info.tracks[0].editListApplied, false);
+    const seek = await demuxer.seek(100_000);
+    assert.equal(seek.actualTimestampUs, 80_000);
+    const sample = await demuxer.readSample(1);
+    assert.equal(sample.index, 2);
+    assert.equal(sample.timestamp, 200_000);
+    assert.equal(sample.dts, 80_000);
+  }
+});
+
+test('渐进 MP4 elst 回退：duration 覆盖原始 timeline 的最终 PTS 结束', async () => {
+  const { bytes } = buildSimpleMp4({
+    track: { type: 'video', codecPrivate: makeAvcCFixture(), sampleEntryType: 'avc1', width: 320, height: 240, timescale: 1000 },
+    sizes: [1, 1, 1], delta: 40, keyframeIndices: [0, 1, 2],
+    movieDuration: 80,
+    tkhdDuration: 80,
+    edits: [{ segmentDuration: 80, mediaTime: 0, mediaRateInteger: 1, mediaRateFraction: 0 }],
+    cttsOffsets: [{ count: 2, offset: 0 }, { count: 1, offset: 1 }],
+  });
+  const demuxer = new Mp4Demuxer(new MemoryDataSource(bytes));
+  const info = await demuxer.open();
+  assert.equal(info.tracks[0].editListApplied, false);
+  const samples = [];
+  for (;;) { const sample = await demuxer.readSample(1); if (!sample) break; samples.push(sample); }
+  assert.equal(samples.at(-1).timestamp, 81_000);
+  assert.equal(samples.at(-1).timestamp + samples.at(-1).duration, 121_000);
+  assert.equal(info.durationUs, 121_000);
+});
+
+test('渐进 MP4 elst：零时长媒体编辑延伸至媒体结尾', async () => {
+  const { bytes } = buildSimpleMp4({
+    track: { type: 'video', codecPrivate: makeAvcCFixture(), sampleEntryType: 'avc1', width: 320, height: 240, timescale: 2000 },
+    sizes: [1, 1, 1], delta: 80, keyframeIndices: [0, 1, 2], movieTimescale: 1000, movieDuration: 0,
+    edits: [{ segmentDuration: 0, mediaTime: 0, mediaRateInteger: 1, mediaRateFraction: 0 }],
+  });
+  const demuxer = new Mp4Demuxer(new MemoryDataSource(bytes));
+  const info = await demuxer.open();
+  assert.equal(info.durationUs, 120_000);
+  assert.equal(info.tracks[0].presentationDurationUs, 120_000);
+  assert.equal(info.tracks[0].editListApplied, true);
+  const samples = [];
+  for (;;) { const sample = await demuxer.readSample(1); if (!sample) break; samples.push(sample); }
+  assert.deepEqual(samples.map((sample) => sample.index), [0, 1, 2]);
+  assert.deepEqual(samples.map((sample) => sample.timestamp), [0, 40_000, 80_000]);
+});
+
 test('渐进 MP4 elst：拒绝非关键帧起点，非样本边界终点显式回退', async () => {
   const { bytes: badStart } = buildSimpleMp4({
     track: { type: 'video', codecPrivate: makeAvcCFixture(), sampleEntryType: 'avc1', width: 320, height: 240 },
@@ -373,6 +474,7 @@ test('双轨渐进 seek：目标轨关键帧对齐，其余轨按 _locateResumeI
         chunkOffsets: [0, 0],
         samplesPerChunk: 2,
         sttsRuns: [{ count: 4, delta: 40 }],
+        cttsOffsets: [{ count: 4, offset: -80 }],
       },
       {
         track: {
@@ -417,7 +519,7 @@ test('双轨渐进 seek：目标轨关键帧对齐，其余轨按 _locateResumeI
 
   const d = new Mp4Demuxer(new MemoryDataSource(bytes));
   await d.open();
-  // 目标 80ms → 视频轨关键帧 dts 0/120 ticks 中取 0；其余轨必须从实际落点 0 续读，避免 MSE 轨道间出现时间缺口。
+  // 目标 80ms → 按视频 DTS 选择 sync sample 0，其余轨也从 DTS 落点 0 续读。
   const r = await d.seek(80000);
   assert.equal(r.actualTimestampUs, 0);
   const v = await d.readSample(1);
