@@ -1609,3 +1609,26 @@
 
 ### 风险
 - 各 run 之间显式 data_offset 被按声明尊重；malformed overlap 仍未做跨 run / 跨 traf 区间重叠检测。
+
+## Attempt 73：显式零值 sample flags 覆盖 tfhd 默认
+
+### 发现
+- 复现条件：tfhd default_sample_flags 声明 non-sync，而 trun 的 sample-flags 字段显式为 0。
+- 根因：materializeSamples() 使用 `r.flags || defaults.defaultSampleFlags`，将有意义的显式零误认为缺省，导致轨道默认 non-sync 标志覆盖了 run 声明的 flags=0。
+- 用户影响：具有默认非关键标志、但 trun 显式覆盖为零的样本被错判为 delta；影响随机访问/关键帧调度。相同 truthy 回落也会混淆显式零 duration/size 与字段缺失。
+
+### 修改
+- cmaf/src/isobmff.js：parseTrun() 返回 `hasDuration/hasSize/hasFlags/hasCts` 字段存在性元数据。
+- cmaf/src/chunk-parser.js：根据 trun 字段标志决定是否回落 tfhd 默认，而非以数值 truthiness 判断；first_sample_flags 继续仅应用首样本。
+- cmaf/__tests__/cmaf-moof-flags.test.js：加入显式 `flags=0` 覆盖 non-sync track default 的 regression；将旧的“同一 trun 部分样本字段省略”fixture 改为规范结构中的两个 trun。
+
+### 验证
+- CMAF moof flags / fragment / defect regression / parse / WebCodecs：64/64 通过。
+- 全量 npm run check：fixtures 通过；3212/3212 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 正确区分字段缺失与显式零依赖 parseTrun 返回的 has* 标志；外部调用方直接消费解析对象时新增属性是兼容性扩展。

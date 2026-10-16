@@ -151,12 +151,15 @@ function materializeSamples(buf, moofBox, traf) {
     if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > buf.byteLength) {
       throw notSupported(`样本数据起点越界: ${cursor}`);
     }
-    for (const r of trun.rows) {
+    for (let i = 0; i < trun.rows.length; i++) {
+      const r = trun.rows[i];
       const row = {
-        duration: r.duration || defaults.defaultSampleDuration || 0,
-        size: r.size || defaults.defaultSampleSize || 0,
-        flags: r.flags || defaults.defaultSampleFlags || 0,
-        cts: r.cts || 0,
+        duration: trun.hasDuration ? r.duration : defaults.defaultSampleDuration || 0,
+        size: trun.hasSize ? r.size : defaults.defaultSampleSize || 0,
+        flags: trun.hasFlags || (i === 0 && trun.firstSampleFlags !== null)
+          ? r.flags
+          : defaults.defaultSampleFlags || 0,
+        cts: trun.hasCts ? r.cts : 0,
       };
       if (!Number.isSafeInteger(row.size) || row.size < 0 ||
           cursor < mdatDataStart || cursor + row.size > mdatDataEnd) {

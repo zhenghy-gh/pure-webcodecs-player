@@ -192,12 +192,13 @@ test('parseMoof：tfdt v1 以 u64 读取（跨 2^32 的 baseTime）', () => {
 
 test('splitChunks：trun 显式 duration 覆盖 tfhd 默认，缺省行回落默认值', () => {
   // tfhd 默认 duration=1024；行0 显式 3003，行1 省略
-  const stream = buildMoofStream([
-    traf(7, 9009, 1, trun(0, {
-      dataOffset: 8,
-      rows: [{ duration: 3003, size: 20 }, { size: 21 }],
-    }), { duration: 1024, size: 32, flags: 0x02000000 }),
-  ]);
+  const multiRunTraf = box('traf',
+    tfhd(7, { duration: 1024, size: 32, flags: 0x02000000 }),
+    tfdt(1, 9009),
+    trun(0, { dataOffset: 8, rows: [{ duration: 3003, size: 20 }] }),
+    trun(0, { rows: [{ size: 21 }] }),
+  );
+  const stream = buildMoofStream([multiRunTraf]);
   const { chunks } = splitChunks(stream);
   const samples = chunks[0].tracks[0].samples;
   assert.equal(chunks[0].tracks[0].trackId, 7);
@@ -224,6 +225,17 @@ test('splitChunks：tfhd 默认 flags 参与关键帧判定（inter 帧非关键
   ]);
   const { chunks } = splitChunks(stream);
   assert.equal(chunks[0].tracks[0].samples[0].keyframe, false, 'depends_on=1 + non-sync → 非关键帧');
+});
+
+test('splitChunks：trun 显式 flags=0 覆盖 tfhd 的非关键默认标志', () => {
+  const stream = buildMoofStream([
+    traf(3, 0, 0, trun(0, {
+      dataOffset: 8,
+      rows: [{ duration: 1000, size: 10, flags: 0 }],
+    }), { duration: 1000, size: 10, flags: 0x01010000 }),
+  ]);
+  const { chunks } = splitChunks(stream);
+  assert.equal(chunks[0].tracks[0].samples[0].keyframe, true, '明确 flags=0 必须覆盖默认 non-sync');
 });
 
 test('splitChunks：trun 显式 flags 覆盖 tfhd 默认 flags', () => {
