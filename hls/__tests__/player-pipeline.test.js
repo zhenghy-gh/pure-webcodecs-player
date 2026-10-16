@@ -237,6 +237,39 @@ test('VOD passthrough：直通产物进视频轨，缺 CODECS 时兜底建 avc1'
   p.destroy();
 });
 
+test('AES-128: EXT-X-MAP is decrypted before append', async () => {
+  const playlist = [
+    '#EXTM3U',
+    '#EXT-X-VERSION:6',
+    '#EXT-X-TARGETDURATION:4',
+    '#EXT-X-KEY:METHOD=AES-128,URI=key.bin,IV=0x00000000000000000000000000000001',
+    '#EXT-X-MAP:URI=init.mp4',
+    '#EXTINF:4,',
+    'seg.m4s',
+    '#EXT-X-ENDLIST',
+  ].join('\n');
+  const { p, mse } = setup({
+    texts: { [BASE]: playlist },
+    bytes: { 'http://x/live/init.mp4': new Uint8Array([0xde, 0xad]), 'http://x/live/seg.m4s': new Uint8Array([0xca, 0xfe]) },
+    passthrough: true,
+  });
+  const calls = [];
+  p.decrypter = {
+    assertSupported(key) { assert.equal(key.method, 'AES-128'); },
+    async decryptSegment(data, key, ctx) {
+      calls.push({ first: data[0], uri: key.uri, iv: [...key.iv.bytes], sn: ctx.sn });
+      return data[0] === 0xde ? new Uint8Array([0x11, 0x22]) : new Uint8Array([0x33, 0x44]);
+    },
+  };
+  await p.loadSource(BASE);
+  await until(() => mse.endedCount > 0);
+  assert.deepEqual(calls.map((call) => call.first), [0xde, 0xca]);
+  assert.equal(calls[0].uri, 'http://x/live/key.bin');
+  assert.deepEqual(calls[0].iv, new Array(15).fill(0).concat(1));
+  assert.deepEqual(calls.map((call) => call.sn), [0, 0]);
+  assert.deepEqual(mse.appends.map(([, data]) => [...data]), [[0x11, 0x22], [0x33, 0x44]]);
+  p.destroy();
+});
 test('EXT-X-MAP：init 分片按 URL 去重装载一次并先于媒体分片 append', async () => {
   const { p, loader, mse } = setup({
     texts: { [BASE]: MAP_PL },

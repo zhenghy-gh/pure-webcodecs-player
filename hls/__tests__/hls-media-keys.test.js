@@ -67,6 +67,19 @@ b.ts
   assert.equal(p.segments[1].cc, 8, '真实断点在初值上 +1');
 });
 
+test("EXT-X-MAP captures the active AES key and explicit IV before later key changes", () => {
+  const p = parseMedia('#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-KEY:METHOD=AES-128,URI=key.bin,IV=0x00000000000000000000000000000001\n#EXT-X-MAP:URI=init.mp4\n#EXT-X-KEY:METHOD=NONE\n#EXTINF:4,\na.m4s\n#EXT-X-ENDLIST', 'https://x/m.m3u8');
+  assert.equal(p.segments[0].map.key.method, 'AES-128');
+  assert.equal(p.segments[0].map.key.uri, 'https://x/key.bin');
+  assert.deepEqual([...p.segments[0].map.key.iv.bytes], new Array(15).fill(0).concat(1));
+  assert.equal(p.segments[0].key, null, '后续媒体 KEY=NONE 不得改变已声明 map 的加密上下文');
+});
+
+test('AES-128 EXT-X-MAP requires an explicit IV', () => {
+  const playlist = ['#EXTM3U', '#EXT-X-TARGETDURATION:4', '#EXT-X-KEY:METHOD=AES-128,URI=key.bin', '#EXT-X-MAP:URI=init.mp4'].join(String.fromCharCode(10));
+  assert.throws(() => parseMedia(playlist, 'https://x/m.m3u8'), (error) => error.code === 'PARSE_ERROR' && /显式 IV/.test(error.message));
+});
+
 test('EXT-X-MAP 带 BYTERANGE 属性', () => {
   const p = parseMedia(`#EXTM3U
 #EXT-X-TARGETDURATION:4

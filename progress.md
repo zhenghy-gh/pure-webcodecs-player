@@ -1,6 +1,30 @@
 # 维护进度
 
+## Attempt 107：解密 AES-128 加密的 fMP4 初始化段
+
+### 问题与修复
+- AES-128 `EXT-X-KEY` 的作用范围包括后续 `EXT-X-MAP`，但 HLS 播放器先把 init bytes 原样 append 到 MSE，media segment 才走解密路径；加密 init 会导致 fMP4 初始化失败。
+- `hls/src/m3u8-parser.js`：解析 `EXT-X-MAP` 时保存声明点的 active key/IV；AES-128 加密 map 若无显式 IV 则以 `PARSE_ERROR` 拒绝。
+- `hls/src/player.js`：append 前先校验和解密 map，解密上下文复用所属分片 `sn`；缓存身份包括 URI、byte range、加密方法/key URI/IV，避免不同加密上下文误复用。
+
+### 回归测试
+- `hls/__tests__/hls-media-keys.test.js`：验证 map 对后续 key 变化保留声明时 key 和显式 IV，并拒绝缺 IV 的 AES-128 map。
+- `hls/__tests__/player-pipeline.test.js`：伪造密文及明文 map/media bytes，验证两者均解密、正确传入 map key/IV/sn，且只 append 明文。
+
+### 验证
+- 定向 HLS 全套：216/216 通过；新增针对性回归 3/3 通过。
+- 最终 `npm run check`：3266/3266 测试通过；548 个 JS 文件 lint 通过。
+- Chromium MSE：19/19 通过。
+
+### 提交和推送
+- 验证完成后独立提交并推送 `maintenance/round-6`。
+
+### 风险
+- 按 RFC 8216，加密 `EXT-X-MAP` 必须显式指定 IV；无 IV playlist 在解析期失败，不尝试用 media sequence 推导。
+
+
 ## Attempt 106：修复大 FLV 的关键帧索引偏移漂移
+
 
 ### 问题与修复
 - DataSource 模式按 64 KiB 分块喂 FLV。demuxer 每次 pump 把当前源偏移写进 `parser.baseOffset`；TagStream 又将其加到跨批次累计 `_absPos`，导致每越过一块就多加一个 chunk，seek 到后续关键帧跳过目标甚至到 EOF。

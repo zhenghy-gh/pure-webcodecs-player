@@ -230,8 +230,17 @@ export class HlsPlayer {
     const seg = pl.segments[this.nextSegmentIdx];
     this._appending = true;
     try {
-      // 1. EXT-X-MAP（fMP4 init segment）：URL 变化时重新加载
-      if (seg.map && !this._loadedInitUrls.has(seg.map.uri)) {
+      // 1. EXT-X-MAP（fMP4 init segment）：URI/range/key/IV 任一变化都需重新加载
+      const mapIdentity = seg.map && (
+        !seg.map.byteRange && (!seg.map.key || seg.map.key.method === 'NONE')
+          ? seg.map.uri
+          : JSON.stringify([
+              seg.map.uri, seg.map.byteRange?.offset ?? null, seg.map.byteRange?.length ?? null,
+              seg.map.key?.method ?? 'NONE', seg.map.key?.uri ?? null, seg.map.key?.iv?.raw ?? null,
+            ])
+      );
+      if (seg.map && !this._loadedInitUrls.has(mapIdentity)) {
+        if (seg.map.key && seg.map.key.method !== 'NONE') this.decrypter.assertSupported(seg.map.key);
         const initData = await this.loader.load(seg.map.uri, {
           byteRange: seg.map.byteRange || undefined,
           signal: this._abortCtrl.signal,
@@ -248,8 +257,12 @@ export class HlsPlayer {
         if (!this.mse.sourceBuffers.video && !this.mse.sourceBuffers.audio) {
           this.mse.addSourceBuffer('audio', 'audio/mp4; codecs="mp4a.40.2"');
         }
-        await this._append(initData.data, 'video');
-        this._loadedInitUrls.add(seg.map.uri);
+        let mapBytes = initData.data;
+        if (seg.map.key && seg.map.key.method !== 'NONE') {
+          mapBytes = await this.decrypter.decryptSegment(mapBytes, seg.map.key, { sn: seg.sn, containerHint: 'fmp4' });
+        }
+        await this._append(mapBytes, 'video');
+        this._loadedInitUrls.add(mapIdentity);
       }
 
       // 2. 加载媒体分片

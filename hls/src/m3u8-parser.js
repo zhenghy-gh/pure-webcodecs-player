@@ -391,9 +391,14 @@ export function parseMedia(text, baseUrl = '') {
             return br && br.offset >= 0 && br.length > 0 ? br : null;
           })()
         : null;
+      const mapKey = lastKey.method !== 'NONE' ? lastKey : null;
+      if (mapKey?.method === 'AES-128' && (!mapKey.iv?.bytes || mapKey.iv.bytes.length !== 16)) {
+        throw parseFail('m3u8 解析失败：加密 EXT-X-MAP 必须指定显式 IV');
+      }
       lastMap = {
         uri: resolveUrl(a.URI, baseUrl),
         byteRange: mapByteRange,
+        key: mapKey,
       };
       if (current) current.map = lastMap;
       continue;
