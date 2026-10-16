@@ -140,6 +140,7 @@ function materializeSamples(buf, moofBox, traf) {
   let mdatDataStart = -1;
   let mdatDataEnd = -1;
   for (const b of iterateBoxes(buf, moofBox.contentEnd)) {
+    if (b.type === 'moof') break; // 不能跨越下一个 fragment 借用其 mdat
     if (b.type === 'mdat') {
       mdatDataStart = b.contentStart;
       mdatDataEnd = b.contentEnd;

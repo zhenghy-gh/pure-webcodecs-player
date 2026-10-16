@@ -1699,6 +1699,29 @@
 ### 风险
 - 无 per-sample 字段时 sample_count 的上限仍按 DEFAULT_MAX_TRUN_SAMPLES；进一步缩紧需评估超大合法 fragment 的兼容性。
 
+## Attempt 78：每个 moof 仅能关联自身后续的 mdat
+
+### 发现
+- 复现条件：一个 fragment 的 moof 后面缺失 mdat，后面才出现下一个 moof 和其 mdat；前一 trun 的 data_offset 被恶意设到后一个 mdat。
+- 根因：materializeSamples() 从当前 moof 末尾迭代到整个输入末尾，找到第一个 mdat 时没有遇到下一个 moof 就停止的边界检查，因此前一 fragment 可越过后一 fragment 并借用其 payload。
+- 用户影响：解析器接受结构不完整的早期 fragment，并把后续片段的数据误路由至错误轨道/时间段，可能造成损坏解码。
+
+### 修改
+- cmaf/src/chunk-parser.js：查找关联 mdat 时遇到下一个 moof 即停止；若本 fragment 的 moof 后无 mdat，沿用 NOT_SUPPORTED 错误拒绝。
+- cmaf/__tests__/cmaf-fragment.test.js：新增两个连续 moof 但只有第二个后有 mdat 的输入，并将第一个 trun offset 特意指向第二 fragment payload，断言拒绝。
+
+### 验证
+- CMAF fragment / moof flags / roundtrip 定向测试：31/31 通过。
+- CMAF 定向测试：31/31 通过。
+- 阶段性全量 npm run check：fixtures 通过；3217/3217 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 允许 moof 与其 mdat 之间出现其他 box；关联边界只禁止跨越下一个 moof。
+
 ## Attempt 77：拒绝不精确的 CMAF 64 位解码时间
 
 ### 发现

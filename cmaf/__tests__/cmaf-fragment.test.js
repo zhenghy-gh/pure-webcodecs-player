@@ -129,6 +129,24 @@ test('连续片段：mfhd seq 严格递增且 moof 长度稳定', () => {
 
 /* ---------------- 异常输入 ---------------- */
 
+test('fragment：前一 moof 不得借用下一 fragment 的 mdat', () => {
+  const first = fmp4.buildFragment({ trackId: 1, samples: makeFrames(0, 1) });
+  const second = fmp4.buildFragment({ trackId: 2, samples: makeFrames(0, 1) });
+  const moof1 = findBox(first, 'moof');
+  const moof2 = findBox(second, 'moof');
+  const mdat2 = findBox(second, 'mdat');
+  const stream = new Uint8Array(moof1.size + moof2.size + mdat2.size);
+  stream.set(first.subarray(moof1.contentStart - 8, moof1.contentStart - 8 + moof1.size));
+  stream.set(second.subarray(moof2.contentStart - 8, moof2.contentStart - 8 + moof2.size), moof1.size);
+  stream.set(second.subarray(mdat2.contentStart - 8, mdat2.contentStart - 8 + mdat2.size), moof1.size + moof2.size);
+  const firstTrun = (() => {
+    const traf = Array.from(iterateBoxes(stream, 8, 8 + moof1.size)).find((b) => b.type === 'traf');
+    return Array.from(iterateBoxes(stream, traf.contentStart, traf.contentEnd)).find((b) => b.type === 'trun');
+  })();
+  new DataView(stream.buffer).setInt32(firstTrun.contentStart + 8, moof1.size + moof2.size + 8);
+  assert.throws(() => splitChunks(stream), (err) => err.code === 'NOT_SUPPORTED');
+});
+
 test('fragment：trun data_offset 指向 mdat 外但仍在文件内时拒绝', () => {
   const frag = fmp4.buildFragment({ trackId: 1, samples: makeFrames(0, 1) });
   const extended = new Uint8Array(frag.length + 40);
