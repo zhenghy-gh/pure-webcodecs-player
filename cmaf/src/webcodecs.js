@@ -119,12 +119,15 @@ export class CmafWebCodecsPlayer {
     this.videoTrackId = null;
     this.audioTrackId = null;
     this._lifecycleTail = Promise.resolve();
+    this._lifecycleRequestId = 0;
+    this._acceptChunks = true;
     this._pending = [];
   }
 
   /** 解析 init segment 并建立解码器 */
   open(initBytes) {
-    return this._enqueueLifecycle(() => this._open(initBytes));
+    const requestId = ++this._lifecycleRequestId;
+    return this._enqueueLifecycle(() => this._open(initBytes, requestId));
   }
 
   _enqueueLifecycle(operation) {
@@ -133,7 +136,7 @@ export class CmafWebCodecsPlayer {
     return result;
   }
 
-  async _open(initBytes) {
+  async _open(initBytes, requestId) {
     const cfg = decoderConfigsFromInit(initBytes);
     if (cfg.video && !(cfg.videoTrack.trackId > 0)) {
       throw notSupported('视频轨缺少有效的 tkhd track_ID，无法关联 CMAF 分片');
@@ -186,6 +189,7 @@ export class CmafWebCodecsPlayer {
       this.audioDecoder = audioDecoder;
       this.videoTrackId = cfg.videoTrack?.trackId ?? null;
       this.audioTrackId = cfg.audioTrack?.trackId ?? null;
+      this._acceptChunks = requestId === this._lifecycleRequestId;
       if (cfg.videoTrack) this.videoTimescale = cfg.videoTrack.timescale;
       if (cfg.audioTrack) this.audioTimescale = cfg.audioTrack.timescale;
       return cfg;
@@ -206,6 +210,7 @@ export class CmafWebCodecsPlayer {
    * @param {Uint8Array} buf chunk 所在的完整缓冲
    */
   appendChunk(chunk, buf) {
+    if (!this._acceptChunks) return;
     for (const track of chunk.tracks) {
       const isVideo = !!this.videoDecoder && track.trackId === this.videoTrackId;
       const isAudio = !!this.audioDecoder && track.trackId === this.audioTrackId;
@@ -231,6 +236,9 @@ export class CmafWebCodecsPlayer {
 
   /** 等待全部队列解码完成并释放 */
   close() {
+    // Stop accepting new chunks synchronously; queued close may flush asynchronously.
+    this._lifecycleRequestId++;
+    this._acceptChunks = false;
     return this._enqueueLifecycle(() => this._closeNow());
   }
 

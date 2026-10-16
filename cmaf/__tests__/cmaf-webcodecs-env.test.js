@@ -101,7 +101,7 @@ async function withGlobals(patch, fn) {
 }
 
 function makeFakes() {
-  const env = { videoSupported: true, audioSupported: true, audioConfigureThrows: false, videoProbe: null, videoFlushError: null, audioFlushError: null };
+  const env = { videoSupported: true, audioSupported: true, audioConfigureThrows: false, videoProbe: null, videoFlushError: null, audioFlushError: null, videoFlushGate: null };
   const videoDecoders = [];
   const audioDecoders = [];
   const chunks = [];
@@ -141,6 +141,7 @@ function makeFakes() {
     }
     async flush() {
       this.flushes++;
+      if (env.videoFlushGate) await env.videoFlushGate;
       if (env.videoFlushError) throw env.videoFlushError;
     }
     close() { this.closed++; this.state = 'closed'; }
@@ -468,6 +469,61 @@ describe('CmafWebCodecsPlayer（Fake WebCodecs）', () => {
       p.appendChunk(chunks[0], buf.subarray(chunkStart));
       assert.equal(errors.length, 3, '每样本错误都上报');
       assert.equal(errors[0].message, 'boom');
+    });
+  });
+
+  test('close：较早排队的 open 不得覆盖较晚 close 的输入拒绝状态', async () => {
+    await withWebCodecs(async (fakes) => {
+      let releaseProbe;
+      let probeStarted;
+      const started = new Promise((resolve) => { probeStarted = resolve; });
+      fakes.env.videoProbe = (config) => {
+        probeStarted();
+        return new Promise((resolve) => { releaseProbe = () => resolve({ supported: true, config }); });
+      };
+      let releaseFlush;
+      fakes.env.videoFlushGate = new Promise((resolve) => { releaseFlush = resolve; });
+      const player = new CmafWebCodecsPlayer();
+      const opening = player.open(fmp4.buildInit([makeVideoTrak({ id: 3 })]));
+      await started;
+      fakes.env.videoProbe = null;
+      const closing = player.close();
+      releaseProbe();
+      await new Promise((resolve) => setImmediate(resolve));
+      const decoder = fakes.videoDecoders[0];
+      assert.ok(decoder, 'open reaches old-pair flush');
+      const sample = { durationTicks: 1, size: 1, keyframe: true, dtsOffset: 0, dataStart: 0 };
+      player.appendChunk({ tracks: [{ trackId: 3, samples: [sample] }] }, new Uint8Array([1]));
+      assert.equal(decoder.decoded.length, 0, 'older open must not reopen input after later close request');
+      releaseFlush();
+      await Promise.all([opening, closing]);
+      assert.equal(player.videoDecoder, null);
+      assert.equal(player._acceptChunks, false);
+    });
+  });
+
+  test('close：flush 挂起期间立即拒绝新 chunk', async () => {
+    await withWebCodecs(async (fakes) => {
+      const player = new CmafWebCodecsPlayer();
+      const { init } = buildAvStream();
+      await player.open(init);
+      const decoder = player.videoDecoder;
+      let releaseFlush;
+      let flushStarted;
+      const started = new Promise((resolve) => { flushStarted = resolve; });
+      decoder.flush = () => new Promise((resolve) => {
+        releaseFlush = resolve;
+        flushStarted();
+      });
+      const closing = player.close();
+      await started;
+      const sample = { durationTicks: 1, size: 1, keyframe: true, dtsOffset: 0, dataStart: 0 };
+      player.appendChunk({ tracks: [{ trackId: 1, samples: [sample] }] }, new Uint8Array([7]));
+      assert.equal(decoder.decoded.length, 0, 'new samples are rejected while close flushes');
+      releaseFlush();
+      await closing;
+      assert.equal(decoder.closed, 1);
+      assert.equal(player.videoDecoder, null);
     });
   });
 

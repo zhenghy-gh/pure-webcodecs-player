@@ -1518,3 +1518,25 @@
 
 ### 风险
 - 底层 decoder.close() 自身若抛错，逻辑会继续清理另一个 decoder；该 decoder 内部是否可回收仍由浏览器实现决定。
+
+## Attempt 69：close() 请求时立即停止接受 CMAF chunk
+
+### 发现
+- 复现条件：视频 decoder.flush() 保持 pending 时调用 close()，在 flush 尚未 resolve 时继续调用 appendChunk()。
+- 根因：close() 只将异步 _closeNow() 放入生命周期队列，appendChunk() 不在队列中，且原逻辑直到 flush 完成并清引用前仍接受新样本。这些 decode 请求可能落在正在结束的 decoder flush 之后，flush 返回的完成保证因而失效，或触发 closed decoder 错误。
+- 用户影响：播放器销毁/切换期间 late chunk 仍进 decoder，可能丢帧、报错或破坏 close 完成语义。
+
+### 修改
+- cmaf/src/webcodecs.js：引入同步接受标记与 lifecycle request token；close() 调用时立即关闭 chunk 接受门，appendChunk() 对关闭窗口输入无操作；queued open 仅在仍是最新生命周期请求时才能重新打开接受门。
+- cmaf/__tests__/cmaf-webcodecs-env.test.js：以可控 pending flush 复现关闭窗口，在 close() 后立即 append，确认新 chunk 未 decode，flush 完成后 decoder 已释放。
+
+### 验证
+- 定向 CMAF WebCodecs / init / parse：47/47 通过（包含 queued open + close 请求 token race）。
+- npm run check：fixtures 通过；全量测试 3208/3208；lint 548 个 JS 文件通过；完整门禁 exit code 0（本轮为第 20 轮阶段性全量验证）。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实 decode/play/seek/stall recovery/destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 验证完成后独立提交并推送 maintenance/round-6。
+
+### 风险
+- close 请求一旦发出，新 chunk 会立即被丢弃；这是保证已开始的 decoder flush 不被新输入穿插的确定语义。
