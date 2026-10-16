@@ -1767,3 +1767,25 @@
 
 ### 风险
 - 当前仅处理 parseTfhd 被上层限定为 tfhd box 的调用契约；类似边界检查需继续审查其他 full-box parsers。
+
+## Attempt 80：trun 各字段读取严格限定于 box contentEnd
+
+### 发现
+- 复现条件：trun 在 data_offset、first_sample_flags 或 per-sample row 中途截断，但整个缓冲区后续 box 字节仍可被 DataView 读取。
+- 根因：parseTrun() 使用 buffer 全局边界而非传入的 contentEnd 保护 optional header/行读取；仅在计算可容纳样本数时检查 contentEnd，前面的可选字段仍可能从下一个 box 借字节。
+- 用户影响：畸形 trun 可跨 box 读取 sibling 内容，伪造 data offset / sample flags，或让解析行为偏离稳定 NOT_SUPPORTED 错误契约。
+
+### 修改
+- cmaf/src/isobmff.js：parseTrun() 为 fullbox header、sample_count、data_offset、first_sample_flags 加显式 contentEnd 检查；per-sample rows 由完整行计数预检后读取。
+- cmaf/__tests__/cmaf-moof-flags.test.js：添加 trun data_offset 截断、first_sample_flags 截断和样本行截断测试（缓冲中仍有尾部字节，确保不会越界借读）。
+
+### 验证
+- CMAF moof flags / box / defect regression / fragment 定向测试：57/57 通过。
+- 全量 npm run check：fixtures 通过；3221/3221 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- parseTrun 完整性依赖上层向它传入实际 trun contentEnd；非法调用者传入过大的 end 不在此函数的当前职责范围。

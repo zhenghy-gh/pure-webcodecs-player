@@ -141,6 +141,20 @@ test('parseTrun：仅 data-offset 标志 → 行字段全零回落', () => {
   ]);
 });
 
+test('parseTrun：data_offset、first_sample_flags 与样本行不得跨 trun 边界读取', () => {
+  const dataOffsetBox = trun(0, { dataOffset: 8, rows: [] });
+  assert.throws(() => parseTrun(dataOffsetBox, 8, dataOffsetBox.length - 4),
+    (err) => err.code === 'NOT_SUPPORTED');
+
+  const firstFlagsBox = fullBox('trun', 0, 0x000004, u32(0), u32(0x02000000));
+  assert.throws(() => parseTrun(firstFlagsBox, 8, firstFlagsBox.length - 2),
+    (err) => err.code === 'NOT_SUPPORTED');
+
+  const rowBox = trun(0, { rows: [{ duration: 3003 }] });
+  assert.throws(() => parseTrun(rowBox, 8, rowBox.length - 2),
+    (err) => err.code === 'NOT_SUPPORTED');
+});
+
 test('parseTrun：无 data-offset 标志 → dataOffset=0 且不读偏移字节', () => {
   // 行内显式 duration+size：若解析器错把首个 u32 当 dataOffset，rows 会错位
   const b = trun(0, { rows: [{ duration: 3003, size: 16 }, { duration: 3003, size: 17 }] });

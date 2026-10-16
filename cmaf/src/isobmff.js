@@ -181,8 +181,14 @@ function readVersionFlags(buf, contentStart) {
  */
 export function parseTrun(buf, contentStart, contentEnd) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const requireBytes = (count, field) => {
+    if (p + count > contentEnd) throw notSupported(`trun ${field} 字段被截断`);
+  };
+  let p = contentStart;
+  requireBytes(4, 'fullbox header');
   const { version, flags } = readVersionFlags(buf, contentStart);
-  let p = contentStart + 4;
+  p += 4;
+  requireBytes(4, 'sample_count');
   const sampleCount = dv.getUint32(p); p += 4;
   const hasDataOffset = !!(flags & 0x000001);
   const hasDuration = !!(flags & 0x000100);
@@ -191,6 +197,7 @@ export function parseTrun(buf, contentStart, contentEnd) {
   const hasCts = !!(flags & 0x000800);
   let dataOffset = 0;
   if (hasDataOffset) {
+    requireBytes(4, 'data_offset');
     dataOffset = dv.getInt32(p); p += 4;
   }
   // first-sample-flags-present（0x000004）：data_offset 之后、样本行之前还有
@@ -199,6 +206,7 @@ export function parseTrun(buf, contentStart, contentEnd) {
   const hasFirstSampleFlags = !!(flags & 0x000004);
   let firstSampleFlags = null;
   if (hasFirstSampleFlags) {
+    requireBytes(4, 'first_sample_flags');
     firstSampleFlags = dv.getUint32(p);
     p += 4;
   }
