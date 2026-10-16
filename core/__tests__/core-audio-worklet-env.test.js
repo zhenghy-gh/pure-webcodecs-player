@@ -63,6 +63,32 @@ test('PCM worklet：环形缓冲扩容保留未消费样本与顺序', () => {
   assert.equal(processor.bufferedFrames, 0);
 });
 
+test('PCM worklet：clear starts a new clock generation and resets consumed-frame stats', () => {
+  let Processor;
+  const messages = [];
+  const context = {
+    AudioWorkletProcessor: class { constructor() { this.port = { postMessage: (msg) => messages.push(msg) }; } },
+    registerProcessor(_name, ctor) { Processor = ctor; },
+    currentSampleRate: 48000,
+    sampleRate: 48000,
+    currentTime: 0,
+  };
+  runInNewContext(PCM_WORKLET_CODE, context);
+  const processor = new Processor();
+  processor.port.onmessage({ data: { type: 'push', channels: [new Float32Array([1, 2, 3, 4])], frames: 4 } });
+  processor.process([], [[new Float32Array(2)]]);
+  processor.report();
+  assert.equal(messages.at(-1).generation, 0);
+  assert.equal(messages.at(-1).playedFrames, 2);
+  processor.port.onmessage({ data: { type: 'clear', generation: 1 } });
+  processor.port.onmessage({ data: { type: 'query' } });
+  assert.equal(processor.playedFrames, 0);
+  assert.equal(processor.bufferedFrames, 0);
+  assert.equal(messages.at(-1).generation, 1);
+  assert.equal(messages.at(-1).playedFrames, 0);
+  processor.port.onmessage({ data: { type: 'clear', generation: 1 } }); // duplicate clear cannot roll state
+  assert.equal(processor.clockGeneration, 1);
+});
 test('PCM worklet：队列上限阻止累计样本超额分配', () => {
   let Processor;
   const code = PCM_WORKLET_CODE.replace('1 << 24', '4');
@@ -409,14 +435,14 @@ test('worklet 上行消息：stats 驱动 progress（值不变不重发）；und
     const underruns = [];
     player.on('underrun', (p) => underruns.push(p));
 
-    node.port.dispatch({ type: 'stats', bufferedFrames: 960, playedFrames: 4800, sampleRate: 48000 });
+    node.port.dispatch({ type: 'stats', generation: 0, bufferedFrames: 960, playedFrames: 4800, sampleRate: 48000 });
     assert.equal(player._bufferedFrames, 960);
     assert.equal(player._playedFrames, 4800);
     assert.equal(progress.length, 1);
     assert.equal(progress[0], 0.1); // 4800/48000，非 playing 走已消费帧时钟
     assert.equal(player.bufferedSec, 0.02);
 
-    node.port.dispatch({ type: 'stats', bufferedFrames: 960, playedFrames: 4800, sampleRate: 48000 });
+    node.port.dispatch({ type: 'stats', generation: 0, bufferedFrames: 960, playedFrames: 4800, sampleRate: 48000 });
     assert.equal(progress.length, 1, 'playedFrames 未变化不重发 progress');
 
     for (const bad of [
@@ -456,7 +482,7 @@ test('setVolume 钳制；clearBuffer 复位镜像与锚点；destroy 全链幂�
     player.setVolume(0.5); assert.equal(ctx.gains[0].gain.value, 0.5);
 
     player.push([new Float32Array(480)]);
-    node.port.dispatch({ type: 'stats', bufferedFrames: 480, playedFrames: 100, sampleRate: 48000 });
+    node.port.dispatch({ type: 'stats', generation: 0, bufferedFrames: 480, playedFrames: 100, sampleRate: 48000 });
     const destroyed = [];
     player.on('destroy', () => destroyed.push(true));
 
@@ -465,8 +491,15 @@ test('setVolume 钳制；clearBuffer 复位镜像与锚点；destroy 全链幂�
     assert.ok(clearMsg, '向 worklet 发 clear');
     assert.equal(player._bufferedFrames, 0);
     assert.equal(player._playedFrames, 0);
+    assert.equal(player._clockGeneration, 1);
     assert.equal(player._anchorCtxTime, 3.0);
     assert.equal(player._startedAt, 0);
+    assert.deepEqual(clearMsg.msg, { type: 'clear', generation: 1 });
+    node.port.dispatch({ type: 'stats', generation: 0, bufferedFrames: 0, playedFrames: 1000, sampleRate: 48000 });
+    assert.equal(player._playedFrames, 0, 'delayed stats from before seek must not restore prior consumed frames');
+    assert.equal(player.currentTimeSec(), 0);
+    node.port.dispatch({ type: 'stats', generation: 1, bufferedFrames: 0, playedFrames: 12, sampleRate: 48000 });
+    assert.equal(player._playedFrames, 12, 'new generation stats should advance the reset clock');
 
     assert.equal(player.url.startsWith('blob:'), true);
     player.destroy();

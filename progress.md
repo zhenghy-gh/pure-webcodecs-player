@@ -1,5 +1,26 @@
 # 维护进度
 
+## Attempt 105：隔离 AudioWorklet seek 前后的音频时钟代
+
+### 问题与修复
+- `clearBuffer()` 只将主线程 `_playedFrames` 清零，却未清理 worklet 累计计数；clear 前的迟到 stats 仍会被接受并恢复旧帧数，使 seek 后暂停时音频时钟跳回旧播放时长。
+- `core/src/audio-worklet-player.js`：clear 增加单调 generation，worklet 收到新 generation 时重置 `playedFrames`，每条 stats 带 generation；主线程拒绝 generation 不匹配的旧消息。若 init 前发生 clear，node 建立后也同步 generation。
+
+### 回归测试
+- `core/__tests__/core-audio-worklet-env.test.js`：fake processor 验证 clear 后 playedFrames 重新计数并以新 generation 上报；AudioWorkletPlayer 验证延迟旧 stats 不改写时钟、同代 stats 正常推进。
+
+### 验证
+- targeted `core-audio-worklet-env.test.js`：18/18 通过。
+- core 全量：596/596 通过；全量 `npm run check`：3266/3266 测试通过、548 个 JS 文件 lint 通过。
+- Chromium MSE 实浏览器验收：19/19 通过（解码、播放、seek、stall 恢复、destroy）。
+
+### 提交和推送
+- 完成验证后独立提交并推送 `maintenance/round-6`。
+
+### 风险
+- worklet stats 协议增加 generation 字段；主线程与内联 worklet 同步更新，旧线程消息会安全丢弃。
+
+
 ## Attempt 104：串行化无 Range HTTP 源的并发顺序读取
 
 ### 问题与修复

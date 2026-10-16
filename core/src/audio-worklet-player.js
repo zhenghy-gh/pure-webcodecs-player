@@ -22,7 +22,8 @@ class PcmRingWorklet extends AudioWorkletProcessor {
     this.rings = [];            // 每声道一个 Float32Array 环形缓冲
     this.writePos = 0;
     this.bufferedFrames = 0;
-    this.playedFrames = 0;      // 已实际送出的总帧数
+    this.playedFrames = 0;      // 当前时钟代的已消费帧数
+    this.clockGeneration = 0;
     this.underruns = 0;
     this.capacity = 0;
     this.port.onmessage = (e) => {
@@ -82,7 +83,10 @@ class PcmRingWorklet extends AudioWorkletProcessor {
         this.writePos = (this.writePos + frames) % this.capacity;
         this.bufferedFrames += frames;
       } else if (msg.type === 'clear') {
+        if (!Number.isSafeInteger(msg.generation) || msg.generation <= this.clockGeneration) return;
+        this.clockGeneration = msg.generation;
         this.bufferedFrames = 0;
+        this.playedFrames = 0;
         this.writePos = 0;
       } else if (msg.type === 'query') {
         this.report();
@@ -93,6 +97,7 @@ class PcmRingWorklet extends AudioWorkletProcessor {
   report() {
     this.port.postMessage({
       type: 'stats',
+      generation: this.clockGeneration,
       bufferedFrames: this.bufferedFrames,
       playedFrames: this.playedFrames,
       underruns: this.underruns,
@@ -194,6 +199,7 @@ export class AudioWorkletPlayer extends Emitter {
     this.destroyed = false;
     // 主线程侧镜像的统计（worklet 上报）
     this._playedFrames = 0;
+    this._clockGeneration = 0;
     this._bufferedFrames = 0;
     this._underruns = 0;
     this._anchorCtxTime = 0; // playedFrames 对应的 context.currentTime 锚点
@@ -214,6 +220,9 @@ export class AudioWorkletPlayer extends Emitter {
       outputChannelCount: [Math.max(1, this.channelCount)],
     });
     this.node.port.onmessage = (e) => this._onWorkletMessage(e.data);
+    if (this._clockGeneration > 0) {
+      this.node.port.postMessage({ type: 'clear', generation: this._clockGeneration });
+    }
     this.gainNode = ctx.createGain();
     this.node.connect(this.gainNode).connect(ctx.destination);
     this.emit('ready', { sampleRate: ctx.sampleRate });
@@ -224,8 +233,9 @@ export class AudioWorkletPlayer extends Emitter {
     try {
       switch (msg.type) {
         case 'stats': {
-          const { bufferedFrames, playedFrames, sampleRate } = msg;
-          if (!Number.isSafeInteger(bufferedFrames) || bufferedFrames < 0
+          const { generation, bufferedFrames, playedFrames, sampleRate } = msg;
+          if (!Number.isSafeInteger(generation) || generation !== this._clockGeneration
+            || !Number.isSafeInteger(bufferedFrames) || bufferedFrames < 0
             || bufferedFrames > (1 << 24)
             || !Number.isSafeInteger(playedFrames) || playedFrames < 0
             || playedFrames < this._playedFrames
@@ -367,7 +377,8 @@ export class AudioWorkletPlayer extends Emitter {
   }
 
   clearBuffer() {
-    this.node?.port.postMessage({ type: 'clear' });
+    this._clockGeneration += 1;
+    this.node?.port.postMessage({ type: 'clear', generation: this._clockGeneration });
     this._bufferedFrames = 0;
     this._playedFrames = 0;
     this._anchorCtxTime = this.context?.currentTime ?? 0;
