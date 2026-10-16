@@ -17,7 +17,7 @@ import {
   buildMdat,
   buildMoov,
 } from '../src/box-builder.js';
-import { buildProgressiveVideoFixture } from './fixtures.js';
+import { buildFragmentedFixture, buildProgressiveVideoFixture } from './fixtures.js';
 
 const TICK_US = 1000;
 
@@ -204,6 +204,52 @@ test('seek 游标重定位：渐进模式从目标关键帧续读至 EOS', async
     }
   }
   assert.deepEqual(indices, [4, 5, 6, 7], '应从关键帧 4 续读到 EOS，不重复不跳过');
+  await d.destroy();
+});
+
+test('分片 MP4：fresh-open seek 先扫描目标区间并落到最近 RAP', async () => {
+  const { bytes } = buildFragmentedFixture();
+  const d = new Mp4Demuxer(new MemoryDataSource(bytes), { lazySamples: true });
+  await d.open();
+
+  // fragment keyframes are not known at open(); seek must index through the target first.
+  const state = d._trackState.get(1);
+  assert.equal(state.samples.length, 0, 'fresh-open target fragments have not been indexed');
+  assert.deepEqual(state.keyframes, []);
+  const result = await d.seek(150 * TICK_US);
+  assert.deepEqual(result, { actualTimestampUs: 120 * TICK_US });
+  const indices = [];
+  for (;;) {
+    const sample = await d.readSample(1);
+    if (!sample) break;
+    indices.push(sample.index);
+    if (sample.index === 3) {
+      assert.equal(sample.dts, 120 * TICK_US);
+      assert.equal(sample.keyframe, true);
+    }
+  }
+  assert.deepEqual(indices, [3, 4, 5], 'seek cursor continues through the target moof to EOS');
+  await d.destroy();
+});
+
+test('分片 MP4：部分读取后 seek 到尚未扫描 fragment 的目标', async () => {
+  const { bytes } = buildFragmentedFixture();
+  const d = new Mp4Demuxer(new MemoryDataSource(bytes), { lazySamples: true });
+  await d.open();
+  assert.equal((await d.readSample(1)).index, 0, 'first read scans only the first moof');
+  const state = d._trackState.get(1);
+  assert.equal(state.samples.length, 3, 'the target moof must still be unscanned before seek');
+  assert.deepEqual(state.keyframes, [0]);
+
+  const result = await d.seek(150 * TICK_US);
+  assert.deepEqual(result, { actualTimestampUs: 120 * TICK_US });
+  const indices = [];
+  for (;;) {
+    const sample = await d.readSample(1);
+    if (!sample) break;
+    indices.push(sample.index);
+  }
+  assert.deepEqual(indices, [3, 4, 5], 'seek scans the target moof and continues to EOS');
   await d.destroy();
 });
 

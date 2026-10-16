@@ -495,6 +495,16 @@ export class Mp4Demuxer extends Demuxer {
     return mdats;
   }
 
+  /** Index fragments through the requested decode time before choosing a RAP. */
+  async _scanFragmentsThrough(timestampUs, targetState) {
+    for (;;) {
+      const last = targetState.samples.at(-1);
+      // Fragment cache stores contract Samples, whose DTS is already in µs.
+      if (last && last.dts > timestampUs) return;
+      if (!(await this._scanNextFragment())) return;
+    }
+  }
+
   /* ------------------------------ seek ------------------------------ */
 
   /**
@@ -511,6 +521,7 @@ export class Mp4Demuxer extends Demuxer {
     if (targetId === undefined) return { actualTimestampUs: 0 };
 
     const state = this._trackState.get(targetId);
+    if (this._fragmented && state) await this._scanFragmentsThrough(timestampUs, state);
     if (!state || state.keyframes.length === 0) {
       // 索引未建立：resumeIndex 归 0（有表则整表重放）、共享游标不动，
       // 后续从当前扫描位置继续（分片模式索引随消费建立，属既定限制）。

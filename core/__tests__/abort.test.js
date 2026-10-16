@@ -120,6 +120,85 @@ test('readSample：已 abort 的 signal 前置快速失败，不触碰数据源'
   assert.equal(s.timestamp, 0);
 });
 
+test('readSample：被中断的最后一次拉取迟到 EOS 仍派发 end 一次', async () => {
+  class FinalPullGatedDemuxer extends GatedDemuxer {
+    _createTrackIterator(id) {
+      const self = this;
+      return (async function* () {
+        yield createSample({
+          trackId: id, codec: 'pcm-s16', timestamp: 0, duration: 1,
+          keyframe: true, data: new Uint8Array(1), size: 1,
+        });
+        await self.gate;
+      })();
+    }
+  }
+  const d = new FinalPullGatedDemuxer(src());
+  await d.open();
+  const ends = [], errors = [];
+  d.on('end', (event) => ends.push(event));
+  d.on('error', (error) => errors.push(error));
+  assert.equal((await d.readSample(1)).timestamp, 0);
+
+  const ac = new AbortController();
+  const finalRead = d.readSample(1, { signal: ac.signal });
+  await Promise.resolve();
+  const queuedRetry = d.readSample(1);
+  ac.abort();
+  await assert.rejects(() => finalRead, (error) => error?.code === 'ABORTED');
+  d.releaseGate();
+
+  assert.equal(await queuedRetry, null, 'queued pull observes the late EOS result');
+  assert.equal(await d.readSample(1), null, 'late done result leaves the track at EOS');
+  assert.deepEqual(ends, [{ reason: 'eos' }], 'late final EOS emits exactly one end event');
+  assert.deepEqual(errors, [], 'abort remains control flow, not an error event');
+});
+
+test('readSample：排队中的已中断 read 不推进生成器', async () => {
+  const d = new GatedDemuxer(src());
+  await d.open();
+  const first = d.readSample(1);
+  const ac = new AbortController();
+  const second = d.readSample(1, { signal: ac.signal });
+  ac.abort();
+  d.releaseGate();
+  const a = await first;
+  await assert.rejects(() => second, (err) => err?.code === 'ABORTED');
+  const next = await d.readSample(1);
+  assert.deepEqual([a.timestamp, next.timestamp], [0, 1]);
+  assert.equal(d.pullCount, 2);
+});
+
+test('readSample：同轨并发拉取按 FIFO 顺序完成', async () => {
+  const d = new GatedDemuxer(src());
+  await d.open();
+  const first = d.readSample(1);
+  const second = d.readSample(1);
+  d.releaseGate();
+  const [a, b] = await Promise.all([first, second]);
+  assert.deepEqual([a.timestamp, b.timestamp], [0, 1]);
+});
+
+test('readSample：abort 后立即续读仍按样本顺序，不可越过迟到样本', async () => {
+  const d = new GatedDemuxer(src());
+  await d.open();
+  const ac = new AbortController();
+  const inFlight = d.readSample(1, { signal: ac.signal });
+  await Promise.resolve(); // 先让底层 generator.next() 进入 gate
+  ac.abort();
+  await assert.rejects(() => inFlight, (err) => err?.code === 'ABORTED');
+
+  // 不让出事件循环：重试恰好与前一个 gen.next() 的 promise 仍在飞时发生。
+  d.releaseGate();
+  const received = [];
+  for (;;) {
+    const sample = await d.readSample(1);
+    if (sample === null) break;
+    received.push(sample.timestamp);
+  }
+  assert.deepEqual(received, [0, 1, 2], '迟到样本必须先于后续 iterator pull 返回');
+});
+
 test('readSample：abort 后可续读，且 abort 不进 error 事件面', async () => {
   const d = new GatedDemuxer(src());
   await d.open();

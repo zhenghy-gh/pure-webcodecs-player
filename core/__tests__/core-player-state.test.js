@@ -21,6 +21,7 @@ import { Player, PLAYER_STATES } from '../src/player.js';
 import { Demuxer } from '../src/demuxer.js';
 import { MemoryDataSource } from '../src/data-source.js';
 import { createSample } from '../src/types.js';
+import { PlayerError } from '../src/errors.js';
 
 /* ------------------------------ 假 demuxer ------------------------------ */
 
@@ -130,6 +131,9 @@ class DelayedSampleDemuxer extends Demuxer {
     this.pendingReads = [];
     this.readCount = 0;
     this.released = false;
+    this.seekError = null;
+    this.pendingSeek = null;
+    this.seekCount = 0;
   }
   async _doOpen() {
     return {
@@ -144,40 +148,69 @@ class DelayedSampleDemuxer extends Demuxer {
     this._requireUsable('readSample');
     const index = this.readCount++;
     if (this.released && index >= 2) return null;
-    return new Promise((resolve) => {
-      this.pendingReads.push({ trackId, index, resolve });
+    return new Promise((resolve, reject) => {
+      this.pendingReads.push({ trackId, index, resolve, reject });
     });
   }
-  releaseRead() {
+  rejectRead(index, error = new Error('late read failure')) {
+    const position = this.pendingReads.findIndex((read) => read.index === index);
+    if (position < 0) throw new Error('no pending read at index ' + index);
+    const [{ reject }] = this.pendingReads.splice(position, 1);
+    reject(error);
+  }
+  releaseRead({ rejectIndices = [], error = new Error('late read failure') } = {}) {
     this.released = true;
-    for (const { trackId, index, resolve } of this.pendingReads.splice(0)) {
-      resolve(index === 0 ? createSample({
-        trackId, codec: 'avc1.42E01E', timestamp: 10_000_000,
-        duration: 100_000, keyframe: true, data: new Uint8Array([1]), size: 1,
-      }) : createSample({
-        trackId, codec: 'avc1.42E01E', timestamp: 0,
-        duration: 100_000, keyframe: true, data: new Uint8Array([1]), size: 1,
-      }));
+    for (const { trackId, index, resolve, reject } of this.pendingReads.splice(0)) {
+      if (rejectIndices.includes(index)) {
+        reject(error);
+      } else {
+        resolve(index === 0 ? createSample({
+          trackId, codec: 'avc1.42E01E', timestamp: 10_000_000,
+          duration: 100_000, keyframe: true, data: new Uint8Array([1]), size: 1,
+        }) : createSample({
+          trackId, codec: 'avc1.42E01E', timestamp: 0,
+          duration: 100_000, keyframe: true, data: new Uint8Array([1]), size: 1,
+        }));
+      }
     }
   }
-  async seek(timestampUs) { return { actualTimestampUs: timestampUs }; }
+  async seek(timestampUs) {
+    this.seekCount += 1;
+    if (this.pendingSeek) return await new Promise((resolve, reject) => {
+      this.pendingSeek({ timestampUs, resolve, reject });
+    });
+    if (this.seekError) throw this.seekError;
+    return { actualTimestampUs: timestampUs };
+  }
 }
 
 
-function makeDelayedSamplePlayer({ pushSample } = {}) {
+function makeDelayedSamplePlayer({ pushSample, pipelineSeek, destroyPipeline, bufferTargetUs = 0 } = {}) {
   let demuxer;
   const pushes = [];
+  const pipelineListeners = new Map();
   const player = new Player({
     demuxerFactory: () => (demuxer = new DelayedSampleDemuxer(new MemoryDataSource(new Uint8Array([1])))),
     capabilities: caps,
-    bufferTargetUs: 0,
+    bufferTargetUs,
     pipelineFactory: async () => ({
+      on: (event, listener) => {
+        const listeners = pipelineListeners.get(event) ?? [];
+        listeners.push(listener);
+        pipelineListeners.set(event, listeners);
+      },
       pushSample: pushSample ?? (async (sample) => { pushes.push(sample); }),
-      seek: async () => {},
-      destroy: async () => {},
+      seek: pipelineSeek ?? (async () => {}),
+      destroy: destroyPipeline ?? (async () => {}),
     }),
   });
-  return { player, input: { read: async () => new Uint8Array([1]) }, get demuxer() { return demuxer; }, pushes };
+  return {
+    player,
+    input: { read: async () => new Uint8Array([1]) },
+    get demuxer() { return demuxer; },
+    pushes,
+    emitPipelineError(error) { for (const listener of pipelineListeners.get('error') ?? []) listener(error); },
+  };
 }
 
 const delayedReadSettle = async () => {
@@ -736,6 +769,249 @@ test('自然结束：seek 取消旧泵收尾后不派发 ended', async () => {
 });
 
 /* ------------------------------ seek 语义 ------------------------------ */
+
+test('seek 失败：playing 状态恢复后重启被 seek 取消的样本泵', async () => {
+  const { player, input, pushes } = makeDelayedSamplePlayer();
+  await player.load(input);
+  const demuxer = player.demuxer;
+  await player.play();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(demuxer.readCount, 1, 'seek 前有一个挂起的 pump read');
+
+  demuxer.seekError = new Error('transient range failure');
+  await assert.rejects(() => player.seek(100_000), (error) => error.code === 'SOURCE_ERROR');
+  assert.equal(player.state, PLAYER_STATES.PLAYING, '失败时回到 playing');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(demuxer.readCount, 2, '失败 seek 必须启动新 pump，而非只改回 state');
+
+  demuxer.releaseRead();
+  await delayedReadSettle();
+  assert.equal(pushes.length, 1, '仅新 pump 的样本可进入管线');
+  assert.equal(pushes[0].timestamp, 0);
+  await player.destroy();
+});
+
+test('seek 失败：恢复后忽略旧 pump 的迟到 read rejection', async () => {
+  const { player, input, pushes } = makeDelayedSamplePlayer();
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  await player.load(input);
+  const demuxer = player.demuxer;
+  await player.play();
+  await delayedReadSettle();
+
+  demuxer.seekError = new Error('transient range failure');
+  await assert.rejects(() => player.seek(100_000), (error) => error.code === 'SOURCE_ERROR');
+  await delayedReadSettle();
+  assert.equal(demuxer.readCount, 2, 'replacement pump has its own pending read');
+
+  demuxer.releaseRead({ rejectIndices: [0] });
+  await delayedReadSettle();
+  assert.notEqual(player.state, PLAYER_STATES.ERROR, 'invalidated pump rejection cannot clobber recovered playback');
+  assert.deepEqual(errors, [], 'stale read failure is not forwarded as a current playback error');
+  assert.deepEqual(pushes.map((sample) => sample.timestamp), [0], 'only the replacement pump sample is delivered');
+  await player.destroy();
+});
+
+test('seek：SEEKING statechange listener reentrant destroy prevents seek and pump continuation', async () => {
+  let releaseDestroy, startDestroy;
+  const destroyStarted = new Promise((resolve) => { startDestroy = resolve; });
+  const destroyGate = new Promise((resolve) => { releaseDestroy = resolve; });
+  let pipelineSeekCalls = 0;
+  const { player, input } = makeDelayedSamplePlayer({
+    pipelineSeek: async () => { pipelineSeekCalls += 1; },
+    destroyPipeline: async () => { startDestroy(); await destroyGate; },
+  });
+  await player.load(input);
+  const demuxer = player.demuxer;
+  await player.play();
+  assert.equal(demuxer.readCount, 1);
+
+  let destroying;
+  player.on('statechange', (state) => {
+    if (state === PLAYER_STATES.SEEKING) destroying = player.destroy();
+  });
+  const seeking = player.seek(100_000);
+  await destroyStarted;
+  assert.equal(await seeking, undefined, 'destroy during SEEKING event prevents starting demuxer seek');
+  assert.equal(demuxer.seekCount, 0);
+  assert.equal(pipelineSeekCalls, 0);
+  assert.equal(demuxer.readCount, 1, 'no replacement pump starts during teardown');
+
+  demuxer.releaseRead();
+  await delayedReadSettle();
+  assert.equal(player.state, PLAYER_STATES.SEEKING);
+  releaseDestroy();
+  await destroying;
+  assert.equal(player.state, PLAYER_STATES.DESTROYED);
+  await delayedReadSettle();
+});
+
+test('failed seek：PLAYING statechange listener reentrant destroy prevents recovery pump restart', async () => {
+  let releaseDestroy, startDestroy;
+  const destroyStarted = new Promise((resolve) => { startDestroy = resolve; });
+  const destroyGate = new Promise((resolve) => { releaseDestroy = resolve; });
+  const { player, input } = makeDelayedSamplePlayer({
+    destroyPipeline: async () => { startDestroy(); await destroyGate; },
+  });
+  await player.load(input);
+  const demuxer = player.demuxer;
+  await player.play();
+  demuxer.seekError = new Error('transient seek failure');
+
+  let destroying;
+  player.on('statechange', (state) => {
+    if (state === PLAYER_STATES.PLAYING) destroying = player.destroy();
+  });
+  await assert.rejects(() => player.seek(100_000), (error) => error.code === 'SOURCE_ERROR');
+  await destroyStarted;
+  assert.equal(player.state, PLAYER_STATES.PLAYING);
+  assert.equal(demuxer.readCount, 1, 'reentrant destroy invalidates seek before recovery can start a replacement pump');
+  demuxer.releaseRead();
+  await delayedReadSettle();
+  releaseDestroy();
+  await destroying;
+  assert.equal(player.state, PLAYER_STATES.DESTROYED);
+  await delayedReadSettle();
+});
+
+
+test('seek rejection during destroy never restores state or emits a late seek error', async () => {
+  for (const trackRecovery of [false, true]) {
+    let rejectSeek, startSeek, releaseDestroy, startDestroy;
+    const seekStarted = new Promise((resolve) => { startSeek = resolve; });
+    const destroyStarted = new Promise((resolve) => { startDestroy = resolve; });
+    const destroyGate = new Promise((resolve) => { releaseDestroy = resolve; });
+    const { player, input } = makeDelayedSamplePlayer({
+      destroyPipeline: async () => { startDestroy(); await destroyGate; },
+    });
+    const errors = [];
+    player.on('error', (error) => errors.push(error));
+    await player.load(input);
+    const demuxer = player.demuxer;
+    await player.play();
+    demuxer.pendingSeek = ({ reject }) => {
+      rejectSeek = reject;
+      startSeek();
+    };
+
+    const seeking = player.seek(100_000);
+    await seekStarted;
+    const destroying = player.destroy();
+    await destroyStarted;
+    const failure = trackRecovery
+      ? new PlayerError('SOURCE_ERROR', 'track recovery failed', { detail: { trackRecovery: true } })
+      : new Error('ordinary seek failed');
+    rejectSeek(failure);
+    await assert.rejects(() => seeking, (error) => error.code === 'SOURCE_ERROR');
+    assert.equal(player.state, PLAYER_STATES.SEEKING, 'seek catch must not restore or replace destroy lifecycle');
+    assert.deepEqual(errors, [], 'seek rejection during destruction is not emitted as an active player error');
+    releaseDestroy();
+    await destroying;
+    assert.equal(player.state, PLAYER_STATES.DESTROYED);
+    assert.equal(demuxer.readCount, 1, 'destroyed seek cannot start a replacement pump');
+  }
+});
+
+test('seek failure：被取代的 prebuffer read 迟到 reject 不覆盖新 pump', async () => {
+  const { player, input } = makeDelayedSamplePlayer({ bufferTargetUs: 1_000_000 });
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  await player.load(input);
+  const demuxer = player.demuxer;
+  const playing = player.play();
+  await delayedReadSettle();
+  assert.equal(demuxer.readCount, 1, 'prebuffer has a pending read');
+
+  demuxer.seekError = new Error('transient seek failure');
+  await assert.rejects(() => player.seek(100_000), (error) => error.code === 'SOURCE_ERROR');
+  await delayedReadSettle();
+  assert.equal(demuxer.readCount, 2, 'failed seek starts a replacement playback pump');
+
+  demuxer.rejectRead(0);
+  await delayedReadSettle();
+  assert.equal(player.state, PLAYER_STATES.PLAYING, 'stale prebuffer rejection cannot move replacement pump to error');
+  assert.deepEqual(errors, []);
+  demuxer.releaseRead();
+  await playing;
+  await delayedReadSettle();
+  assert.notEqual(player.state, PLAYER_STATES.ERROR, 'replacement pump may naturally finish but must not fail');
+  await player.destroy();
+});
+
+test('seek：MSE 风格 pipeline emit(error) 后 resolve 仍以原始错误失败并停止时钟', async () => {
+  const { player, input, emitPipelineError } = makeDelayedSamplePlayer({
+    pipelineSeek: async () => {
+      emitPipelineError(new PlayerError('DECODE_ERROR', 'seek 清缓冲失败'));
+    },
+  });
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  await player.load(input);
+  await player.play();
+  await delayedReadSettle();
+
+  await assert.rejects(
+    () => player.seek(100_000),
+    (error) => error.code === 'DECODE_ERROR' && error.message === 'seek 清缓冲失败',
+  );
+  assert.equal(player.state, PLAYER_STATES.ERROR);
+  assert.equal(player.clock.running, false);
+  assert.equal(errors.length, 1, 'forward the original pipeline error exactly once');
+  assert.equal(errors[0].code, 'DECODE_ERROR');
+  await player.destroy();
+});
+
+test('seek：fatal pipeline error 的 statechange listener reentrant destroy 不再发 error', async () => {
+  let releaseDestroy, startDestroy, destroying;
+  const destroyStarted = new Promise((resolve) => { startDestroy = resolve; });
+  const destroyGate = new Promise((resolve) => { releaseDestroy = resolve; });
+  const { player, input, emitPipelineError } = makeDelayedSamplePlayer({
+    pipelineSeek: async () => {
+      emitPipelineError(new PlayerError('DECODE_ERROR', 'seek 清缓冲失败'));
+    },
+    destroyPipeline: async () => { startDestroy(); await destroyGate; },
+  });
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  await player.load(input);
+  await player.play();
+  await delayedReadSettle();
+  player.on('statechange', (state) => {
+    if (state === PLAYER_STATES.ERROR) destroying = player.destroy();
+  });
+
+  await assert.rejects(
+    () => player.seek(100_000),
+    (error) => error.code === 'DECODE_ERROR' && error.message === 'seek 清缓冲失败',
+  );
+  await destroyStarted;
+  assert.equal(player.clock.running, false);
+  assert.deepEqual(errors, [], 'reentrant destroy suppresses the not-yet-dispatched seek error');
+  releaseDestroy();
+  await destroying;
+  assert.equal(player.state, PLAYER_STATES.DESTROYED);
+});
+
+test('seek：pipeline seek rejection is fatal and does not restart playback pump', async () => {
+  const { player, input } = makeDelayedSamplePlayer({
+    pipelineSeek: async () => { throw new Error('decoder reset failed'); },
+  });
+  const errors = [];
+  player.on('error', (error) => errors.push(error));
+  await player.load(input);
+  const demuxer = player.demuxer;
+  await player.play();
+  await delayedReadSettle();
+  await assert.rejects(() => player.seek(100_000), (error) => error.code === 'SOURCE_ERROR');
+  assert.equal(player.state, PLAYER_STATES.ERROR);
+  assert.equal(player.clock.running, false, 'fatal pipeline seek failure pauses the playback clock');
+  assert.equal(demuxer.readCount, 1, 'failed pipeline seek does not launch another pump');
+  assert.equal(errors.length, 1);
+  demuxer.releaseRead();
+  await delayedReadSettle();
+  await player.destroy();
+});
 
 test('seek：从 playing 进入并返回 playing，强制 timeupdate 携带实际落点', async () => {
   const calls = [];

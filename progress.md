@@ -1,5 +1,28 @@
 # 维护进度
 
+## Attempt 114：修复分片 MP4 冷 seek 与取消读取后的播放恢复
+
+### 问题与修复
+- fMP4 打开时 fragment sample/keyframe index 为空；第一次读取前执行 seek 原先静默回报 0µs 并从文件首样本开始，即使目标之后已有 RAP。`mp4/src/demuxer.js` 现在先索引视频轨到目标 DTS 时间窗，再选最近前置关键帧；已有扫描缓存可复用，下一片用于判断时间窗结束。
+- `core/src/demuxer.js`：同轨 `readSample` 进入 FIFO 决策屏障，避免前一次被 abort 的 `generator.next()` 迟到样本落入缓存时，排队重试已先推进并返回后续样本。晚到 yield 会先缓存再打开队列；晚到 EOS 走既有结束事件逻辑，避免同一轨重复发 end，abort 不作为 error。
+- `core/src/player.js`：seek token 在 SEEKING 状态事件前更新，并于事件后立刻检测重入 destroy / token 变化；被拒绝的并发 seek 不会使当前 seek 失效。destroy 期间不恢复状态、不重启 pump；pump/prebuffer 每次挂起读取后及样本投递前检查销毁与 token。失效旧 pump 错误不覆盖恢复状态。pipeline 直接 reject 或在 seek 中 emit(error) 后 resolve 都按 fatal 处理，保留原错误、暂停时钟、使 seek 失效并进入 ERROR。
+
+### 回归测试
+- `mp4/__tests__/mp4-demuxer-seek-cursor.test.js`：fresh-open 明确断言索引为空；部分读取用例断言 seek 前仅索引首片的 3 个样本/keyframe [0]；两种场景 seek(150ms) 后均从 RAP index 3 / 120ms 继续读完 [3,4,5] 至 EOS。
+- `core/__tests__/abort.test.js`：覆盖同轨并发 FIFO、已 abort 的排队请求不推进、abort 后立即续读顺序，以及最后一次拉取 abort 后迟到 EOS、并发排队 retry 与该轨 `end:{reason:'eos'}` 恰好一次。
+- `core/__tests__/core-player-state.test.js`：覆盖 SEEKING / PLAYING / fatal ERROR 的 statechange listener 同步重入 destroy、普通/trackRecovery seek reject 与 destroy 竞态、并发 seek 拒绝不污染当前 seek、旧 pump/prebuffer 迟到 rejection、pipeline 直接 reject 与 MSE 风格 emit(error)-then-resolve fatal 且时钟停止，以及正常恢复后 pump 重启（Player state 54/54）。
+
+### 验证
+- 最终 `npm run check`：3302/3302 测试通过、fixture 检查通过、549 个 JS 文件 lint 通过；完整门禁全部通过。
+- Player state suite：54/54 通过；abort suite 15/15、MP4 cursor 新增 seek cases 2/2 通过。
+- Headless Chromium 真实 `sintel-trailer.mp4` WebCodecs/MSE 能力与播放 seek 验收：15/15，包括真实首帧解码、时间推进、seek 后恢复播放、无 stall 及 destroy。
+- Headless Chromium 对新打开的 fragment fixture 直接执行 demuxer seek(150ms)：返回 120ms，首个样本为 keyframe index 3 / DTS 120ms，无页面异常。
+
+### 提交和推送
+- 完整测试与 Chromium 验收通过后，正在对当前 `maintenance/round-6` 整理独立提交并推送。
+
+### 风险
+- 首次 seek 的 fragment 扫描成本随目标位置增长；本轮的 fMP4 synthetic regression 使用同 timescale、相邻两个 moof。尚未新增不同 timescale 或独立音视频 fragment 排列的专用夹具。
 ## Attempt 113：按轨道 Cue 锚点修复 Matroska 多轨 seek 漏样本
 
 ### 问题与修复

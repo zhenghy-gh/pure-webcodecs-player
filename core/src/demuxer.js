@@ -205,39 +205,65 @@ export class Demuxer extends Emitter {
   async readSample(trackId, options = undefined) {
     this._requireUsable('readSample');
     const signal = options?.signal ?? null;
-    throwIfAborted(signal, `readSample(${trackId}) aborted`);
+    const errorMessage = `readSample(${trackId}) aborted`;
+    throwIfAborted(signal, errorMessage);
     let entry = this._trackIterators.get(trackId);
     if (!entry) {
-      entry = { gen: this._createTrackIterator(trackId), done: false, pendingResult: null };
+      entry = { gen: this._createTrackIterator(trackId), done: false, eosHandled: false, pendingResult: null, readTail: Promise.resolve() };
       this._trackIterators.set(trackId, entry);
     }
     if (entry.done) return null;
+
+    // Hold the next same-track pull until this caller has either consumed its
+    // result or cached a late result after abort.
+    let releaseRead;
+    const previousRead = entry.readTail;
+    entry.readTail = new Promise((resolve) => { releaseRead = resolve; });
+    const readPromise = previousRead.then(async () => {
+      throwIfAborted(signal, errorMessage);
+      if (entry.done || this.stateValue === DEMUXER_STATES.DESTROYED) {
+        return { value: undefined, done: true };
+      }
+      if (entry.pendingResult) {
+        const result = entry.pendingResult;
+        entry.pendingResult = null;
+        return result;
+      }
+      return entry.gen.next();
+    });
+
     let sample;
     try {
-      let result;
-      if (entry.pendingResult) {
-        // 上次被中断、但迟到落地的样本：优先吐出，避免中断吞样本
-        result = entry.pendingResult;
-        entry.pendingResult = null;
-      } else {
-        const nextP = entry.gen.next();
-        if (signal) {
-          // 中断竞速期间已落地的样本不丢弃，缓存供下次续读（生成器 yield 一旦
-          // 落地就无法回退，不缓存即永久丢帧；flac/wav 走「先读后推进游标」同理）
-          nextP.then((r) => { if (r && !r.done) entry.pendingResult = r; }, () => {});
-        }
-        result = await raceAbort(nextP, signal, `readSample(${trackId}) aborted`);
-      }
+      const result = await raceAbort(readPromise, signal, errorMessage);
       ({ value: sample, done: entry.done } = result);
+      releaseRead();
     } catch (err) {
-      // abort 属调用方预期控制流，不进 'error' 事件面（见 core/src/abort.js 设计取舍）
-      if (err?.code !== 'ABORTED') this.emit('error', err);
+      if (err?.code === 'ABORTED') {
+        // Do not wait on the aborted pull here: caller cancellation stays prompt.
+        // Its barrier opens only after any late sample is safely cached.
+        readPromise.then((result) => {
+          if (result?.done) {
+            entry.done = true;
+            if (!entry.eosHandled) {
+              entry.eosHandled = true;
+              this._maybeEmitEnd();
+            }
+          }
+          if (result && !result.done && !entry.pendingResult) entry.pendingResult = result;
+          releaseRead();
+        }, () => { releaseRead(); });
+      } else {
+        releaseRead();
+        this.emit('error', err);
+      }
       throw err;
     }
     if (entry.done || !sample) {
       entry.done = true;
+      const emitEnd = !entry.eosHandled;
+      entry.eosHandled = true;
       await entry.gen.return?.(undefined);
-      this._maybeEmitEnd();
+      if (emitEnd) this._maybeEmitEnd();
       return null;
     }
     if (this.pausedFlag && this._live) {
@@ -247,7 +273,6 @@ export class Demuxer extends Emitter {
     this.emit('sample', { trackId, sample });
     return sample;
   }
-
   /**
    * 异步迭代器糖层（等价循环 readSample）。
    * @param {number} [trackId] 缺省时按轨序串行消费全部轨

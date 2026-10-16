@@ -149,6 +149,7 @@ export class Player extends Emitter {
     this._destroying = false;
     this._pumpToken = 0;
     this._seekToken = 0;
+    this._activeSeekContext = null;
     this._trackSwitchToken = 0;
     this._trackSwitchPromise = null;
     this._lastTimeEventUs = -Infinity;
@@ -360,7 +361,15 @@ export class Player extends Emitter {
       }
       this.pipeline.on('error', (error) => {
         const e = asPlayerError(error, '播放管线失败');
+        if (this._activeSeekContext) {
+          this._activeSeekContext.pipelineError = e;
+          this._seekToken++;
+        }
+        this._pumpToken++;
+        this.clock.pause();
+        if (this._destroying || this.stateValue === PLAYER_STATES.DESTROYED) return;
         this._transitionSafe(PLAYER_STATES.ERROR);
+        if (this._destroying || this.stateValue === PLAYER_STATES.DESTROYED) return;
         this.emit('error', e);
       });
     }
@@ -398,6 +407,7 @@ export class Player extends Emitter {
     if (![PLAYER_STATES.READY, PLAYER_STATES.PAUSED].includes(this.stateValue)) throw stateError(`play(): invalid state ${this.stateValue}`);
     if (this.endedValue) { await this.seek(0); }
     this._transition(PLAYER_STATES.PLAYING);
+    if (this._destroying || this.stateValue !== PLAYER_STATES.PLAYING) return;
     this.clock.play(this.currentTimeValue / 1e6);
     this._invokePlaybackControl('play');
     // 起播前向缓冲：先把水位灌到 bufferTargetUs 再进入常规泵（CONTRACTS §5 bufferTargetUs）
@@ -420,14 +430,20 @@ export class Player extends Emitter {
   async seek(timestampUs) {
     this._requireLoaded('seek');
     if (!Number.isFinite(timestampUs) || timestampUs < 0) throw stateError(`seek(): invalid timestampUs ${timestampUs}`);
+    if (this.stateValue === PLAYER_STATES.SEEKING) throw stateError('seek(): seek already in progress');
     const previous = this.stateValue;
     const pendingSwitch = this._trackSwitchPromise;
     this._trackSwitchToken++;
     this._pumpToken++;
-    this._transition(PLAYER_STATES.SEEKING);
     const seekToken = ++this._seekToken;
+    const seekContext = { token: seekToken, pipelineError: null };
+    this._activeSeekContext = seekContext;
+    this._transition(PLAYER_STATES.SEEKING);
+    let pipelineSeekFailed = false;
     try {
+      if (this._destroying || seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.DESTROYED) return undefined;
       const result = await this.demuxer.seek(Math.round(timestampUs));
+      if (seekContext.pipelineError) throw seekContext.pipelineError;
       if (seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.DESTROYED) return result;
       this.currentTimeValue = result.actualTimestampUs;
       this.endedValue = false; // 任何 seek 均清除 ended（HTMLMediaElement 语义；此前 play() 自动重播后 ended 恒为 true）
@@ -441,19 +457,29 @@ export class Player extends Emitter {
         }
       }
       if (seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.DESTROYED) return result;
-      await this.pipeline?.seek?.(this.currentTimeValue);
+      try {
+        await this.pipeline?.seek?.(this.currentTimeValue);
+      } catch (error) {
+        pipelineSeekFailed = true;
+        throw error;
+      }
+      if (seekContext.pipelineError) throw seekContext.pipelineError;
       if (seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.DESTROYED) return result;
       const returnState = previous === PLAYER_STATES.PLAYING
         ? PLAYER_STATES.PLAYING
         : previous === PLAYER_STATES.READY ? PLAYER_STATES.READY : PLAYER_STATES.PAUSED;
       this._transition(returnState);
+      if (this._destroying || seekToken !== this._seekToken || this.stateValue === PLAYER_STATES.DESTROYED) return result;
       if (previous === PLAYER_STATES.PLAYING) { this.clock.play(this.currentTimeValue / 1e6); const token = ++this._pumpToken; void this._pump(token); }
       this._emitTimeupdate(true);
       return result;
     } catch (error) {
       const e = asPlayerError(error, 'seek 失败');
-      if (e.detail?.trackRecovery) {
+      if (this._destroying || this.stateValue === PLAYER_STATES.DESTROYED || seekToken !== this._seekToken) throw e;
+      if (e.detail?.trackRecovery || pipelineSeekFailed) {
+        this.clock.pause();
         this._transitionSafe(PLAYER_STATES.ERROR);
+        if (this._destroying || this.stateValue === PLAYER_STATES.DESTROYED) throw e;
         this.emit('error', e);
         throw e;
       }
@@ -461,7 +487,13 @@ export class Player extends Emitter {
         ? PLAYER_STATES.PLAYING
         : previous === PLAYER_STATES.READY ? PLAYER_STATES.READY : PLAYER_STATES.PAUSED;
       this._transitionSafe(returnState);
+      if (previous === PLAYER_STATES.PLAYING && !this._destroying && this.stateValue === PLAYER_STATES.PLAYING && this.demuxer) {
+        const token = ++this._pumpToken;
+        void this._pump(token);
+      }
       throw e;
+    } finally {
+      if (this._activeSeekContext === seekContext) this._activeSeekContext = null;
     }
   }
 
@@ -537,6 +569,7 @@ export class Player extends Emitter {
     if (this.stateValue === PLAYER_STATES.DESTROYED) return;
     this._destroying = true;
     this._pumpToken++;
+    this._seekToken++;
     this._loadGeneration += 1;
     this._trackSwitchToken += 1;
     try { await this.pipeline?.destroy?.(); } catch {}
@@ -563,13 +596,13 @@ export class Player extends Emitter {
     let count = 0;
     this._emitBuffering(true, { bufferedAheadUs: 0, targetUs: target });
     try {
-      while (token === this._pumpToken && this.stateValue === PLAYER_STATES.PLAYING && done.size < ids.length) {
+      while (token === this._pumpToken && !this._destroying && this.stateValue === PLAYER_STATES.PLAYING && done.size < ids.length) {
         let progressed = false;
         for (const id of ids) {
           if (done.has(id)) continue;
           const sample = await this.demuxer.readSample(id);
+          if (token !== this._pumpToken || this._destroying || this.stateValue !== PLAYER_STATES.PLAYING) return;
           if (!sample) { done.add(id); continue; }
-          if (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING) return;
           progressed = true;
           count += 1;
           const ts = sample.timestamp ?? 0;
@@ -585,6 +618,7 @@ export class Player extends Emitter {
         if (count >= this.options.prebufferMaxSamples) break;
       }
     } catch (error) {
+      if (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING || this._destroying) return;
       const e = asPlayerError(error, '起播缓冲失败');
       this._transitionSafe(PLAYER_STATES.ERROR);
       this.emit('error', e);
@@ -623,9 +657,9 @@ export class Player extends Emitter {
 
   /** 单个样本的统一投递口：统计 → 管线 → 事件（预缓冲与常规泵共用） */
   async _deliver(sample, trackId, token) {
-    if (token !== undefined && (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING)) return false;
+    if (token !== undefined && (token !== this._pumpToken || this._destroying || this.stateValue !== PLAYER_STATES.PLAYING)) return false;
     await this.pipeline?.pushSample?.(sample);
-    if (token !== undefined && (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING)) return false;
+    if (token !== undefined && (token !== this._pumpToken || this._destroying || this.stateValue !== PLAYER_STATES.PLAYING)) return false;
     this.currentTimeValue = Math.max(this.currentTimeValue, sample.timestamp ?? 0);
     const bytes = sample.size ?? sample.data?.byteLength ?? 0;
     this.statsValue.markDemuxed(bytes);
@@ -674,20 +708,21 @@ export class Player extends Emitter {
 
   async _pump(token) {
     const ids = this._activeTrackIds();
-    if (ids.length === 0) return;
+    if (ids.length === 0 || this._destroying) return;
     const done = new Set();
-    while (token === this._pumpToken && this.stateValue === PLAYER_STATES.PLAYING && done.size < ids.length) {
+    while (token === this._pumpToken && !this._destroying && this.stateValue === PLAYER_STATES.PLAYING && done.size < ids.length) {
       let progressed = false;
       for (const id of ids) {
         if (done.has(id)) continue;
         try {
           const sample = await this.demuxer.readSample(id);
+          if (token !== this._pumpToken || this._destroying || this.stateValue !== PLAYER_STATES.PLAYING) return;
           if (!sample) { done.add(id); continue; }
-          if (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING) return;
           progressed = true;
           if (!await this._deliver(sample, id, token)) return;
           await this._backpressure(token);
         } catch (error) {
+          if (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING || this._destroying) return;
           const e = asPlayerError(error, '读取样本失败');
           this._transitionSafe(PLAYER_STATES.ERROR);
           this.emit('error', e);
@@ -697,10 +732,10 @@ export class Player extends Emitter {
       if (!progressed && done.size === ids.length) break;
       if (!progressed) await Promise.resolve();
     }
-    if (token === this._pumpToken && done.size === ids.length && this.stateValue === PLAYER_STATES.PLAYING) {
+    if (token === this._pumpToken && !this._destroying && done.size === ids.length && this.stateValue === PLAYER_STATES.PLAYING) {
       // 给管线收尾机会（MSE 需要 flush + endOfStream 才能触发元素 ended）
       try { await this.pipeline?.end?.(); } catch { /* 收尾失败不掩盖自然结束 */ }
-      if (token !== this._pumpToken || this.stateValue !== PLAYER_STATES.PLAYING) return;
+      if (token !== this._pumpToken || this._destroying || this.stateValue !== PLAYER_STATES.PLAYING) return;
       this.endedValue = true;
       this.clock.pause();
       this._transitionSafe(PLAYER_STATES.PAUSED);
