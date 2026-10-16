@@ -100,6 +100,32 @@ test('sidx：version=1 解析 64 位 earliestPresentationTime/firstOffset', () =
   }]);
 });
 
+test('parseSidx：截断 reference table、未知 version 与零 timescale 均拒绝', () => {
+  const valid = buildSidxBytes({ refs: [{ size: 8, duration: 1, startsWithSAP: true, sapType: 1 }] });
+  assert.throws(() => parseSidx(valid, 8, valid.length - 4), (err) => err.code === 'NOT_SUPPORTED');
+
+  const unsupported = valid.slice();
+  unsupported[8] = 2;
+  assert.throws(() => parseSidx(unsupported, 8, unsupported.length), (err) => err.code === 'NOT_SUPPORTED');
+
+  const zeroScale = valid.slice();
+  new DataView(zeroScale.buffer).setUint32(8 + 8, 0);
+  assert.throws(() => parseSidx(zeroScale, 8, zeroScale.length), (err) => err.code === 'NOT_SUPPORTED');
+});
+
+test('parseSidx：version 1 不安全的 uint64 时间或偏移拒绝精度丢失', () => {
+  const body = new Uint8Array(32);
+  body[0] = 1;
+  new DataView(body.buffer).setUint32(8, 1);
+  new DataView(body.buffer).setUint32(12, 1000);
+  new DataView(body.buffer).setBigUint64(12, BigInt(Number.MAX_SAFE_INTEGER) + 1n);
+  const bytes = new Uint8Array(8 + body.length);
+  new DataView(bytes.buffer).setUint32(0, bytes.length);
+  bytes.set([0x73, 0x69, 0x64, 0x78], 4);
+  bytes.set(body, 8);
+  assert.throws(() => parseSidx(bytes, 8, bytes.length), (err) => err.code === 'NOT_SUPPORTED');
+});
+
 test('splitChunks：流内 sidx 被捕获为 segmentIndex', () => {
   // init + sidx + 一个 chunk
   const FAKE = new Uint8Array([1, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0, 8, 0x67, 0x64]);

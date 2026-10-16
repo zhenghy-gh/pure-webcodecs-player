@@ -1812,3 +1812,25 @@
 
 ### 风险
 - parseTfdt() 对外直接调用时默认 contentEnd 为整个缓冲区；parseMoof() 生产路径显式传入实际 tfdt contentEnd。
+
+## Attempt 82：严格校验 sidx 版本、表长度与 64 位索引精度
+
+### 发现
+- 复现条件：sidx 的 reference_count 指向不完整 reference table、timescale 为零、version 未知，或 version 1 的 uint64 时间/first_offset 超过 JavaScript 安全整数。
+- 根因：parseSidx() 在 references 循环只读到可用行数后静默返回部分索引；固定头字段可能跨 contentEnd 读取；任何非 1 版本被按 v0 读取，且 uint64 转 Number 不验证精度。
+- 用户影响：分段索引被部分接受或时间/偏移静默舍入，可能造成错误 segment seek、范围请求落错位置或隐蔽索引损坏。
+
+### 修改
+- cmaf/src/isobmff.js：parseSidx() 验证传入边界、fullbox/固定头/reference_count/全部声明 references；仅接受 v0/v1、timescale 必须非零，version 1 时间和偏移必须为安全整数。
+- cmaf/__tests__/sidx.test.js：新增截断 references、未知版本、零 timescale、不安全 uint64 拒绝回归；原有 v0/v1 合法索引测试保持通过。
+
+### 验证
+- sidx / box / parse / fragment CMAF 定向测试：46/46 通过。
+- 全量 npm run check：fixtures 通过；3225/3225 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 此轮只校验 sidx 自身表完整性，不验证 reference 计算出的外部 segment 字节范围是否超出源资源；该范围校验位于消费者侧。

@@ -121,24 +121,44 @@ export function findBox(buf, start, end, type) {
  */
 export function parseSidx(buf, contentStart, contentEnd) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  if (!Number.isSafeInteger(contentStart) || contentStart < 0 ||
+      !Number.isSafeInteger(contentEnd) || contentEnd < contentStart || contentEnd > buf.byteLength) {
+    throw notSupported(`sidx 内容边界非法: ${contentStart}..${contentEnd}`);
+  }
+  if (contentStart + 4 > contentEnd) throw notSupported('sidx fullbox header 被截断');
   const { version } = readVersionFlags(buf, contentStart);
+  if (version !== 0 && version !== 1) throw notSupported(`sidx version 不支持: ${version}`);
   let p = contentStart + 4;
+  const requireBytes = (count, field) => {
+    if (p + count > contentEnd) throw notSupported(`sidx ${field} 字段被截断`);
+  };
+  requireBytes(8, 'reference_ID/timescale');
   const referenceId = dv.getUint32(p); p += 4;
   const timescale = dv.getUint32(p); p += 4;
+  if (timescale === 0) throw notSupported('sidx timescale 非法');
   let ept;
   let firstOffset;
   if (version === 1) {
-    ept = Number(dv.getBigUint64(p)); p += 8;
-    firstOffset = Number(dv.getBigUint64(p)); p += 8;
+    requireBytes(16, 'earliest_presentation_time/first_offset');
+    const eptBig = dv.getBigUint64(p); p += 8;
+    const offsetBig = dv.getBigUint64(p); p += 8;
+    if (eptBig > BigInt(Number.MAX_SAFE_INTEGER) || offsetBig > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw notSupported('sidx 64 位时间或偏移超出安全整数范围');
+    }
+    ept = Number(eptBig);
+    firstOffset = Number(offsetBig);
   } else {
+    requireBytes(8, 'earliest_presentation_time/first_offset');
     ept = dv.getUint32(p); p += 4;
     firstOffset = dv.getUint32(p); p += 4;
   }
+  requireBytes(4, 'reserved/reference_count');
   p += 2; // reserved
   const referenceCount = dv.getUint16(p); p += 2;
+  requireBytes(referenceCount * 12, 'references');
   /** @type {Array<object>} */
   const references = [];
-  for (let i = 0; i < referenceCount && p + 12 <= contentEnd; i++) {
+  for (let i = 0; i < referenceCount; i++) {
     const refWord = dv.getUint32(p); p += 4;
     const duration = dv.getUint32(p); p += 4;
     const sapWord = dv.getUint32(p); p += 4;
