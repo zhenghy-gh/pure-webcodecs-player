@@ -82,6 +82,32 @@ test('findAudioSpecificConfig：支持 MPEG-2 AAC LTP OTI 0x69 与 LTP ASC', () 
   assert.deepEqual([...findAudioSpecificConfig(ltp)], [0x22, 0x10]);
 });
 
+test('findAudioSpecificConfig：从 AudioSampleEntry v1 扩展字段后提取 esds', () => {
+  const init = fmp4.buildInit([{
+    id: 1, type: 'audio', codec: 'mp4a.40.2',
+    description: { tag: 'esds', bytes: new Uint8Array([0x12, 0x10]) },
+    sampleRate: 44100, channels: 2, timescale: 44100,
+  }]);
+  const moov = findBox(init, 0, init.length, 'moov');
+  const trak = findBox(init, moov.contentStart, moov.contentEnd, 'trak');
+  const mdia = findBox(init, trak.contentStart, trak.contentEnd, 'mdia');
+  const minf = findBox(init, mdia.contentStart, mdia.contentEnd, 'minf');
+  const stbl = findBox(init, minf.contentStart, minf.contentEnd, 'stbl');
+  const stsd = findBox(init, stbl.contentStart, stbl.contentEnd, 'stsd');
+  const entry = [...iterateBoxes(init, stsd.contentStart + 8, stsd.contentEnd)][0];
+  assert.equal(entry.type, 'mp4a');
+  const insertAt = entry.contentStart + 28;
+  const v1 = new Uint8Array(init.length + 16);
+  v1.set(init.subarray(0, insertAt));
+  v1.set(init.subarray(insertAt), insertAt + 16);
+  const view = new DataView(v1.buffer);
+  view.setUint16(entry.contentStart + 8, 1);
+  for (const box of [entry, stsd, stbl, minf, mdia, trak, moov]) {
+    view.setUint32(box.boxStart, box.size + 16);
+  }
+  assert.deepEqual([...findAudioSpecificConfig(v1)], [0x12, 0x10]);
+});
+
 test('findAudioSpecificConfig：standalone largesize esds 正确使用 16-byte 头', () => {
   const standard = new Uint8Array([
     0, 0, 0, 39, 0x65, 0x73, 0x64, 0x73, 0, 0, 0, 0,

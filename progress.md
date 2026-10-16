@@ -2129,3 +2129,27 @@
 
 ### 风险
 - OTI 0x69 的 ASC 只作字节级透传，不在本解析器内解码 MPEG-2 AAC LTP；WebCodecs 实际解码能力由运行时决定。
+
+## Attempt 96：验证 SIDX 保留位并定位 AudioSampleEntry v1 esds
+
+### 发现
+- `parseSidx()` 只检查 version，不验证 reserved FullBox flags；最小 v0 SIDX 即使 flags 非零仍会被解析成合法索引，可能让损坏的 segment metadata 静默进入播放器。
+- `findMp4aEsds()` 固定假设 AudioSampleEntry v0 的 28-byte body prefix；soundVersion=1 会在其后额外增加 16 bytes，导致合法 AAC `esds` 被漏掉。
+- 独立审计还发现 `parseTfhd()` 未拒绝非零 FullBox version；该 box 只定义 version 0。
+
+### 修改
+- cmaf/src/isobmff.js：sidx 必须 flags=0；tfhd 必须 version=0；mp4a 根据 soundVersion=0/1 分别跳过标准 28/44-byte 前缀；截断、未知 soundVersion 或超出 entry 的扩展安全拒绝。
+- cmaf/__tests__/sidx.test.js：验证零 flags 继续成功，保留 flags 非零抛 NOT_SUPPORTED。
+- cmaf/__tests__/cmaf-moof-flags.test.js：新增 version 1 tfhd 拒绝测试，原有 version 0/default 行用例保持。
+- cmaf/__tests__/cmaf-box.test.js：在既有音频 init 中扩展 sample entry、更新包裹 box 尺寸并设置 soundVersion=1；合法 esds 在额外 16 bytes 之后仍提取出 ASC。
+
+### 验证
+- CMAF box / init / moof-flags / sidx 定向测试：81/81 通过。
+- 全量 npm run check：fixtures 通过；3242/3242 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实 H.264 解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- mp4a AudioSampleEntry 支持版本 0/1；未实现的 soundVersion 2/3 布局不做猜测解析。

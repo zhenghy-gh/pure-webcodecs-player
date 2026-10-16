@@ -113,6 +113,15 @@ test('parseSidx：截断 reference table、未知 version 与零 timescale 均�
   assert.throws(() => parseSidx(zeroScale, 8, zeroScale.length), (err) => err.code === 'NOT_SUPPORTED');
 });
 
+test('parseSidx：拒绝非零保留 FullBox flags', () => {
+  const valid = buildSidxBytes({ refs: [] });
+  assert.equal(parseSidx(valid, 8, valid.length).references.length, 0, 'zero flags remains valid');
+  const malformed = valid.slice();
+  malformed[11] = 1;
+  assert.throws(() => parseSidx(malformed, 8, malformed.length),
+    (err) => err.code === 'NOT_SUPPORTED' && /flags/.test(err.message));
+});
+
 test('parseSidx：version 1 不安全的 uint64 时间或偏移拒绝精度丢失', () => {
   const body = new Uint8Array(32);
   body[0] = 1;

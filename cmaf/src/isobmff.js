@@ -143,8 +143,9 @@ export function parseSidx(buf, contentStart, contentEnd) {
     throw notSupported(`sidx 内容边界非法: ${contentStart}..${contentEnd}`);
   }
   if (contentStart + 4 > contentEnd) throw notSupported('sidx fullbox header 被截断');
-  const { version } = readVersionFlags(buf, contentStart);
+  const { version, flags } = readVersionFlags(buf, contentStart);
   if (version !== 0 && version !== 1) throw notSupported(`sidx version 不支持: ${version}`);
+  if (flags !== 0) throw notSupported(`sidx flags 不支持: ${flags}`);
   let p = contentStart + 4;
   const requireBytes = (count, field) => {
     if (p + count > contentEnd) throw notSupported(`sidx ${field} 字段被截断`);
@@ -302,7 +303,8 @@ export function parseTfdt(buf, contentStart, contentEnd = buf.byteLength) {
 export function parseTfhd(buf, contentStart, contentEnd) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   if (contentStart + 4 > contentEnd) throw notSupported('tfhd fullbox header 被截断');
-  const { flags } = readVersionFlags(buf, contentStart);
+  const { version, flags } = readVersionFlags(buf, contentStart);
+  if (version !== 0) throw notSupported(`tfhd version 不支持: ${version}`);
   let p = contentStart + 4;
   const requireBytes = (count, field) => {
     if (p + count > contentEnd) throw notSupported(`tfhd ${field} 字段被截断`);
@@ -462,9 +464,15 @@ function findMp4aEsds(buf, moov) {
               const headerSize = size === 1 ? 16 : 8;
               if (size < headerSize || pos + size > stsd.contentEnd) break;
               if (type === 'mp4a') {
-                // AudioSampleEntry has a fixed 28-byte body prefix before child boxes.
-                const childStart = pos + headerSize + 28;
-                for (const child of iterateBoxes(buf, childStart, pos + size)) {
+                // AudioSampleEntry v0 has a 28-byte body prefix; v1 adds 16 bytes before child boxes.
+                const entryContent = pos + headerSize;
+                const entryEnd = pos + size;
+                if (entryContent + 10 > entryEnd) break;
+                const soundVersion = view.getUint16(entryContent + 8);
+                const prefixSize = soundVersion === 0 ? 28 : soundVersion === 1 ? 44 : null;
+                if (prefixSize === null || entryContent + prefixSize > entryEnd) break;
+                const childStart = entryContent + prefixSize;
+                for (const child of iterateBoxes(buf, childStart, entryEnd)) {
                   if (child.type === 'esds') return child;
                 }
               }

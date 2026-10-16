@@ -363,6 +363,12 @@ test('splitChunks：跨 traf 指向重叠 mdat 样本范围时拒绝', () => {
   assert.throws(() => splitChunks(stream), (err) => err.code === 'NOT_SUPPORTED');
 });
 
+test('parseTfhd：拒绝不支持的 FullBox version', () => {
+  const unsupported = fullBox('tfhd', 1, 0, u32(1));
+  assert.throws(() => parseTfhd(unsupported, 8, unsupported.length),
+    (err) => err.code === 'NOT_SUPPORTED' && /version/.test(err.message));
+});
+
 test('parseTfhd：可选 base_data_offset 截断于 tfhd 边界时拒绝', () => {
   const truncated = fullBox('tfhd', 0, 0x000001, u32(1), u32(0));
   assert.throws(() => parseTfhd(truncated, 8, truncated.length), (err) => err.code === 'NOT_SUPPORTED');
