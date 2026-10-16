@@ -294,7 +294,7 @@ function readHandlerType(buf, mdia) {
   const hdlr = findBox(buf, mdia.contentStart, mdia.contentEnd, 'hdlr');
   if (!hdlr) return null;
   // hdlr fullBox：[ver/flags(4)][predefined(4)][handlerType(4)]…
-  if (hdlr.contentStart + 8 + 4 > buf.length) return null;
+  if (hdlr.contentStart + 12 > hdlr.contentEnd) return null;
   return String.fromCharCode(
     buf[hdlr.contentStart + 8],
     buf[hdlr.contentStart + 9],
@@ -305,10 +305,12 @@ function readHandlerType(buf, mdia) {
 
 /** 读 mdhd 的 timescale；版本不识别/越界/非正返回 null */
 function readMdhdTimescale(buf, mdhd) {
+  if (mdhd.contentStart + 4 > mdhd.contentEnd) return null;
   const version = buf[mdhd.contentStart];
+  if (version !== 0 && version !== 1) return null;
   // v0: [ver/flags(4)][ctime(4)][mtime(4)][timescale(4)] → +12；v1 时间戳 8 字节 → +20
   const tsPos = mdhd.contentStart + 4 + (version === 1 ? 16 : 8);
-  if (tsPos + 4 > buf.length) return null;
+  if (tsPos + 4 > mdhd.contentEnd) return null;
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const ts = dv.getUint32(tsPos);
   return ts > 0 ? ts : null;

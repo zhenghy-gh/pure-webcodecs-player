@@ -1880,3 +1880,26 @@
 
 ### 风险
 - 合法但大于缓冲长度的 header offset 保留既有流式行为并返回 null；畸形数值 offset 则稳定抛 NOT_SUPPORTED。
+
+## Attempt 85：init-segment hdlr/mdhd 字段读取限定于子 box 边界
+
+### 发现
+- 复现条件：moov/trak/mdia 结构中 hdlr 或 mdhd box 自身被截断，但其后续兄弟 box 在同一 init 缓冲内仍含足够字节。
+- 根因：readHandlerType() 与 readMdhdTimescale() 只按整个 init buffer.length 检查，而未以 hdlr/mdhd contentEnd 为字段上限；mdhd 还将任意非 v1 version 当 v0。
+- 用户影响：畸形 init 可跨 box 读取相邻数据，误判轨道类型或 timescale，造成解码轨配置错误。
+
+### 修改
+- cmaf/src/chunk-parser.js：hdlr handlerType 检查改为 box-local contentEnd；mdhd 验证 fullbox header、版本 0/1 与完整 timescale 字段均在当前 box 内。
+- cmaf/__tests__/cmaf-init.test.js：构造 hdlr 仅保留 fullbox+predefined、mdhd 结束于 timescale 之前的 init；确认后续兄弟字节不会被借读，元数据保持未识别。
+
+### 验证
+- CMAF init / parse / box 定向测试：49/49 通过。
+- CMAF init / parse / box 定向测试：49/49 通过。
+- 全量 npm run check：fixtures 通过；3229/3229 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 对不完整 init metadata 仍按现有容错策略跳过单条轨道字段，而不拒绝整个 init；上层会继续使用兼容默认 timescale 或缺省轨道元数据。

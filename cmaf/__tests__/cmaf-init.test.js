@@ -217,6 +217,27 @@ test('C-2：缺 hdlr 的轨无法判定类型被兜底跳过', () => {
   assert.equal(ts.audio, 48000);
 });
 
+test('init：截断的 hdlr/mdhd 字段不得跨子 box 读取', () => {
+  const locate = (bytes, type) => {
+    const tag = asciib(type);
+    for (let i = 0; i + 8 <= bytes.length; i++) {
+      if (tag.every((v, n) => bytes[i + 4 + n] === v)) return i;
+    }
+    return -1;
+  };
+  const hdlrInit = synthInit([{ timescale: 90000, handlerType: 'vide' }]);
+  const hdlrOffset = locate(hdlrInit, 'hdlr');
+  assert.ok(hdlrOffset >= 0);
+  new DataView(hdlrInit.buffer).setUint32(hdlrOffset, 16);
+  assert.equal(findTimescales(hdlrInit).video, undefined, 'truncated handlerType must not be borrowed from sibling bytes');
+
+  const mdhdInit = synthInit([{ timescale: 90000, handlerType: 'vide' }]);
+  const mdhdOffset = locate(mdhdInit, 'mdhd');
+  assert.ok(mdhdOffset >= 0);
+  new DataView(mdhdInit.buffer).setUint32(mdhdOffset, 20);
+  assert.equal(findTimescales(mdhdInit).video, undefined, 'truncated timescale must not be borrowed from sibling box');
+});
+
 test('C-2：标准双轨（含 hdlr）结构遍历正确关联', () => {
   const init = synthInit([
     { timescale: 48000, handlerType: 'soun' },
