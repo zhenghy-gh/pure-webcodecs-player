@@ -186,6 +186,28 @@ test('prft：截断 payload、零 timescale 与 content 边界均受控拒绝', 
   assert.throws(() => parsePrft(make(2, 90000, 8), 8), /version 不支持/);
 });
 
+test('prft v1：producer_time NTP 以 BigInt 无损保留，media_time 精度溢出拒绝', async () => {
+  const { parsePrft } = await import('../src/isobmff.js');
+  const body = new Uint8Array(28);
+  body[0] = 1;
+  const view = new DataView(body.buffer);
+  view.setUint32(4, 42);
+  view.setUint32(8, 90000);
+  const producerNtp = 0xe8_000000_80000001n;
+  view.setBigUint64(12, producerNtp);
+  view.setBigUint64(20, 90090n);
+  const bytes = new Uint8Array(8 + body.length);
+  new DataView(bytes.buffer).setUint32(0, bytes.length);
+  bytes.set([0x70, 0x72, 0x66, 0x74], 4);
+  bytes.set(body, 8);
+  const result = parsePrft(bytes, 8, bytes.length);
+  assert.equal(result.producerTimeNtp, producerNtp, 'NTP fixed-point timestamp retained exactly');
+  assert.equal(result.mediaTimeTicks, 90090);
+
+  new DataView(bytes.buffer).setBigUint64(28, BigInt(Number.MAX_SAFE_INTEGER) + 1n);
+  assert.throws(() => parsePrft(bytes, 8, bytes.length), /media_time 超出安全整数范围/);
+});
+
 test('prft：生产者时钟参考（v0/v1 双版本）', async () => {
   const { parsePrft } = await import('../src/isobmff.js');
   const build = (version, producer, media) => {

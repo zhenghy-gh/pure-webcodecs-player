@@ -95,9 +95,19 @@ export function parsePrft(buf, contentStart, contentEnd = buf.byteLength) {
     throw notSupported(`PRFT v${version} 内容截断`);
   }
   if (version === 1) {
-    const producerTime = Number(dv.getBigUint64(p)); p += 8;
-    const mediaTime = Number(dv.getBigUint64(p));
-    return { referenceTrackId, referenceTimescale, mediaTimeTicks: mediaTime, producerTimeTicks: producerTime };
+    const producerTimeNtp = dv.getBigUint64(p); p += 8;
+    const mediaTime = dv.getBigUint64(p);
+    if (mediaTime > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw notSupported(`PRFT media_time 超出安全整数范围: ${mediaTime}`);
+    }
+    return {
+      referenceTrackId,
+      referenceTimescale,
+      mediaTimeTicks: Number(mediaTime),
+      producerTimeNtp,
+      // Backward-compatible numeric view; use producerTimeNtp for lossless fixed-point time.
+      producerTimeTicks: Number(producerTimeNtp),
+    };
   }
   const producerTime = dv.getUint32(p); p += 4;
   const mediaTime = dv.getUint32(p);

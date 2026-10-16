@@ -1834,3 +1834,26 @@
 
 ### 风险
 - 此轮只校验 sidx 自身表完整性，不验证 reference 计算出的外部 segment 字节范围是否超出源资源；该范围校验位于消费者侧。
+
+## Attempt 83：无损保留 PRFT producer NTP 并校验 media_time 精度
+
+### 发现
+- 复现条件：PRFT version 1 常规 producer_time NTP 32.32 固定点本身即常超过 Number.MAX_SAFE_INTEGER；media_time uint64 也可能超出 Number 精度范围。
+- 根因：parsePrft() 将 producer_time 和 media_time 都直接 Number(uint64)，使 NTP fractional bits 与大值媒体时间的低位静默丢失。producer_time 是 NTP 固定点，不应套用普通 safe-integer 转换。
+- 用户影响：依赖 PRFT 的 A/V 时钟同步、生产者/媒体时间对齐可能出现无法察觉的精度损失。
+
+### 修改
+- cmaf/src/isobmff.js：PRFT v1 新增精确 `producerTimeNtp` BigInt 返回字段；旧 `producerTimeTicks` 数值字段保留兼容视图；media_time 继续返回 Number ticks，但超过安全整数时拒绝。
+- cmaf/__tests__/sidx.test.js：以超过 2^53 的 NTP fixed-point 证明 BigInt 字段无损；另外验证不安全 media_time 被拒绝。
+
+### 验证
+- PRFT / sidx / box 定向测试：28/28 通过。
+- 定向 PRFT / sidx / box 测试：28/28 通过。
+- 全量 npm run check：fixtures 通过；3226/3226 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- v1 的 producerTimeTicks 仍作为旧 API 的近似 Number 兼容视图返回；需要精确值的调用者应改用新增的 producerTimeNtp BigInt。
