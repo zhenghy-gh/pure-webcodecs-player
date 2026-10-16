@@ -1,5 +1,26 @@
 # 维护进度
 
+## Attempt 112：保留 TS 分片间 fMP4 的共同解码时间基
+
+### 问题与修复
+- HLS TS→fMP4 转封装器在非 discontinuity 分片上检查了未使用的 `_dtsBase`，而实际保存的字段是 `_dtsBaseUs`。该守卫每次都重新以当前分片首 DTS 为基准，导致每个普通片段的 `tfdt` 归零，丢失输入 TS 的共享时间 epoch。
+- `hls/src/fmp4-muxer.js`：对照实际字段名 `_dtsBaseUs` 判断时间基是否尚未初始化；仅初次转换或调用方显式请求 discontinuity 时重建基准。
+
+### 回归测试
+- `hls/__tests__/ts-remux.test.js`：生成 MPEG-TS 视频分片，将第二片全部 6 个视频 PES 的 PTS/DTS 前移 18,018 个 90 kHz ticks，再用同一转封装器处理；验证两个普通输出 `tfdt` 为 0、18,018 且第二片不重复输出 init segment。
+- 独立复核指出，测试夹具末样本 duration 不足以证明分片边界无间隙；因此回归范围严格限定在“普通分片保留共享时间 epoch”，不声称验证 gap-free 时长，也不对 MSE discontinuity 重置/追加行为下结论。
+
+### 验证
+- 定向 HLS 测试：216/216；完整 `npm run check`：3282/3282 测试通过，549 个 JS 文件 lint 通过。
+- Chromium 实测运行 HLS fMP4 muxer 与 TS PES fixture：6 个 PES 均完成时间戳平移；两个视频片段均生成，`tfdt=[0,18018]`、init 输出为 `[有, 无]`，无未捕获页面异常。
+- 既有 `scripts/e2e/hls-ts-e2e.mjs` 因其引用的 `samples/e2e/bbb480_30s.ts` 不存在而未能启动；用本地合成 TS 在 Chromium 验证转封装模块路径，不把伪造帧报告为真实播放验收。
+
+### 提交和推送
+- 独立提交并推送到 `maintenance/round-6`。
+
+### 风险
+- discontinuity 的 fMP4 时间线协调和 SourceBuffer 追加策略不在本轮修复或验证范围。
+
 ## Attempt 111：按 Matroska CodecDelay 校正每轨音频时间戳
 
 ### 问题与修复

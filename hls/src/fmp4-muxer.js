@@ -449,7 +449,7 @@ export class TsToFmp4Transmuxer {
     for (const list of [collected.video, collected.audio]) {
       if (list.length) firstDtsUs.push(list[0].dts ?? list[0].timestamp ?? 0);
     }
-    if (opts.discontinuity || this._dtsBase == null) {
+    if (opts.discontinuity || this._dtsBaseUs == null) {
       this._dtsBaseUs = firstDtsUs.length ? Math.min(...firstDtsUs) : 0;
     }
 

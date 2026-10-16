@@ -10,11 +10,34 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeTS } from '../../samples/fixtures/ts.js';
 import { assembleTs } from '../../ts/__tests__/fixtures/build-ts.mjs';
+import { encodeTimestamp5, decodeTimestamp5 } from '../../ts/src/pes.js';
 import { TsToFmp4Transmuxer, sniffContainer } from '../src/transmuxer.js';
 import { _internalForTest } from '../src/fmp4-muxer.js';
 import { buildEsds as buildEsdsCore } from '../../core/src/esds.js';
 import { Fmp4Remuxer } from '../../mp4/src/remuxer.js';
 
+function shiftVideoPesTimestamps(tsBytes, deltaTicks) {
+  const shifted = tsBytes.slice();
+  let shiftedPesCount = 0;
+  for (let packetOffset = 0; packetOffset + 188 <= shifted.length; packetOffset += 188) {
+    if (shifted[packetOffset] !== 0x47) continue;
+    const pid = ((shifted[packetOffset + 1] & 0x1f) << 8) | shifted[packetOffset + 2];
+    if (pid !== 0x0101 || !(shifted[packetOffset + 1] & 0x40)) continue;
+    const adaptationControl = (shifted[packetOffset + 3] >> 4) & 0x03;
+    if (!(adaptationControl & 0x01)) continue;
+    const payloadOffset = packetOffset + 4 + ((adaptationControl & 0x02) ? 1 + shifted[packetOffset + 4] : 0);
+    if (payloadOffset + 19 > packetOffset + 188) continue;
+    if (shifted[payloadOffset] !== 0 || shifted[payloadOffset + 1] !== 0 || shifted[payloadOffset + 2] !== 1) continue;
+    const timestampFlags = (shifted[payloadOffset + 7] >> 6) & 0x03;
+    if (timestampFlags !== 0x03) continue;
+    const pts = decodeTimestamp5(...shifted.subarray(payloadOffset + 9, payloadOffset + 14));
+    const dts = decodeTimestamp5(...shifted.subarray(payloadOffset + 14, payloadOffset + 19));
+    shifted.set(encodeTimestamp5((pts + deltaTicks) % (2 ** 33), 0b0011), payloadOffset + 9);
+    shifted.set(encodeTimestamp5((dts + deltaTicks) % (2 ** 33), 0b0001), payloadOffset + 14);
+    shiftedPesCount++;
+  }
+  return { bytes: shifted, shiftedPesCount };
+}
 /* ---------- 测试用最小 box 遍历器 ---------- */
 
 function readBoxType(buf, off) {
@@ -290,9 +313,11 @@ test('集成：AAC 音轨独立产出且编码串来自 ASC AOT', async (t) => {
   assert.ok(findTag(out.audio.initSegment, 'esds') > 0);
 });
 
-test('集成：跨分片 tfdt 不倒退 & init 只出一次', async (t) => {
-  const seg1bytes = assembleTs({ video: { codec: 'h264', width: 320, height: 240, frames: 6, gopSize: 3 } });
-  const seg2bytes = assembleTs({ video: { codec: 'h264', width: 320, height: 240, frames: 6, gopSize: 3 } });
+test('集成：普通 TS 分片共用同一 tfdt 时间基', async (t) => {
+  const options = { video: { codec: 'h264', width: 320, height: 240, frames: 6, gopSize: 3 } };
+  const seg1bytes = assembleTs(options);
+  const { bytes: seg2bytes, shiftedPesCount } = shiftVideoPesTimestamps(seg1bytes, 18_018); // 源 PTS/DTS 前移 6 帧
+  assert.equal(shiftedPesCount, options.video.frames, '第二分片内每个视频 PES 的 PTS/DTS 都已平移');
   const muxer = new TsToFmp4Transmuxer();
   const out1 = await muxer.remux(seg1bytes);
   const out2 = await muxer.remux(seg2bytes);
@@ -301,11 +326,11 @@ test('集成：跨分片 tfdt 不倒退 & init 只出一次', async (t) => {
     return;
   }
   assert.ok(out1.video.initSegment);
-  assert.equal(out2.video.initSegment, null, '配置未变化时不再重复 init');
-
-  const dv = new DataView(out2.video.mediaSegment.buffer, out2.video.mediaSegment.byteOffset, out2.video.mediaSegment.byteLength);
-  const base2 = Number(dv.getBigUint64(findTag(out2.video.mediaSegment, 'tfdt') + 8));
-  const dv1 = new DataView(out1.video.mediaSegment.buffer, out1.video.mediaSegment.byteOffset, out1.video.mediaSegment.byteLength);
-  const base1 = Number(dv1.getBigUint64(findTag(out1.video.mediaSegment, 'tfdt') + 8));
-  assert.ok(base2 >= base1, 'tfdt 不允许倒退');
+  assert.equal(out2.video.initSegment, null, '连续配置未变化时不再重复 init');
+  const tfdt = (segment) => {
+    const data = segment.video.mediaSegment;
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    return Number(view.getBigUint64(findTag(data, 'tfdt') + 8));
+  };
+  assert.deepEqual([tfdt(out1), tfdt(out2)], [0, 18_018], '两个普通分片应映射至同一原始解码时间基');
 });
