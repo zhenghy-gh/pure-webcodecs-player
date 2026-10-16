@@ -512,14 +512,17 @@ export function findAudioSpecificConfig(initSegment) {
       const decoderDataStart = child.payloadStart + 13;
       if (decoderDataStart > child.end) return null;
       let descriptorStart = decoderDataStart;
+      let decoderSpecificInfo = null;
       while (descriptorStart < child.end) {
         const descriptor = readDescriptor(initSegment, descriptorStart, child.end);
         if (!descriptor || descriptor.end <= descriptorStart) return null;
         if (descriptor.tag === 0x05 && descriptor.end > descriptor.payloadStart) {
-          return initSegment.slice(descriptor.payloadStart, descriptor.end);
+          decoderSpecificInfo = initSegment.slice(descriptor.payloadStart, descriptor.end);
         }
         descriptorStart = descriptor.end;
       }
+      if (decoderSpecificInfo) return decoderSpecificInfo;
+      return null;
     }
     childStart = child.end;
   }

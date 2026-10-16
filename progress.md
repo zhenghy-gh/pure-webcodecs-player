@@ -2062,3 +2062,26 @@
 
 ### 风险
 - ESDS 内容按单个 ES_Descriptor 精确消费；需要支持非标准尾部扩展时应先引入有明确规格定义的解析规则。
+
+## Attempt 93：按 DecoderConfig descriptor 边界完整校验子项
+
+### 发现
+- 复现条件：`DecoderConfigDescriptor` 中含有效 `DecoderSpecificInfo`，其后再添加未声明尾部字节；父 ES_Descriptor 长度同步扩大。
+- 根因：audio config parser 命中第一个 DSI 就立即返回，未验证 DecoderConfig descriptor 余下字节是否能解析成完整子 descriptor；可接受内部 framing 不一致的数据。
+- 用户影响：畸形 ESDS 可返回看似有效的 AAC ASC，绕开上轮仅校验 ES_Descriptor 外层长度的改进。
+
+### 修改
+- cmaf/src/isobmff.js：遍历 DecoderConfig 中所有子 descriptor，只有结构完整后才返回缓存的 DSI；截断或非法尾随子项返回 null。允许完整的合法后续 descriptor。
+- cmaf/__tests__/cmaf-box.test.js：新增 DSI 后额外未声明 byte case，并保留普通 AAC descriptor、ESDS 尾随与 largesize 用例。
+
+### 验证
+- CMAF box / init / extras 定向测试：54/54 通过。
+- CMAF box / init / extras 定向测试：54/54 通过。
+- 全量 npm run check：fixtures 通过；3236/3236 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实 H.264 解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- DecoderConfig 固定字段仍按标准 13-byte 前缀解析；遇到更短或描述符 framing 损坏时采取拒绝策略。
