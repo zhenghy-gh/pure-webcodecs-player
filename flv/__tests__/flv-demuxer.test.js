@@ -12,6 +12,7 @@ import {
   assembleFlv, buildAvcC, buildHvcC, defaultH264Sps, defaultH264Pps,
   hevcEnhancedSequenceTag, hevcEnhancedVideoTag, toAvcc,
 } from './fixtures/build-flv.mjs';
+import { iterateTags } from '../src/tag-stream.js';
 
 function stdFile() {
   return assembleFlv({
@@ -135,6 +136,25 @@ test('seek：关键帧对齐并返回 actualTimestampUs；后续样本从关键�
   await d.destroy();
 });
 
+test('seek：64KiB 泵边界后的关键帧保留真实绝对偏移', async () => {
+  const bytes = assembleFlv({ video: { frames: 3000, gopSize: 500 }, audio: null });
+  const d = await createFlvDemuxer(bytes);
+  while (await d.readSample(1)) { /* build the complete keyframe index */ }
+  const indexed = d.parser.keyframeIndex.at(-1);
+  const expected = [...iterateTags(bytes)]
+    .filter((tag) => tag.type === 9 && (tag.data[0] >> 4) === 1 && tag.data[1] === 1)
+    .at(-1);
+  assert.ok(bytes.byteLength > 64 * 1024);
+  assert.ok(expected);
+  assert.equal(indexed.offset, expected.offset);
+  const result = await d.seek(indexed.timestampMs * 1000);
+  assert.equal(result.actualTimestampUs, indexed.timestampMs * 1000);
+  const sample = await d.readSample(1);
+  assert.ok(sample, 'seek 后必须能读取目标关键帧');
+  assert.equal(sample.timestamp, indexed.timestampMs * 1000);
+  assert.equal(sample.keyframe, true);
+  await d.destroy();
+});
 test('seek：早于首关键帧时钳制到首关键帧', async () => {
   const d = await createFlvDemuxer(assembleFlv({ video: { frames: 8 } }));
   const r = await d.seek(1);

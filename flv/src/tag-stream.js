@@ -136,12 +136,15 @@ export class FlvTagStream {
   /**
    * seek 续传准备：跳过文件头，从指定位置继续吃 Tag。
    * @param {{hasAudio:boolean, hasVideo:boolean}} flags
+   * @param {number} [sourceOffset] 续传位置的源文件绝对字节偏移
    */
-  resumeMidStream(flags) {
+  resumeMidStream(flags, sourceOffset = 0) {
+    if (!Number.isSafeInteger(sourceOffset) || sourceOffset < 0) throw new RangeError('sourceOffset 必须是非负安全整数');
     this.buffer = new Uint8Array(0);
     this.headerDone = true;
     this.finished = false;
     this._batchFed = 0;
+    this._absPos = sourceOffset;
     this.header = {
       version: 1,
       hasAudio: !!flags.hasAudio,

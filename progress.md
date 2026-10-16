@@ -1,6 +1,28 @@
 # 维护进度
 
+## Attempt 106：修复大 FLV 的关键帧索引偏移漂移
+
+### 问题与修复
+- DataSource 模式按 64 KiB 分块喂 FLV。demuxer 每次 pump 把当前源偏移写进 `parser.baseOffset`；TagStream 又将其加到跨批次累计 `_absPos`，导致每越过一块就多加一个 chunk，seek 到后续关键帧跳过目标甚至到 EOF。
+- `flv/src/flv-demuxer.js`：移除每 pump 对已累计解析流的重复平移；`flv/src/tag-stream.js` / `flv/src/flv-parser.js`：seek 恢复时将累计位置设为目标 keyframe 的真实绝对源偏移。
+
+### 回归测试
+- `flv/__tests__/flv-demuxer.test.js`：构造大于 64 KiB 的 3000 帧 FLV，独立对比完整文件 tag walker 的关键帧 offset，并验证 seek 可实际读出该关键帧。
+
+### 验证
+- 定向 FLV 套件：188/188 通过。
+- 全量 `npm run check`：3267/3267 测试通过；548 个 JS 文件 lint 通过。
+- Chromium MSE 首跑偶发 18/19（firstframe 未及时到达）；复跑通过 19/19。
+
+### 提交和推送
+- 完成验证后独立提交并推送 `maintenance/round-6`。
+
+### 风险
+- seek 续传时 parser 的 consumed-byte base 必须从目标绝对偏移开始；TagStream 对 resume offset 做非负安全整数校验。
+
+
 ## Attempt 105：隔离 AudioWorklet seek 前后的音频时钟代
+
 
 ### 问题与修复
 - `clearBuffer()` 只将主线程 `_playedFrames` 清零，却未清理 worklet 累计计数；clear 前的迟到 stats 仍会被接受并恢复旧帧数，使 seek 后暂停时音频时钟跳回旧播放时长。

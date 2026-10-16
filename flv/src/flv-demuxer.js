@@ -400,7 +400,7 @@ export class FlvDemuxer extends Demuxer {
     this._pos += data.length;
     this.emit('progress', { loadedBytes: this._pos, totalBytes: src.size ?? null });
     try {
-      this.parser.baseOffset = this._pos - data.length;
+      // FlvTagStream tracks absolute bytes consumed across pushes; avoid adding each source offset again.
       this.parser.push(data);
     } catch (err) {
       this.emit('error', err);
@@ -488,7 +488,7 @@ export class FlvDemuxer extends Demuxer {
     this.parser.prepareSeekResume({
       hasAudio: this.parser.hasAudio,
       hasVideo: this.parser.hasVideo,
-    });
+    }, { sourceOffset: target.offset });
     for (const q of this._queues.values()) q.length = 0;
     this._pos = target.offset;
     this._sourceEof = false;

@@ -133,7 +133,9 @@ export class FlvParser extends Emitter {
   prepareSeekResume(flags, opts = {}) {
     const keep = opts.keepIndexBeforeOffset ?? Infinity;
     this.keyframeIndex = this.keyframeIndex.filter((e) => e.offset <= keep);
-    this.stream.resumeMidStream(flags);
+    const sourceOffset = opts.sourceOffset ?? 0;
+    this.stream.resumeMidStream(flags, sourceOffset);
+    this.baseOffset = 0;
     this._headerEmitted = true;
     this.hasAudio = !!flags.hasAudio;
     this.hasVideo = !!flags.hasVideo;
