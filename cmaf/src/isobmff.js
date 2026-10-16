@@ -26,7 +26,8 @@ export function boxType(buf, off) {
  * @returns {{type:string,size:number,headerSize:number}|null} size 含头；null 表示数据不足
  */
 export function readBoxHeader(buf, off = 0) {
-  if (buf.length < off + 8) return null;
+  if (!Number.isSafeInteger(off) || off < 0) throw notSupported(`ISO-BMFF box 偏移非法: ${off}`);
+  if (off > buf.length || buf.length - off < 8) return null;
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   let size = dv.getUint32(off);
   const type = boxType(buf, off);
@@ -53,6 +54,10 @@ export function readBoxHeader(buf, off = 0) {
  * @yields {{type:string,size:number,contentStart:number,contentEnd:number}}
  */
 export function* iterateBoxes(buf, start = 0, end = buf.length) {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+      start < 0 || end < start || end > buf.length) {
+    throw notSupported(`ISO-BMFF box 范围非法: ${start}..${end}`);
+  }
   let off = start;
   while (off < end) {
     const head = readBoxHeader(buf, off);

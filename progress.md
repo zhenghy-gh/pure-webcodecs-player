@@ -1857,3 +1857,26 @@
 
 ### 风险
 - v1 的 producerTimeTicks 仍作为旧 API 的近似 Number 兼容视图返回；需要精确值的调用者应改用新增的 producerTimeNtp BigInt。
+
+## Attempt 84：校验 ISO-BMFF box reader 与 iterator 输入范围
+
+### 发现
+- 复现条件：readBoxHeader() 收到负数、非整数、NaN、Infinity 等 off；iterateBoxes() 收到负 start、end 小于 start 或 end 超出缓冲。
+- 根因：解析器直接对 off 执行 DataView.getUint32()，异常值会泄漏裸 RangeError；iterator 对非法 start/end 未建统一输入契约。
+- 用户影响：外部调用者传入异常边界时得到不稳定错误类型，或错误范围扫描导致意外吞掉/越界处理 box。
+
+### 修改
+- cmaf/src/isobmff.js：readBoxHeader() 先要求 off 为非负安全整数；缓冲尾部不足仍按流式契约返回 null。iterateBoxes() 校验 `0 <= start <= end <= buf.length` 且边界均为安全整数。
+- cmaf/__tests__/cmaf-box.test.js：新增负数/分数/NaN/Infinity header offset，以及 iterator 非法范围拒绝覆盖。
+
+### 验证
+- box / fragment / defect regression 定向测试：38/38 通过。
+- box / fragment / defect regression 定向测试：38/38 通过。
+- 全量 npm run check：fixtures 通过；3228/3228 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 合法但大于缓冲长度的 header offset 保留既有流式行为并返回 null；畸形数值 offset 则稳定抛 NOT_SUPPORTED。

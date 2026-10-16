@@ -116,6 +116,21 @@ test('readBoxHeader：非法尺寸（< 头长）抛 NOT_SUPPORTED', () => {
   assert.throws(() => readBoxHeader(bad, 0), (e) => e.code === 'NOT_SUPPORTED');
 });
 
+test('readBoxHeader：负数、分数与非数偏移稳定拒绝，末尾不足仍返回 null', () => {
+  const bytes = new Uint8Array(8);
+  for (const off of [-1, 0.5, NaN, Infinity]) {
+    assert.throws(() => readBoxHeader(bytes, off), (err) => err.code === 'NOT_SUPPORTED');
+  }
+  assert.equal(readBoxHeader(bytes, bytes.length + 1), null);
+});
+
+test('iterateBoxes：起止范围非法时拒绝', () => {
+  const bytes = new Uint8Array(8);
+  assert.throws(() => [...iterateBoxes(bytes, -1, 8)], (err) => err.code === 'NOT_SUPPORTED');
+  assert.throws(() => [...iterateBoxes(bytes, 4, 3)], (err) => err.code === 'NOT_SUPPORTED');
+  assert.throws(() => [...iterateBoxes(bytes, 0, 9)], (err) => err.code === 'NOT_SUPPORTED');
+});
+
 test('readBoxHeader：largesize 超出安全整数范围时拒绝', () => {
   const bad = new Uint8Array(16);
   const dv = new DataView(bad.buffer);
