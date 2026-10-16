@@ -210,9 +210,23 @@ test('parseTfdt：v0(u32) 与 v1(64bit) 双版本', () => {
   assert.equal(parseTfdt(v1, 8), 0x1_0000_0001);
 });
 
+test('parseTfdt：box content 截断与不支持的 version 均拒绝', () => {
+  const v1 = buildFullBox('tfdt', 1, new Uint8Array(8));
+  assert.throws(() => parseTfdt(v1, 8, v1.length - 4), (err) => err.code === 'NOT_SUPPORTED');
+  const unsupported = buildFullBox('tfdt', 2, new Uint8Array(8));
+  assert.throws(() => parseTfdt(unsupported, 8, unsupported.length), (err) => err.code === 'NOT_SUPPORTED');
+});
+
 test('parseMfhd：sequenceNumber 解析', () => {
   const box = buildFullBox('mfhd', 0, (() => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, 77); return b; })());
   assert.equal(parseMfhd(box, 8), 77);
+});
+
+test('parseMfhd：截断的 sequence_number 与未知 version 拒绝', () => {
+  const box = buildFullBox('mfhd', 0, new Uint8Array([0, 0]));
+  assert.throws(() => parseMfhd(box, 8, box.length), (err) => err.code === 'NOT_SUPPORTED');
+  const unsupported = buildFullBox('mfhd', 1, new Uint8Array(4));
+  assert.throws(() => parseMfhd(unsupported, 8, unsupported.length), (err) => err.code === 'NOT_SUPPORTED');
 });
 
 /* ---------------- isKeyframeFlag 真值表 ---------------- */

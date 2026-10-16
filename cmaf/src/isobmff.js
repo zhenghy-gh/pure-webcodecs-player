@@ -243,9 +243,13 @@ export function parseTrun(buf, contentStart, contentEnd) {
 }
 
 /** 解析 tfdt → baseMediaDecodeTime */
-export function parseTfdt(buf, contentStart) {
+export function parseTfdt(buf, contentStart, contentEnd = buf.byteLength) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  if (contentStart + 4 > contentEnd) throw notSupported('tfdt fullbox header 被截断');
   const { version } = readVersionFlags(buf, contentStart);
+  if (version !== 0 && version !== 1) throw notSupported('tfdt version 不支持: ' + version);
+  const timeBytes = version === 1 ? 8 : 4;
+  if (contentStart + 4 + timeBytes > contentEnd) throw notSupported('tfdt baseMediaDecodeTime 字段被截断');
   if (version === 1) {
     const ticks = dv.getBigUint64(contentStart + 4);
     if (ticks > BigInt(Number.MAX_SAFE_INTEGER)) {
@@ -289,8 +293,11 @@ export function parseTfhd(buf, contentStart, contentEnd) {
 }
 
 /** 解析 mfhd → sequenceNumber */
-export function parseMfhd(buf, contentStart) {
+export function parseMfhd(buf, contentStart, contentEnd = buf.byteLength) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  if (contentStart + 8 > contentEnd) throw notSupported('mfhd fullbox header/sequence_number 字段被截断');
+  const { version } = readVersionFlags(buf, contentStart);
+  if (version !== 0) throw notSupported('mfhd version 不支持: ' + version);
   return dv.getUint32(contentStart + 4);
 }
 
@@ -309,7 +316,7 @@ export function parseMoof(buf, contentStart, contentEnd) {
         info.trackId = tfhd.trackId;
         info.defaults = tfhd;
       } else if (sub.type === 'tfdt') {
-        info.baseTime = parseTfdt(buf, sub.contentStart);
+        info.baseTime = parseTfdt(buf, sub.contentStart, sub.contentEnd);
       } else if (sub.type === 'trun') {
         const parsed = parseTrun(buf, sub.contentStart, sub.contentEnd);
         info.truns.push(parsed);

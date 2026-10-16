@@ -1789,3 +1789,26 @@
 
 ### 风险
 - parseTrun 完整性依赖上层向它传入实际 trun contentEnd；非法调用者传入过大的 end 不在此函数的当前职责范围。
+
+## Attempt 81：tfdt 与 mfhd 按 box contentEnd 校验并拒绝未知版本
+
+### 发现
+- 复现条件：tfdt v0/v1 的 fullbox/body 截断于自身 box，但缓冲后方仍有其他 box 字节；或 tfdt/mfhd 使用当前解析器未定义的 version。
+- 根因：parseTfdt() 与 parseMfhd() 直接用整个 Uint8Array 的 DataView 读取字段，未接收或验证当前 box 的 contentEnd；版本校验仅在 tfdt v1 判断，其他值被当作 v0。
+- 用户影响：恶意 box 可跨边界读取邻接内容，或让未知二进制布局被静默解释为旧版本时间戳/sequence。
+
+### 修改
+- cmaf/src/isobmff.js：parseTfdt() 增加 contentEnd 参数、header/body 完整性检查及仅接受 version 0/1；parseMfhd() 增加 contentEnd 检查并仅接受 version 0；parseMoof() 传递 tfdt box 边界。
+- cmaf/__tests__/cmaf-box.test.js：新增 tfdt 截断/未知版本、mfhd sequence 截断/未知版本拒绝用例；既有 v0/v1 合法时钟测试保留。
+
+### 验证
+- CMAF box / moof flags / fragment / defect regression 定向测试：59/59 通过。
+- 定向测试：59/59 通过。
+- 全量 npm run check：fixtures 通过；3221/3221 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- parseTfdt() 对外直接调用时默认 contentEnd 为整个缓冲区；parseMoof() 生产路径显式传入实际 tfdt contentEnd。
