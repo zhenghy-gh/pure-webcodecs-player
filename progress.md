@@ -1993,3 +1993,26 @@
 
 ### 风险
 - VisualSampleEntry 采用 ISO 固定 78-byte 前缀；尚未支持非标准结构扩展。
+
+## Attempt 90：PRFT/ESDS 迭代器准确暴露 largesize box 起点与头长
+
+### 发现
+- 复现条件：顶层 standalone `esds` 使用 size=1/largesize（16-byte box header）；标签扫描推导 boxStart/content offsets 时错误地按 8-byte header 固定回退。
+- 根因：iterateBoxes() 虽保留 headerSize，但没暴露 boxStart；audio config 消费者曾对扩展头推导错误起点，descriptor 读取落在 size/type/largesize 字段中而返回 null。
+- 用户影响：合法扩展尺寸的 ESDS box 无法提取 ASC，音频轨配置被意外丢弃。
+
+### 修改
+- cmaf/src/isobmff.js：iterateBoxes() 输出 `boxStart`；findAudioSpecificConfig() 从真实 contentStart + fullbox header 定位 descriptor，不再依赖固定 8-byte 起点回推；结构 helper 不覆盖真实头长。
+- cmaf/__tests__/cmaf-box.test.js：新增 standalone largesize ESDS 盒，声明 16-byte header 并包含合法 AAC 描述，期望提取 `[0x12, 0x10]`。
+
+### 验证
+- CMAF box / init 定向测试：41/41 通过。
+- CMAF box / init 定向测试：41/41 通过。
+- 全量 npm run check：fixtures 通过；3233/3233 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- ESDS 保持标准单层 ISO BMFF 盒头；不可表示或不完整 largesize 会由 box iterator 按既有截断行为忽略。

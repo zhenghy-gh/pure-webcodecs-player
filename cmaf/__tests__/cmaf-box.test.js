@@ -57,6 +57,22 @@ test('findAudioSpecificConfig：只接受 DecoderConfig 中的 DSI 描述符', (
   assert.deepEqual([...findAudioSpecificConfig(esds)], [0x12, 0x10]);
 });
 
+test('findAudioSpecificConfig：standalone largesize esds 正确使用 16-byte 头', () => {
+  const standard = new Uint8Array([
+    0, 0, 0, 39, 0x65, 0x73, 0x64, 0x73, 0, 0, 0, 0,
+    0x03, 25, 0x05, 0x02, 0, 0x04, 17,
+    0x40, 0x15, 0, 0, 0, 0x05, 0x02, 0xaa, 0xbb, 0, 0, 0, 0,
+    0x05, 0x02, 0x12, 0x10, 0x06, 1, 2,
+  ]);
+  const extended = new Uint8Array(standard.length + 8);
+  const view = new DataView(extended.buffer);
+  view.setUint32(0, 1);
+  extended.set(standard.subarray(4, 8), 4);
+  view.setBigUint64(8, BigInt(extended.length));
+  extended.set(standard.subarray(8), 16);
+  assert.deepEqual([...findAudioSpecificConfig(extended)], [0x12, 0x10]);
+});
+
 test('findAudioSpecificConfig：跳过 ES_Descriptor 的可选字段', () => {
   const esds = new Uint8Array([
     0, 0, 0, 46, 0x65, 0x73, 0x64, 0x73, 0, 0, 0, 0,

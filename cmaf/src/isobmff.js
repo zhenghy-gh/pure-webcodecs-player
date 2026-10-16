@@ -68,6 +68,7 @@ export function* iterateBoxes(buf, start = 0, end = buf.length) {
     yield {
       type: head.type,
       size: head.size,
+      boxStart: off,
       headerSize: head.headerSize,
       contentStart: off + head.headerSize,
       contentEnd: off + head.size,
@@ -463,7 +464,7 @@ function findMp4aEsds(buf, moov) {
                 // AudioSampleEntry has a fixed 28-byte body prefix before child boxes.
                 const childStart = pos + headerSize + 28;
                 for (const child of iterateBoxes(buf, childStart, pos + size)) {
-                  if (child.type === 'esds') return { ...child, headerSize: 8, boxStart: child.contentStart - 8 };
+                  if (child.type === 'esds') return child;
                 }
               }
               pos += size;
@@ -482,11 +483,10 @@ export function findAudioSpecificConfig(initSegment) {
   // Keep compatibility for callers passing a standalone top-level esds box.
   const esdsBox = moov ? findMp4aEsds(initSegment, moov) : topBoxes.find((box) => box.type === 'esds');
   if (!esdsBox) return null;
-  const boxStart = esdsBox.boxStart ?? (esdsBox.contentStart - 8);
   const boxEnd = esdsBox.contentEnd;
-  const pos = boxStart + 4;
-  const end = Math.min(boxEnd, pos + 512);
-  const es = readDescriptor(initSegment, pos + 8, end);
+  const descriptorStart = esdsBox.contentStart + 4; // skip esds FullBox version/flags
+  const end = Math.min(boxEnd, descriptorStart + 512);
+  const es = readDescriptor(initSegment, descriptorStart, end);
   if (!es || es.tag !== 0x03) return null;
   let childStart = es.payloadStart;
   if (childStart + 3 > es.end) return null;
