@@ -431,22 +431,52 @@ export function findTagInBuf(buf, start, end, tag) {
  * 提取 esds 内嵌的 AudioSpecificConfig（ASC）。
  * 只从 ES_Descriptor / DecoderConfigDescriptor 的嵌套结构读取 DSI。
  */
+function findMp4aEsds(buf, moov) {
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  for (const trak of iterateBoxes(buf, moov.contentStart, moov.contentEnd)) {
+    if (trak.type !== 'trak') continue;
+    for (const mdia of iterateBoxes(buf, trak.contentStart, trak.contentEnd)) {
+      if (mdia.type !== 'mdia') continue;
+      for (const minf of iterateBoxes(buf, mdia.contentStart, mdia.contentEnd)) {
+        if (minf.type !== 'minf') continue;
+        for (const stbl of iterateBoxes(buf, minf.contentStart, minf.contentEnd)) {
+          if (stbl.type !== 'stbl') continue;
+          for (const stsd of iterateBoxes(buf, stbl.contentStart, stbl.contentEnd)) {
+            if (stsd.type !== 'stsd' || stsd.contentStart + 8 > stsd.contentEnd) continue;
+            const entryCount = view.getUint32(stsd.contentStart + 4);
+            let pos = stsd.contentStart + 8;
+            for (let i = 0; i < entryCount && pos + 8 <= stsd.contentEnd; i++) {
+              const size = view.getUint32(pos);
+              const type = boxType(buf, pos);
+              const headerSize = size === 1 ? 16 : 8;
+              if (size < headerSize || pos + size > stsd.contentEnd) break;
+              if (type === 'mp4a') {
+                // AudioSampleEntry has a fixed 28-byte body prefix before child boxes.
+                const childStart = pos + headerSize + 28;
+                for (const child of iterateBoxes(buf, childStart, pos + size)) {
+                  if (child.type === 'esds') return { ...child, headerSize: 8, boxStart: child.contentStart - 8 };
+                }
+              }
+              pos += size;
+            }
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
 export function findAudioSpecificConfig(initSegment) {
   const topBoxes = [...iterateBoxes(initSegment)];
   const moov = topBoxes.find((box) => box.type === 'moov');
-  // Production init data is searched only inside moov; retain standalone esds support
-  // for callers that pass the descriptor box itself.
-  const searchStart = moov?.contentStart ?? 0;
-  const searchEnd = moov?.contentEnd ?? initSegment.length;
-  const standaloneEsds = !moov && topBoxes.some((box) => box.type === 'esds');
-  if (!moov && !standaloneEsds) return null;
-  const pos = findTagInBuf(initSegment, searchStart, searchEnd, 'esds');
-  if (pos < searchStart + 4) return null;
-  const boxStart = pos - 4;
-  const view = new DataView(initSegment.buffer, initSegment.byteOffset, initSegment.byteLength);
-  const boxSize = view.getUint32(boxStart);
-  if (boxSize < 8 || boxStart + boxSize > initSegment.length) return null;
-  const end = Math.min(boxStart + boxSize, pos + 512);
+  // In a real init segment, only accept esds as a child of an mp4a sample entry.
+  // Keep compatibility for callers passing a standalone top-level esds box.
+  const esdsBox = moov ? findMp4aEsds(initSegment, moov) : topBoxes.find((box) => box.type === 'esds');
+  if (!esdsBox) return null;
+  const boxStart = esdsBox.boxStart ?? (esdsBox.contentStart - 8);
+  const boxEnd = esdsBox.contentEnd;
+  const pos = boxStart + 4;
+  const end = Math.min(boxEnd, pos + 512);
   const es = readDescriptor(initSegment, pos + 8, end);
   if (!es || es.tag !== 0x03) return null;
   let childStart = es.payloadStart;

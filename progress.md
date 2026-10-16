@@ -1926,3 +1926,26 @@
 
 ### 风险
 - moov 内仍使用 bounded fourcc 搜索而非完整 stsd/sample-entry 递归解析；当前范围足以消除跨顶层伪匹配，嵌套结构验证可继续加固。
+
+## Attempt 87：ASC 只能来自 stsd/mp4a/esds 真实 box 层级
+
+### 发现
+- 复现条件：视频 `avcC` 配置 payload 内嵌一串字节，内容伪装成完整 `esds` box 与 AAC DSI；虽然位于 moov 内，bounded fourcc 搜索仍会命中并返回 ASC。
+- 根因：上一轮仅把 esds 搜索范围收窄到 moov，仍未验证标签处在真实 box 边界，也未确认其父 sample entry 是 mp4a。
+- 用户影响：视频配置字节可伪造出音频 ASC，导致错误音频轨识别或 decoder configure 失败。
+
+### 修改
+- cmaf/src/isobmff.js：加入结构遍历 moov/trak/mdia/minf/stbl/stsd → mp4a child `esds`；解码描述仅从真实 mp4a sample entry 子盒提取。保留独立顶层 esds helper 输入兼容。
+- cmaf/__tests__/cmaf-box.test.js：新增 avcC payload 内完整伪造 esds 结构必须忽略；顶层伪 esds、合法 AAC init、合法 standalone esds 均覆盖。
+
+### 验证
+- CMAF box / init / parse / extras 定向测试：61/61 通过。
+- CMAF box / init / parse / extras 定向测试：61/61 通过。
+- 全量 npm run check：fixtures 通过；3231/3231 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 只解析 stsd 标准 AudioSampleEntry 固定 28-byte 前缀与 mp4a 子盒；受外部扩展的非标准音频 sample entry 保持不识别，而非退回内容字节猜测。

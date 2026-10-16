@@ -84,6 +84,21 @@ test('findAudioSpecificConfig：不从 moov 外的顶层伪造 esds 提取 ASC',
   assert.equal(findAudioSpecificConfig(input), null, 'top-level fake esds must not become audio config');
 });
 
+test('findAudioSpecificConfig：不从视频 avcC 嵌入的伪造 esds 提取 ASC', () => {
+  const embeddedFakeEsds = new Uint8Array([
+    0, 0, 0, 39, 0x65, 0x73, 0x64, 0x73, 0, 0, 0, 0,
+    0x03, 25, 0x05, 0x02, 0, 0x04, 17,
+    0x40, 0x15, 0, 0, 0, 0x05, 0x02, 0xaa, 0xbb, 0, 0, 0, 0,
+    0x05, 0x02, 0x12, 0x10, 0x06, 1, 2,
+  ]);
+  const videoInit = fmp4.buildInit([{
+    id: 1, type: 'video', codec: 'avc1.64001f',
+    description: { tag: 'avcC', bytes: embeddedFakeEsds },
+    width: 64, height: 36, timescale: 90000,
+  }]);
+  assert.equal(findAudioSpecificConfig(videoInit), null, 'video sample entry payload is not an audio config box');
+});
+
 test('findAudioSpecificConfig：不跨 esds 后续盒误识别 ASC', () => {
   const esds = new Uint8Array([0, 0, 0, 10, 0x65, 0x73, 0x64, 0x73, 0x06, 0x01]);
   const free = new Uint8Array([0, 0, 0, 12, 0x66, 0x72, 0x65, 0x65, 0x05, 0x02, 0x12, 0x10]);
