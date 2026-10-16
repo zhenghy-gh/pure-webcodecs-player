@@ -87,7 +87,22 @@ function traf(trackId, baseTime, trunBox, defs = {}) {
 function moofStream(trafBoxes, { mdatBytes = 64 } = {}) {
   const moof = box('moof', ...trafBoxes);
   const mdat = box('mdat', new Uint8Array(mdatBytes).fill(0xab));
-  return { stream: (() => { const out = new Uint8Array(styp().length + moof.length + mdat.length); out.set(styp(), 0); out.set(moof, styp().length); out.set(mdat, styp().length + moof.length); return out; })(), moofLen: moof.length };
+  const prefix = styp();
+  const stream = new Uint8Array(prefix.length + moof.length + mdat.length);
+  stream.set(prefix, 0);
+  stream.set(moof, prefix.length);
+  stream.set(mdat, prefix.length + moof.length);
+  const dv = new DataView(stream.buffer, stream.byteOffset, stream.byteLength);
+  const moofBox = Array.from(iterateBoxes(stream)).find((b) => b.type === 'moof');
+  for (const trafBox of iterateBoxes(stream, moofBox.contentStart, moofBox.contentEnd)) {
+    if (trafBox.type !== 'traf') continue;
+    for (const child of iterateBoxes(stream, trafBox.contentStart, trafBox.contentEnd)) {
+      if (child.type === 'trun' && parseTrun(stream, child.contentStart, child.contentEnd).hasDataOffset) {
+        dv.setInt32(child.contentStart + 8, moof.length + 8);
+      }
+    }
+  }
+  return { stream, moofLen: moof.length };
 }
 
 /* ---------------- 缺陷 B：first-sample-flags 解析对齐 ---------------- */

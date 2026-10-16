@@ -129,6 +129,30 @@ test('连续片段：mfhd seq 严格递增且 moof 长度稳定', () => {
 
 /* ---------------- 异常输入 ---------------- */
 
+test('fragment：trun data_offset 指向 mdat 外但仍在文件内时拒绝', () => {
+  const frag = fmp4.buildFragment({ trackId: 1, samples: makeFrames(0, 1) });
+  const extended = new Uint8Array(frag.length + 40);
+  extended.set(frag);
+  const dv = new DataView(extended.buffer);
+  dv.setUint32(frag.length, 40);
+  extended.set([0x66, 0x72, 0x65, 0x65], frag.length + 4); // free box after mdat
+
+  let moof = null;
+  for (const box of iterateBoxes(extended)) if (box.type === 'moof') moof = box;
+  assert.ok(moof);
+  let trunBox = null;
+  for (const trafBox of iterateBoxes(extended, moof.contentStart, moof.contentEnd)) {
+    if (trafBox.type !== 'traf') continue;
+    for (const child of iterateBoxes(extended, trafBox.contentStart, trafBox.contentEnd)) {
+      if (child.type === 'trun') trunBox = child;
+    }
+  }
+  assert.ok(trunBox);
+  // trun FullBox (4) + sample_count (4), then signed data_offset.
+  dv.setInt32(trunBox.contentStart + 8, frag.length - (moof.contentStart - 8));
+  assert.throws(() => splitChunks(extended), (err) => err.code === 'NOT_SUPPORTED');
+});
+
 test('fragment：moof 后无 mdat 抛 NOT_SUPPORTED（无法定位样本数据）', () => {
   const frag = fmp4.buildFragment({ trackId: 1, samples: makeFrames(0, 1) });
   const moof = findBox(frag, 'moof');

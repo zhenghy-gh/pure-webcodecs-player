@@ -128,9 +128,11 @@ function materializeSamples(buf, moofBox, traf) {
   void trackId;
   // 找紧随 moof 的 mdat
   let mdatDataStart = -1;
+  let mdatDataEnd = -1;
   for (const b of iterateBoxes(buf, moofBox.contentEnd)) {
     if (b.type === 'mdat') {
       mdatDataStart = b.contentStart;
+      mdatDataEnd = b.contentEnd;
       break;
     }
   }
@@ -157,7 +159,8 @@ function materializeSamples(buf, moofBox, traf) {
   }
   let dtsOffset = baseTime; // 所属 timescale 的 ticks
   for (const row of rows) {
-    if (!Number.isSafeInteger(row.size) || row.size < 0 || cursor + row.size > buf.byteLength) {
+    if (!Number.isSafeInteger(row.size) || row.size < 0 ||
+        cursor < mdatDataStart || cursor + row.size > mdatDataEnd) {
       throw notSupported(`样本数据超出 mdat: start=${cursor}, size=${row.size}`);
     }
     out.push({

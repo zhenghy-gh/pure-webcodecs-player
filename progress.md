@@ -1540,3 +1540,27 @@
 
 ### 风险
 - close 请求一旦发出，新 chunk 会立即被丢弃；这是保证已开始的 decoder flush 不被新输入穿插的确定语义。
+
+## Attempt 70：CMAF 样本范围必须完全位于 mdat payload 内
+
+### 发现
+- 复现条件：构造一个 trun data_offset 指向 mdat 之后的 free box，同时文件总缓冲仍有足够字节容纳声明样本。
+- 根因：materializeSamples() 仅验证 dataStart + sample.size 不超过整个 Uint8Array 长度，没有限制到所选 mdat 的 payload end，也没有验证样本起点不早于 payload start。
+- 用户影响：畸形 fragment 可将 box header/其他 box 内容误当压缩样本喂给 decoder，造成解码错误、垃圾输出或错误解析接受。
+
+### 修改
+- cmaf/src/chunk-parser.js：同时捕获 mdat payload start/end，并要求每个样本范围完整包含在 mdat payload 内；保留针对整个 buffer 的安全整数/越界拒绝。
+- cmaf/__tests__/cmaf-fragment.test.js：新增 mdat 后附 free box 的畸形 fragment，令 trun 指向 mdat 外但仍在 buffer 内，断言以 NOT_SUPPORTED 拒绝。
+- 更新 cmaf/__tests__/cmaf-moof-flags.test.js 与 cmaf/__tests__/cmaf-defect-regression.test.js 的合成片段偏移，使合法测试数据实际指向 mdat payload。
+
+### 验证
+- 定向 fragment/moof flags/defect-regression：28/28 通过。
+- 全 CMAF 测试：123/123 通过。
+- 全量 npm run check：fixtures 通过；3209/3209 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19，包含真实解码、播放、seek、stall recovery 和 destroy；截图已恢复。
+
+### 提交和推送
+- 验证完成后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 每个 traf 当前仍按其 trun offset 连续解释样本，尚未验证样本区间与同一 chunk 其他 traf 的重叠关系。

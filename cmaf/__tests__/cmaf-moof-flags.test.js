@@ -109,7 +109,20 @@ function styp() {
 function buildMoofStream(trafBoxes, { withStyp = true, mdatBytes = 64 } = {}) {
   const moof = box('moof', ...trafBoxes);
   const mdat = box('mdat', new Uint8Array(mdatBytes).fill(0xab));
-  return withStyp ? concatAll([styp(), moof, mdat]) : concatAll([moof, mdat]);
+  const stream = withStyp ? concatAll([styp(), moof, mdat]) : concatAll([moof, mdat]);
+  // Keep generated trun data offsets inside the associated mdat payload.
+  const dv = new DataView(stream.buffer, stream.byteOffset, stream.byteLength);
+  const moofBox = Array.from(iterateBoxes(stream)).find((b) => b.type === 'moof');
+  const dataOffset = moof.length + 8;
+  for (const trafBox of iterateBoxes(stream, moofBox.contentStart, moofBox.contentEnd)) {
+    if (trafBox.type !== 'traf') continue;
+    for (const child of iterateBoxes(stream, trafBox.contentStart, trafBox.contentEnd)) {
+      if (child.type === 'trun' && parseTrun(stream, child.contentStart, child.contentEnd).hasDataOffset) {
+        dv.setInt32(child.contentStart + 8, dataOffset);
+      }
+    }
+  }
+  return stream;
 }
 function traf(trackId, baseTime, tfdtVer, trunBox, defaults = {}) {
   return box('traf', tfhd(trackId, defaults), tfdt(tfdtVer, baseTime), trunBox);
@@ -157,7 +170,7 @@ test('parseMoof：tfdt v0 以 u32 读取 baseMediaDecodeTime（可超过 2^31）
     if (b.type === 'moof') {
       const trafs = parseMoof(stream, b.contentStart, b.contentEnd);
       assert.equal(trafs[0].baseTime, 0xf0000001);
-      assert.equal(trafs[0].trun.dataOffset, 8);
+      assert.equal(trafs[0].trun.dataOffset, b.size + 8);
     }
   }
 });
