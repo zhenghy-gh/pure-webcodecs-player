@@ -124,8 +124,8 @@ export function splitChunks(buf) {
 
 /** 由 trun 行 + mdat 数据区计算每个样本的具体位置与属性 */
 function materializeSamples(buf, moofBox, traf) {
-  const { trun, baseTime, defaults, trackId } = traf;
-  void trackId;
+  const { baseTime, defaults } = traf;
+  const truns = traf.truns?.length ? traf.truns : traf.trun ? [traf.trun] : [];
   // 找紧随 moof 的 mdat
   let mdatDataStart = -1;
   let mdatDataEnd = -1;
@@ -140,40 +140,40 @@ function materializeSamples(buf, moofBox, traf) {
     throw notSupported('moof 之后未找到 mdat，无法定位样本数据');
   }
 
-  const rows = trun.rows.map((r) => ({
-    duration: r.duration || defaults.defaultSampleDuration || 0,
-    size: r.size || defaults.defaultSampleSize || 0,
-    flags: r.flags || defaults.defaultSampleFlags || 0,
-    cts: r.cts || 0,
-  }));
-
   const out = [];
-  // ISO 14496-12 §8.8.7：data_offset 以 moof 起点为基准（本项目各 muxer 均按
-  // moof.length+8 写入，即 default-base-is-moof 约定）。此前错加在 mdat 载荷
-  // 起点，dataStart 普遍偏大 moof.size+8 字节，样本数据全部读偏。
-  // trun 无 data-offset 标志时退回 mdat 载荷起点。
+  // ISO 14496-12 §8.8.7：data_offset 以 moof 起点为基准；后续 trun 未显式
+  // 指定 offset 时，样本数据紧随上一 run。
   const moofStart = moofBox.contentStart - 8;
-  let cursor = trun.hasDataOffset ? moofStart + trun.dataOffset : mdatDataStart;
-  if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > buf.byteLength) {
-    throw notSupported(`样本数据起点越界: ${cursor}`);
-  }
-  let dtsOffset = baseTime; // 所属 timescale 的 ticks
-  for (const row of rows) {
-    if (!Number.isSafeInteger(row.size) || row.size < 0 ||
-        cursor < mdatDataStart || cursor + row.size > mdatDataEnd) {
-      throw notSupported(`样本数据超出 mdat: start=${cursor}, size=${row.size}`);
+  let cursor = mdatDataStart;
+  let dtsOffset = baseTime; // 同一 traf 各 run 的 decode 时间连续累计
+  for (const trun of truns) {
+    if (trun.hasDataOffset) cursor = moofStart + trun.dataOffset;
+    if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > buf.byteLength) {
+      throw notSupported(`样本数据起点越界: ${cursor}`);
     }
-    out.push({
-      durationUs: 0, // 由上层按轨 timescale 换算（契约：公共边界 µs）
-      durationTicks: row.duration,
-      size: row.size,
-      keyframe: isKeyframeFlag(row.flags),
-      cts: row.cts,
-      dtsOffset,
-      dataStart: cursor,
-    });
-    cursor += row.size;
-    dtsOffset += row.duration;
+    for (const r of trun.rows) {
+      const row = {
+        duration: r.duration || defaults.defaultSampleDuration || 0,
+        size: r.size || defaults.defaultSampleSize || 0,
+        flags: r.flags || defaults.defaultSampleFlags || 0,
+        cts: r.cts || 0,
+      };
+      if (!Number.isSafeInteger(row.size) || row.size < 0 ||
+          cursor < mdatDataStart || cursor + row.size > mdatDataEnd) {
+        throw notSupported(`样本数据超出 mdat: start=${cursor}, size=${row.size}`);
+      }
+      out.push({
+        durationUs: 0,
+        durationTicks: row.duration,
+        size: row.size,
+        keyframe: isKeyframeFlag(row.flags),
+        cts: row.cts,
+        dtsOffset,
+        dataStart: cursor,
+      });
+      cursor += row.size;
+      dtsOffset += row.duration;
+    }
   }
   return out;
 }

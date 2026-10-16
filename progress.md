@@ -1586,3 +1586,26 @@
 
 ### 风险
 - 当前播放器仍按 fragment 输入顺序接收样本；此修复确保每个 EncodedChunk 的展示时间戳正确，不改变上游的 sample decode order。
+
+## Attempt 72：保留同一 traf 中的多个 trun 样本 run
+
+### 发现
+- 复现条件：一个合法 traf 包含多个 trun，例如编码器将同一轨道的一段样本拆为多个连续 run。
+- 根因：parseMoof() 遍历 traf 子 box 时反复覆盖 info.trun，只留下最后一条；前序 run 样本静默丢失。即使保留最后一条，chunk-parser 也只物化单个 trun。
+- 用户影响：fragment 的一部分样本不会送入 decoder，导致视频/音频片段缺帧或断续；单 trun 的 muxer fixture 未覆盖该常见合法结构。
+
+### 修改
+- cmaf/src/isobmff.js：在每个 traf 中累积 truns 数组，保留 trun 兼容 alias。
+- cmaf/src/chunk-parser.js：按 run 顺序物化全部样本；同一轨 DTS 在 run 间连续累计，后一 run 无 data_offset 时沿用前一 run 的数据末端；显式 offset 仍以 moof 为基准，所有范围继续受 mdat payload 边界约束。
+- cmaf/__tests__/cmaf-moof-flags.test.js：新增两 run 单 traf regression，断言两条 run 的样本、DTS 连续性及数据偏移。
+
+### 验证
+- CMAF fragment / moof flags / parse / roundtrip 定向测试：37/37 通过。
+- 全量 npm run check：fixtures 通过；3211/3211 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19，真实 decode/play/seek/stall recovery/destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 验证完成后独立提交并推送 maintenance/round-6。
+
+### 风险
+- 各 run 之间显式 data_offset 被按声明尊重；malformed overlap 仍未做跨 run / 跨 traf 区间重叠检测。

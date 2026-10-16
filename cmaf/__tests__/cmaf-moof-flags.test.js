@@ -239,6 +239,22 @@ test('splitChunks：trun 显式 flags 覆盖 tfhd 默认 flags', () => {
 
 /* ---------------- 多 traf 单 moof ---------------- */
 
+test('splitChunks：同一 traf 的多个 trun 合并且沿用连续 DTS 与数据偏移', () => {
+  const multiRunTraf = box('traf',
+    tfhd(7, { duration: 3003, size: 16, flags: 0x02000000 }),
+    tfdt(1, 9009),
+    trun(0, { dataOffset: 8, rows: [{ duration: 3003, size: 16 }] }),
+    trun(0, { rows: [{ duration: 3003, size: 17 }] }),
+  );
+  const stream = buildMoofStream([multiRunTraf]);
+  const { chunks } = splitChunks(stream);
+  const samples = chunks[0].tracks[0].samples;
+  assert.equal(samples.length, 2, '两个 trun 的样本都必须输出');
+  assert.deepEqual(samples.map((sample) => sample.size), [16, 17]);
+  assert.deepEqual(samples.map((sample) => sample.dtsOffset), [9009, 12012]);
+  assert.equal(samples[1].dataStart, samples[0].dataStart + samples[0].size, '无新 data_offset 的 run 紧跟前一个 run');
+});
+
 test('splitChunks：单 moof 双 traf → 单 chunk 内两条轨，各自默认与样本独立', () => {
   const stream = buildMoofStream([
     // 视频 traf：trun 全显式
