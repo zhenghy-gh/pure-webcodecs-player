@@ -1,5 +1,27 @@
 # 维护进度
 
+## Attempt 103：拒绝未映射的 fragmented MP4 编辑列表
+
+### 问题与修复
+- fragmented MP4 会在轨道准备和样本输出时跳过 elst，却不提示调用方，导致 duration、可见样本、PTS/DTS 仍保持原始 media timeline；MSE/WebCodecs 因而使用错误时间。
+- mp4/src/demuxer.js：当 MP4 带 mvex 且任一 trak 声明非空 elst 时，open 显式抛出 NOT_SUPPORTED。当前 Track / 分片缓存没有编辑时间线映射能力；拒绝比静默按原时间线输出更安全。MOV 的 metadata-only 编辑语义由现有 hook 保持不变。
+
+### 回归测试
+- mp4/__tests__/fixtures.js：fragmented fixture 支持可选 edts/elst。
+- mp4/__tests__/demuxer-gaps.test.js：构造 leading-empty + media-edit fMP4，验证 open 明确拒绝而非误报原始样本。
+
+### 验证
+- MP4 + MOV + CMAF 定向套件：492/492 通过。
+- `npm run check` fixtures 通过，3264/3264 测试通过，548 个 JS 文件 lint 通过（exit 0）。
+- Chromium MSE 实浏览器验收：19/19 通过（解码、播放、seek、stall 恢复、destroy）。
+
+### 提交和推送
+- 验证后独立提交并推送 `maintenance/round-6`。
+
+### 风险
+- fragmented MP4 编辑列表目前有意不支持；文件现会明确失败，后续若需支持需实现 fragmented 样本裁剪、PTS/DTS 映射、duration 与 seek 一致性。
+
+
 ## Attempt 102：修复 CTS 重排 seek 并校正 elst 回退时长
 
 ### 问题与修复

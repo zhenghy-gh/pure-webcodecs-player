@@ -421,6 +421,18 @@ test('渐进 MP4 elst：拒绝非单位速率并显式回退可变 composition o
   assert.match(info.tracks[0].editListUnsupportedReason, /variable composition offsets/);
 });
 
+test('分片 MP4：暂不支持 elst，拒绝静默丢弃 timeline edits', async () => {
+  const { bytes } = buildFragmentedFixture({
+    edits: [
+      { segmentDuration: 20, mediaTime: -1, mediaRateInteger: 1, mediaRateFraction: 0 },
+      { segmentDuration: 120, mediaTime: 120, mediaRateInteger: 1, mediaRateFraction: 0 },
+    ],
+  });
+  const demuxer = new Mp4Demuxer(new MemoryDataSource(bytes));
+  await assert.rejects(demuxer.open(), (error) =>
+    error.code === 'NOT_SUPPORTED' && /fragmented MP4 edit lists are not supported/.test(error.message));
+});
+
 test('分片迭代：moof 后无 mdat → PARSE_ERROR', async () => {
   const moof8 = box('moof', () => {}); // 空内容 moof（解析前就应拒绝）
   const ftyp = buildFtyp({ majorBrand: 'msfh', compatible: ['msfh'] });

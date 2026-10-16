@@ -123,6 +123,10 @@ export class Mp4Demuxer extends Demuxer {
     const moov = parseMoov(moovBytes);
     this._moov = moov;
     this._fragmented = !!moov.mvex;
+    if (this._fragmented && this._usesProgressiveEditTimeline() &&
+        moov.traks.some((trak) => trak.elst?.entries?.length > 0)) {
+      throw notSupported('fragmented MP4 edit lists are not supported');
+    }
 
     const ftypBox = this._topLevelBoxes.find((b) => b.type === 'ftyp');
     let brands = null;

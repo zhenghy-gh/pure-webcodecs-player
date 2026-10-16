@@ -8,6 +8,7 @@ import {
   buildMoov,
   buildMvhd,
   buildTkhd,
+  buildEdts,
   buildMdhd,
   buildHdlr,
   buildVmhd,
@@ -196,7 +197,7 @@ function makeVideoTrackMeta(trackId, avcC) {
  * 分片 MP4：ftyp(msfh) + moov(stsd-only stbl + mvex/trex) + [moof+mdat]×2。
  * 视频 6 样本，delta=40，关键帧为每片首样本；返回全部字节与逐样本期望。
  */
-export function buildFragmentedFixture() {
+export function buildFragmentedFixture({ edits = null } = {}) {
   const avcC = makeAvcCFixture();
   const trackId = 1;
   const timescale = 1000;
@@ -208,6 +209,7 @@ export function buildFragmentedFixture() {
     w.writeRaw(
       box('trak', (tw) => {
         tw.writeRaw(buildTkhd({ trackId, duration: 0, isVideo: true, width: 320, height: 240 }));
+        if (edits) tw.writeRaw(buildEdts({ entries: edits }));
         tw.writeRaw(
           box('mdia', (mw) => {
             mw.writeRaw(buildMdhd({ timescale, duration: 0 }));
