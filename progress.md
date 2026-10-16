@@ -19,7 +19,7 @@
 - Headless Chromium 对新打开的 fragment fixture 直接执行 demuxer seek(150ms)：返回 120ms，首个样本为 keyframe index 3 / DTS 120ms，无页面异常。
 
 ### 提交和推送
-- 完整测试与 Chromium 验收通过后，正在对当前 `maintenance/round-6` 整理独立提交并推送。
+- Round 63 修复独立提交 `9e7e842` 已推送至 `origin/maintenance/round-6`；本地工作树与远端同步。
 
 ### 风险
 - 首次 seek 的 fragment 扫描成本随目标位置增长；本轮的 fMP4 synthetic regression 使用同 timescale、相邻两个 moof。尚未新增不同 timescale 或独立音视频 fragment 排列的专用夹具。
