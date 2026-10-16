@@ -2039,3 +2039,26 @@
 
 ### 风险
 - 非零 flags 或未知 version 按当前受支持范围返回 null；未知未来规范扩展需显式解析后再支持。
+
+## Attempt 92：要求 ESDS 的 ES_Descriptor 精确覆盖完整 payload
+
+### 发现
+- 复现条件：合法 `ES_Descriptor` 后拼接额外 byte；ESDS box 长度随之扩大，但内部 descriptor 长度仍保持原值。
+- 根因：findAudioSpecificConfig() 成功解析 ES descriptor 及其子树后忽略外层 esds payload 尾随字节，可能接受 framing 不一致的数据。
+- 用户影响：畸形/有歧义的 MPEG-4 descriptor box 仍可能产出 decoderSpecificInfo。
+
+### 修改
+- cmaf/src/isobmff.js：要求 ES_Descriptor 解析结束偏移严格等于 esds box contentEnd；不再容忍未被 descriptor 长度覆盖的尾随数据。
+- cmaf/__tests__/cmaf-box.test.js：保留有效普通/大尺寸 ESDS 测试，新增合法 ASC 后的未声明尾随 byte 必须返回 null。
+
+### 验证
+- CMAF box / init / extras 定向测试：53/53 通过。
+- CMAF box / init / extras 定向测试：53/53 通过。
+- 全量 npm run check：fixtures 通过；3235/3235 tests；lint 548 个 JS 文件通过；完整门禁 exit code 0。
+- 真实 Chromium 1248 + MSE sintel-trailer.mp4 验收 19/19；真实解码、播放/seek、stall recovery 与 destroy 均通过；截图已恢复。
+
+### 提交和推送
+- 完成验证后独立提交并推送 maintenance/round-6。
+
+### 风险
+- ESDS 内容按单个 ES_Descriptor 精确消费；需要支持非标准尾部扩展时应先引入有明确规格定义的解析规则。

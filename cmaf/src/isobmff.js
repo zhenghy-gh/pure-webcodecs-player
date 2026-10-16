@@ -492,7 +492,7 @@ export function findAudioSpecificConfig(initSegment) {
   const descriptorStart = esdsBox.contentStart + 4; // skip validated esds FullBox version/flags
   const end = Math.min(boxEnd, descriptorStart + 512);
   const es = readDescriptor(initSegment, descriptorStart, end);
-  if (!es || es.tag !== 0x03) return null;
+  if (!es || es.tag !== 0x03 || es.end !== boxEnd) return null;
   let childStart = es.payloadStart;
   if (childStart + 3 > es.end) return null;
   const flags = initSegment[childStart + 2];
