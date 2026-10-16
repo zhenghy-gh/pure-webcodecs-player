@@ -16,7 +16,7 @@
 - Chromium WebCodecs：15/15；Chromium MSE：19/19。浏览器验收生成的截图在提交前恢复，不纳入变更。
 
 ### 提交和推送
-- 本轮变更将独立提交并推送到 `maintenance/round-6`，不 amend 前一轮。
+- 已独立提交 `c22fdf2` 并推送到 `maintenance/round-6`；前一轮提交未 amend。
 
 ### 风险
 - 容器若未提供默认标记，仍按既有兼容行为选择第一条匹配轨；运行时显式选择优先于初始默认。
