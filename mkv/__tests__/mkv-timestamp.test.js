@@ -10,7 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { MkvDemuxer, BufferSource, EbmlWriter, ID, encodeId, encodeSize } from '../src/index.js';
-import { makeBlock } from './fixtures/make-fixture.mjs';
+import { makeBlock, makeOpusHead } from './fixtures/make-fixture.mjs';
 
 const U8 = (arr) => Uint8Array.from(arr);
 
@@ -72,6 +72,53 @@ test('时间戳：TimecodeScale 缩放生效（2e6 → µs = ticks/2）', async 
   const s = await d.readSample(1);
   // 10 ticks * (2e6/1000) = 20000µs
   assert.equal(s.timestamp, 20_000);
+});
+
+test('CodecDelay：逐轨从帧时间戳扣除纳秒延迟，Opus 对齐视频时间线', async () => {
+  const delayedOpus = (w) => {
+    vp9Track(w);
+    w.master(ID.TrackEntry, (t) => {
+      t.u(ID.TrackNumber, 2); t.u(ID.TrackType, 2); t.s(ID.CodecID, 'A_OPUS');
+      // OpusHead preSkip=312（与 6.5ms CodecDelay 相符）
+      t.b(ID.CodecPrivate, makeOpusHead({ preSkip: 312 }));
+      t.u(ID.CodecDelay, 6_500_000);
+    });
+  };
+  const videoAtFirstAudio = (relTimecode) => new EbmlWriter().leaf(ID.SimpleBlock,
+    makeBlock({ trackNumber: 1, relTimecode, keyframe: true, frames: [U8([3])] })).done();
+  const audioAt = (relTimecode, frames, lacing = 'none') => new EbmlWriter().leaf(ID.SimpleBlock,
+    makeBlock({ trackNumber: 2, relTimecode, keyframe: true, lacing, frames: frames.map((value) => U8([value])) })).done();
+  const bytes = buildMini({
+    tracksBuild: delayedOpus, timecodeScale: 500_000,
+    clusterChildren: [
+      videoAtFirstAudio(13),
+      audioAt(5, [0]),
+      audioAt(13, [1]),
+      audioAt(53, [2, 3], 'xiph'),
+    ],
+  });
+  const d = new MkvDemuxer(new BufferSource(bytes));
+  await d.open();
+  assert.equal(d.tracks.find((track) => track.id === 2).extensions.codecExtra.preSkip, 312);
+  const earlyAudio = await d.readSample(2);
+  const firstAudio = await d.readSample(2);
+  const secondAudio = await d.readSample(2);
+  const lacedAudio = await d.readSample(2);
+  const video = await d.readSample(1);
+  assert.equal(earlyAudio.timestamp, -4_000, 'negative result is not clamped when delay exceeds block time');
+  assert.equal(earlyAudio.dts, -4_000, 'public DTS remains aligned with corrected PTS');
+  assert.equal(firstAudio.timestamp, 0, '6.5ms block time minus 6.5ms codec delay');
+  assert.equal(secondAudio.timestamp, 20_000, 'CodecDelay applies to each frame timestamp');
+  assert.equal(lacedAudio.timestamp, 20_000, 'both laced frames share the corrected block timestamp');
+  assert.equal(video.timestamp, 6_500, 'audio CodecDelay must not shift another track');
+
+  const windowDemuxer = new MkvDemuxer(new BufferSource(bytes));
+  await windowDemuxer.open();
+  const inWindow = [];
+  for await (const sample of windowDemuxer.samplesInternal({ trackIds: [2], fromUs: 0, stopUs: 20_001 })) {
+    inWindow.push(sample.timestampUs);
+  }
+  assert.deepEqual(inWindow, [0, 20_000, 20_000], 'window filtering uses corrected PTS and retains both laced frames');
 });
 
 // ── SimpleBlock 关键帧位（视频）──────────────────────────

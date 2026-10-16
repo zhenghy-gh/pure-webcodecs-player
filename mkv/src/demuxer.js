@@ -1037,7 +1037,9 @@ export class MkvDemuxer extends Demuxer {
     const track = this.getTrackById(bh.trackNumber);
 
     const tsNsBase = clusterTimeNs + bh.relTimecode;
-    const timestampUs = Math.round((tsNsBase * scale) / 1000);
+    // CodecDelay is in nanoseconds: subtract it from every frame timestamp before converting to µs.
+    const codecDelayNs = track?.codecDelayNs ?? 0;
+    const timestampUs = Math.round((tsNsBase * scale - codecDelayNs) / 1000);
     if (timestampUs < fromUs || timestampUs >= stopUs) return;
 
     let frames;

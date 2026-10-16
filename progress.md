@@ -1,5 +1,26 @@
 # 维护进度
 
+## Attempt 111：按 Matroska CodecDelay 校正每轨音频时间戳
+
+### 问题与修复
+- Matroska `CodecDelay` 是纳秒值，RFC 9559 要求从该轨每个帧时间戳中扣除；原实现只把簇时间码和 Block 相对时间码转成 µs，未校正 Opus 初始化延迟，造成音频晚于实际播放时间。
+- `mkv/src/demuxer.js`：在转换为 µs 前，从按 Block TrackNumber 查得轨道的缩放后时间戳中逐块扣除 `codecDelayNs`，再按校正后的时间戳执行 seek 窗口过滤；不把延迟错误地按 TimecodeScale 再缩放，不全局移动其他轨，不钳制负时间戳。Matroska 无独立 DTS，公开 DTS 仍与校正后的 PTS 对齐。
+
+### 回归测试
+- `mkv/__tests__/mkv-timestamp.test.js`：有效 OpusHead `preSkip=312` 与 6.5ms CodecDelay；在 `TimecodeScale=500,000ns` 下原始 6.5/26.5ms 改为 0/20ms；音频不影响视频、seek 窗口过滤校正后的 PTS、过早 Block 可输出 -4ms 且 DTS 相同。
+- 同一 Xiph-laced Block 的两帧都保留相同的校正后 PTS，不对后续 lace 累加扣除。
+
+### 验证
+- CodecDelay、时间戳与 EBML lacing 定向测试：30/30；全量 `npm run check`：3282/3282 测试通过，549 个 JS 文件 lint 通过。
+- Chromium WebCodecs：15/15；Chromium MSE：19/19。浏览器生成截图已恢复，不纳入提交。
+
+### 提交和推送
+- 本轮变更将独立提交并推送到 `maintenance/round-6`。
+
+### 规范
+- RFC 9559 §5.1.4.1.25 规定 CodecDelay 以 Matroska Ticks（纳秒）表示，必须从每个帧时间戳中扣除；§10.3.5 未定义 lace 首帧之后的帧时间戳，因此维持本 demuxer 对同一 Block 全部 laced frames 使用同一时间戳的既有行为。
+
+
 ## Attempt 110：统一容器默认轨道与实际播放轨道选择
 
 ### 问题与修复
