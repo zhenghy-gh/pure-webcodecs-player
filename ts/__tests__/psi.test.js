@@ -80,6 +80,22 @@ test('PAT/PMT：声明长度或循环边界损坏时拒绝解析', () => {
   );
 });
 
+test('PAT/PMT：声明 section_length 与实际字节数不一致时拒绝', () => {
+  const shortPat = buildPAT([{ number: 1, pid: 0x1000 }]);
+  shortPat[2] -= 1;
+  assert.throws(
+    () => parsePAT(shortPat),
+    (error) => error.code === 'PARSE_ERROR' && /section length mismatch/.test(error.message),
+  );
+
+  const longPmt = buildPMT({ pcrPid: 0x0101, streams: [{ streamType: 0x1b, pid: 0x0101 }] });
+  longPmt[2] += 1;
+  assert.throws(
+    () => parsePMT(longPmt),
+    (error) => error.code === 'PARSE_ERROR' && /section length mismatch/.test(error.message),
+  );
+});
+
 test('PAT/PMT：拒绝不匹配的 table_id', () => {
   const pat = buildPAT([{ number: 1, pid: 0x1000 }]);
   pat[0] = 0x02;
