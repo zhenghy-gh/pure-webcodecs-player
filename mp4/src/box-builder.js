@@ -9,7 +9,7 @@
  */
 import { ByteWriter } from '../../core/src/index.js';
 import { buildEsds } from '../../core/src/esds.js';
-import { notSupported, parseError } from '../../core/src/errors.js';
+import { notSupported } from '../../core/src/errors.js';
 
 // esds 构造已统一收敛到 core（audit-79 D）；此处 re-export 维持 box-builder 既有公共面
 export { buildEsds };
@@ -452,10 +452,13 @@ export function buildMoofMdat({ sequenceNumber, trackId, baseMediaDecodeTime, sa
   moofW.writeU32(0).writeFourCC('moof');
   const bodyStart = moofW.length;
   moofW.writeRaw(buildMfhd(sequenceNumber));
+  let trunDataOffsetAbs = 0;
   moofW.writeRaw(
     box('traf', (tw) => {
       tw.writeRaw(buildTfhd({ trackId }));
       tw.writeRaw(buildTfdt(baseMediaDecodeTime));
+      // 8-byte box header, FullBox header, and sample_count precede data_offset.
+      trunDataOffsetAbs = moofW.length + tw.length + 16;
       tw.writeRaw(buildTrun(samples, true));
     }),
   );
@@ -466,9 +469,7 @@ export function buildMoofMdat({ sequenceNumber, trackId, baseMediaDecodeTime, sa
   // data_offset：样本数据相对 moof 起点的偏移 = moof 长度 + mdat 头 8 字节
   const dataOffset = moof.byteLength + 8;
 
-  // 重写 trun 内的 data_offset：定位 trun 的 sample_count 前 4 字节
-  // （buildTrun 里 sample_count 位于 trun 内容第 4..8 字节处）
-  const trunDataOffsetAbs = findTrunDataOffset(moof);
+  // 重写构造时记录的 trun.data_offset 字段位置。
   const patched = moof.slice();
   new DataView(patched.buffer).setInt32(trunDataOffsetAbs, dataOffset, false);
 
@@ -476,18 +477,4 @@ export function buildMoofMdat({ sequenceNumber, trackId, baseMediaDecodeTime, sa
   out.set(patched, 0);
   out.set(mdat, moof.byteLength);
   return { data: out, dataOffset };
-}
-
-/** 在 moof 中定位 trun 的 data_offset 字段绝对位置 */
-function findTrunDataOffset(moof) {
-  // 扫描 fourcc 'trun'，其后 version+flags(4) + sample_count(4) 即 data_offset
-  for (let i = 0; i + 4 <= moof.byteLength; i++) {
-    if (
-      moof[i] === 0x74 && moof[i + 1] === 0x72 && // 'tr'
-      moof[i + 2] === 0x75 && moof[i + 3] === 0x6e // 'un'
-    ) {
-      return i + 4 + 4 + 4;
-    }
-  }
-  throw parseError('trun not found in moof');
 }

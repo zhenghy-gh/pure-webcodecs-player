@@ -3,12 +3,12 @@
  *  - buildFree 填充尺寸语义
  *  - buildHvcC 直通与 buildStsd hvc1 分支
  *  - buildStsd 未知 sampleEntryType → notSupported
- * （box largesize 分支需 >4GB body、findTrunDataOffset 无 trun 抛错为内部不可达，登记不硬造）
+ * （box largesize 分支需 >4GB body，无法用常规测试夹具安全构造）
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildFree, buildHvcC, buildStsd } from '../src/box-builder.js';
+import { buildFree, buildHvcC, buildStsd, buildMoofMdat } from '../src/box-builder.js';
 
 test('buildFree：size=8 零填充头；size=16 补两个 U32', () => {
   const f8 = buildFree(8);
@@ -59,4 +59,23 @@ test('buildStsd：未知 sampleEntryType → notSupported', () => {
     () => buildStsd({ sampleEntryType: 'vp99', codecPrivate: new Uint8Array(4) }),
     (e) => e.code === 'NOT_SUPPORTED' && /vp99/.test(e.message)
   );
+});
+
+test('buildMoofMdat：sequenceNumber 等于 trun fourcc 仍 patch 正确字段', () => {
+  const payload = Uint8Array.from([0xca, 0xfe]);
+  const result = buildMoofMdat({
+    sequenceNumber: 0x7472756e,
+    trackId: 1,
+    baseMediaDecodeTime: 0,
+    samples: [{ data: payload, duration: 1000, size: payload.length, keyframe: true, pts: 0, dts: 0 }],
+  });
+  const moofSize = new DataView(result.data.buffer).getUint32(0, false);
+  let trunTypeOffset = -1;
+  for (let i = 0; i + 4 <= moofSize; i++) {
+    if (String.fromCharCode(...result.data.subarray(i, i + 4)) === 'trun') trunTypeOffset = i;
+  }
+  assert.notEqual(trunTypeOffset, -1);
+  const view = new DataView(result.data.buffer, result.data.byteOffset, result.data.byteLength);
+  assert.equal(view.getInt32(trunTypeOffset + 12, false), result.dataOffset);
+  assert.deepEqual([...result.data.subarray(result.dataOffset, result.dataOffset + payload.length)], [...payload]);
 });
