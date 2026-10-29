@@ -2,7 +2,7 @@
  * FLV 解复用器（增量式，半包/粘包安全）。
  *
  * 字节流布局：
- *   [9B header: 'FLV' ver flags hdrsize=9][4B PreviousTagSize0]
+ *   [9B fixed header: 'FLV' ver flags DataOffset][optional extension][PreviousTagSize0]
  *   Tag*: [1B type][3B dataSize][3B tsLow][1B tsExt][3B streamId][data][4B PreviousTagSize]
  *
  * 输出事件（时间在输出边界换算为整数微秒，契约 §0.5；FLV 原生毫秒仅内部表示）：
@@ -21,8 +21,9 @@ const TAG_AUDIO = 8;
 const TAG_VIDEO = 9;
 const TAG_SCRIPT = 18;
 
-/** FLV 头 9B + PreviousTagSize0 4B */
-const HEADER_TOTAL = 13;
+/** 固定 FLV 头 9B；PreviousTagSize0 位于 DataOffset 后 */
+const HEADER_SIZE = 9;
+const HEADER_TOTAL = HEADER_SIZE + 4;
 const TAG_HEADER_LEN = 11;
 /** 防御上限：单 Tag 声明长度超过此值视为流损坏 */
 const MAX_TAG_SIZE = 8 * 1024 * 1024;
@@ -95,11 +96,15 @@ export class FlvDemuxer extends MiniEmitter {
         this.buffer = new Uint8Array(0);
         return;
       }
+      const dataOffset = ((this.buffer[5] << 24) | (this.buffer[6] << 16)
+        | (this.buffer[7] << 8) | this.buffer[8]) >>> 0;
+      const headerEnd = Math.max(dataOffset, HEADER_SIZE) + 4;
+      if (this.buffer.length < headerEnd) return;
       this.hasAudio = (this.buffer[4] & 0x04) !== 0;
       this.hasVideo = (this.buffer[4] & 0x01) !== 0;
       this.headerParsed = true;
       this.emit('header', { hasAudio: this.hasAudio, hasVideo: this.hasVideo, version: this.buffer[3] });
-      this.buffer = this.buffer.subarray(HEADER_TOTAL);
+      this.buffer = this.buffer.subarray(headerEnd);
     }
 
     for (;;) {

@@ -39,6 +39,29 @@ test('FLV 头解析：仅视频标志', () => {
   assert.equal(got.header.hasAudio, false);
 });
 
+test('FLV DataOffset 扩展头跨 push 后仍从首个 Tag 解析', () => {
+  const base = buildStream(3);
+  const extension = Uint8Array.from([0x65, 0x78, 0x74, 0x31]);
+  const dataOffset = 9 + extension.length;
+  const extended = new Uint8Array(base.length + extension.length);
+  extended.set(base.subarray(0, 9), 0);
+  new DataView(extended.buffer).setUint32(5, dataOffset, false);
+  extended.set(extension, 9);
+  extended.set(base.subarray(9), dataOffset);
+
+  const { d, got } = collect(3);
+  d.push(extended.subarray(0, 11));
+  assert.equal(got.header, null);
+  d.push(extended.subarray(11, 16));
+  assert.equal(got.header, null, '扩展头和 PreviousTagSize0 尚未完整');
+  d.push(extended.subarray(16));
+  d.flush();
+
+  assert.equal(got.header.hasVideo, true);
+  assert.equal(got.samples.length, 3);
+  assert.equal(got.errors.length, 0);
+});
+
 test('FLV 头拒绝未知版本和非零保留 flag', () => {
   const invalidHeaders = [
     { name: 'unsupported version', bytes: [0x46, 0x4c, 0x56, 2, 0x05, 0, 0, 0, 9, 0, 0, 0, 0] },
