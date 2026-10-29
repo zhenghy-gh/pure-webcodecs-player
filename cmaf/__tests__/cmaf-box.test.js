@@ -134,6 +134,16 @@ test('readBoxHeader：非法尺寸（< 头长）抛 NOT_SUPPORTED', () => {
   assert.throws(() => readBoxHeader(bad, 0), (e) => e.code === 'NOT_SUPPORTED');
 });
 
+test('readBoxHeader：拒绝非整数和非有限偏移', () => {
+  const box = makeBox('free', 8);
+  for (const offset of [Number.NaN, 0.5, -1, Number.POSITIVE_INFINITY]) {
+    assert.throws(
+      () => readBoxHeader(box, offset),
+      (error) => error.code === 'NOT_SUPPORTED',
+    );
+  }
+});
+
 /* ---------------- iterateBoxes / find ---------------- */
 
 test('iterateBoxes：init 缓冲顶层顺序为 ftyp→moov', () => {

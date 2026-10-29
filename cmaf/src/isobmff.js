@@ -26,6 +26,9 @@ export function boxType(buf, off) {
  * @returns {{type:string,size:number,headerSize:number}|null} size 含头；null 表示数据不足
  */
 export function readBoxHeader(buf, off = 0) {
+  if (!Number.isSafeInteger(off) || off < 0) {
+    throw notSupported(`ISO-BMFF box 偏移非法: off=${off}`);
+  }
   if (buf.length < off + 8) return null;
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   let size = dv.getUint32(off);
