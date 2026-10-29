@@ -33,6 +33,7 @@ const TAG_HEADER_SIZE = 11;
 export function parseFlvHeader(bytes) {
   if (!bytes || bytes.byteLength < HEADER_SIZE) return null;
   if (!(bytes[0] === 0x46 && bytes[1] === 0x4c && bytes[2] === 0x56)) return null;
+  if (bytes[3] !== 1 || (bytes[4] & 0xf8) !== 0) return null;
   return {
     version: bytes[3],
     hasAudio: (bytes[4] & 0x04) !== 0,

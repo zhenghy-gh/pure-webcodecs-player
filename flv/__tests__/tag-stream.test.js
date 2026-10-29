@@ -17,6 +17,12 @@ test('parseFlvHeader：字段黄金值与非法输入', () => {
 
   assert.equal(parseFlvHeader(new Uint8Array(8)), null);          // 太短
   assert.equal(parseFlvHeader(new Uint8Array(64).fill(0)), null);  // 魔数不符
+  const unsupportedVersion = file.slice();
+  unsupportedVersion[3] = 2;
+  assert.equal(parseFlvHeader(unsupportedVersion), null, '仅接受 FLV version 1');
+  const reservedFlags = file.slice();
+  reservedFlags[4] |= 0x80;
+  assert.equal(parseFlvHeader(reservedFlags), null, '保留 flag 位必须为零');
   assert.equal(parseFlvHeader(null), null);
 });
 
