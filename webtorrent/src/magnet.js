@@ -18,12 +18,15 @@ import { PlayerError } from '../../core/src/errors.js';
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const B32_LOOKUP = new Map([...BASE32_ALPHABET].map((c, i) => [c, i]));
 
-/** Base32 解码（无填充；小写自动转大写；非法字符抛 PARSE_ERROR） */
+/** Base32 解码（无填充；校验长度及尾位；小写自动转大写） */
 export function base32Decode(str) {
   if (typeof str !== 'string' || str.length === 0) {
     throw new PlayerError('PARSE_ERROR', `Base32 输入为空: ${JSON.stringify(str)}`);
   }
   const clean = str.toUpperCase();
+  if (![0, 2, 4, 5, 7].includes(clean.length % 8)) {
+    throw new PlayerError('PARSE_ERROR', `Base32 长度非法: ${clean.length}`);
+  }
   const out = [];
   let bits = 0;
   let acc = 0;
@@ -38,6 +41,9 @@ export function base32Decode(str) {
       bits -= 8;
       out.push((acc >> bits) & 0xff);
     }
+  }
+  if (bits > 0 && (acc & ((1 << bits) - 1)) !== 0) {
+    throw new PlayerError('PARSE_ERROR', 'Base32 尾部未使用位必须为零');
   }
   return new Uint8Array(out);
 }

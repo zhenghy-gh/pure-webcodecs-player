@@ -41,6 +41,23 @@ test('base32：RFC4648 字母表不含 0/1/8/9；非法字符报 PARSE_ERROR', (
   assert.throws(() => base32Encode('not-bytes'), PlayerError);
 });
 
+test('base32：无填充 partial block 与尾部 pad bits 校验', () => {
+  assert.deepEqual([...base32Decode('MY')], [0x66]);
+  assert.deepEqual([...base32Decode('MZXQ')], [0x66, 0x6f]);
+  assert.deepEqual([...base32Decode('MZXW6')], [0x66, 0x6f, 0x6f]);
+
+  for (const malformed of ['A', 'AAA', 'AAAAAA']) {
+    assert.throws(
+      () => base32Decode(malformed),
+      (error) => error instanceof PlayerError && error.code === 'PARSE_ERROR',
+    );
+  }
+  assert.throws(
+    () => base32Decode('MZ'),
+    (error) => error instanceof PlayerError && error.code === 'PARSE_ERROR',
+  );
+});
+
 test('hexToBase32：非 40 位十六进制拒绝', () => {
   assert.throws(() => hexToBase32('abc'), PlayerError);
   assert.throws(() => hexToBase32('z'.repeat(40)), PlayerError);
