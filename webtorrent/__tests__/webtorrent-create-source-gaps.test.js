@@ -62,6 +62,16 @@ test('createSource：magnet 网络路径 attach 成功 → meta.mode=network 附
   assert.equal(player.calls.destroyed, 0);
 });
 
+test('createSource：磁力链接 scheme 大小写不敏感', async () => {
+  const source = { size: 1, read: async () => new Uint8Array(0), close: () => {} };
+  const file = { name: 'demo.mp4', length: 1 };
+  const player = fakePlayer({ source, torrent: { name: 'demo', files: [file] }, file });
+  const magnet = `MAGNET:?xt=urn:btih:${'cd'.repeat(20)}`;
+  const out = await createSource(magnet, { player });
+  assert.equal(out.meta.infoHash, 'cd'.repeat(20));
+  assert.deepEqual(player.calls.attach, [magnet]);
+});
+
 test('createSource：http(s) url 网络路径不带 magnetInfo；attach 失败时 destroy 兜底', async () => {
   const player = fakePlayer(new Error('attach boom'));
   await assert.rejects(() => createSource('https://gw.example/t.torrent', { player }), /attach boom/);

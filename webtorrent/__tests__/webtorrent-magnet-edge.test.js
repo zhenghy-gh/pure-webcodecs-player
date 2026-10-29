@@ -107,6 +107,12 @@ test('parseMagnet：raw 字段保留原始 URI', () => {
   assert.equal(parseMagnet(uri).raw, uri);
 });
 
+test('parseMagnet：scheme 大小写不敏感但要求 query 分隔符', () => {
+  const uri = `MAGNET:?xt=urn:btih:${HEX}`;
+  assert.equal(parseMagnet(uri).infoHash, HEX);
+  assert.throws(() => parseMagnet(`MAGNET:xt=urn:btih:${HEX}`), PlayerError);
+});
+
 // ── buildMagnet 过滤分支 ─────────────────────────────────
 
 test('buildMagnet：xl 非法（负数/小数/NaN）不写入；0 合法', () => {

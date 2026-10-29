@@ -101,7 +101,7 @@ export function base32ToHex(b32) {
  * }}
  */
 export function parseMagnet(uri) {
-  if (typeof uri !== 'string' || !uri.startsWith('magnet:?')) {
+  if (typeof uri !== 'string' || uri.slice(0, 8).toLowerCase() !== 'magnet:?') {
     throw new PlayerError('PARSE_ERROR', `非 magnet 链接: ${String(uri).slice(0, 40)}`);
   }
   const query = uri.slice('magnet:?'.length);

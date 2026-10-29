@@ -37,7 +37,7 @@ export async function createSource(input, options = {}) {
   }
   if (!isBytes) {
     // 磁力链接先行离线校验（btih 提取/base32↔hex），错误前置于可选依赖加载
-    if (typeof input === 'string' && input.startsWith('magnet:')) {
+    if (typeof input === 'string' && input.slice(0, 7).toLowerCase() === 'magnet:') {
       const { parseMagnet } = await import('./magnet.js');
       var magnetInfo = parseMagnet(input); // 非法则抛 PlayerError('PARSE_ERROR')
     }
