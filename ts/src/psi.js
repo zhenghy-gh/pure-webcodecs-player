@@ -49,6 +49,7 @@ export function parsePAT(section) {
   if ((bodyEnd - 8) % 4 !== 0) throw parseError('PAT program loop truncated');
   const programs = [];
   for (let pos = 8; pos < bodyEnd; pos += 4) {
+    assertReservedBits(section[pos + 2], 0xe0, 'PAT program_map_PID');
     const number = (section[pos] << 8) | section[pos + 1];
     const pid = ((section[pos + 2] & 0x1f) << 8) | section[pos + 3];
     if (number !== 0) programs.push({ number, pid }); // number 0 = NIT，跳过
@@ -80,6 +81,10 @@ function assertSection(section, minLength, name, expectedTableId) {
   return header;
 }
 
+function assertReservedBits(value, mask, field) {
+  if ((value & mask) !== mask) throw parseError(`${field} reserved bits invalid`);
+}
+
 /** PMT 中常见的 stream_type 映射（节选自 ISO 13818-1 / ITU-T H.222） */
 export const STREAM_TYPE_MAP = {
   0x01: 'mpeg1-video',
@@ -101,6 +106,8 @@ export const STREAM_TYPE_MAP = {
 export function parsePMT(section) {
   const header = assertSection(section, 16, 'PMT', 0x02);
   const bodyEnd = 3 + header.sectionLength - 4;
+  assertReservedBits(section[8], 0xe0, 'PMT PCR_PID');
+  assertReservedBits(section[10], 0xf0, 'PMT program_info_length');
   const pcrPid = ((section[8] & 0x1f) << 8) | section[9];
   const programInfoLength = ((section[10] & 0x0f) << 8) | section[11];
   let pos = 12 + programInfoLength;
@@ -109,6 +116,8 @@ export function parsePMT(section) {
   while (pos < bodyEnd) {
     if (pos + 5 > bodyEnd) throw parseError('PMT stream loop truncated');
     const streamType = section[pos];
+    assertReservedBits(section[pos + 1], 0xe0, 'PMT elementary_PID');
+    assertReservedBits(section[pos + 3], 0xf0, 'PMT ES_info_length');
     const pid = ((section[pos + 1] & 0x1f) << 8) | section[pos + 2];
     const esInfoLength = ((section[pos + 3] & 0x0f) << 8) | section[pos + 4];
     if (pos + 5 + esInfoLength > bodyEnd) throw parseError('PMT ES descriptors truncated');

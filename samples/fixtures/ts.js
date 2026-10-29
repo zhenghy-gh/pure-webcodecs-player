@@ -220,9 +220,9 @@ export function makeTS(opts = {}) {
   const pmtLoop = concat(...streams.map(([type, pid]) => concat(
     u8(type),
     u16be(0xe000 | pid),
-    u16be(0xe000), // ES_info_length = 0
+    u16be(0xf000), // ES_info_length = 0
   )));
-  const pmtBody = concat(u16be(0xe000 | videoPid), u16be(0xe000), pmtLoop); // PCR_PID + program_info_length=0
+  const pmtBody = concat(u16be(0xe000 | videoPid), u16be(0xf000), pmtLoop); // PCR_PID + program_info_length=0
   const pmtSection = buildPsiSection(0x02, 1, pmtBody);
   emit(pmtPid, concat(u8(0x00), pmtSection)); // 同样带 pointer_field
 

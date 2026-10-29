@@ -89,6 +89,11 @@ test('默认输出：PAT/PMT CRC 正确且 program 表指向一致', () => {
   const pmtPidField = ((loop[2] << 8) | loop[3]) & 0x1fff;
   assert.equal(programNumber, 1);
   assert.equal(pmtPidField, meta.pids.pmt);
+  assert.equal(loop[2] & 0xe0, 0xe0, 'PAT program_map_PID reserved bits must be one');
+  assert.equal(pmt.sectionBytes[8] & 0xe0, 0xe0, 'PMT PCR_PID reserved bits must be one');
+  assert.equal(pmt.sectionBytes[10] & 0xf0, 0xf0, 'PMT program_info_length reserved bits must be one');
+  assert.equal(pmt.sectionBytes[13] & 0xe0, 0xe0, 'PMT elementary_PID reserved bits must be one');
+  assert.equal(pmt.sectionBytes[15] & 0xf0, 0xf0, 'PMT ES_info_length reserved bits must be one');
 });
 
 test('连续计数器按 PID 独立递增（模 16）', () => {

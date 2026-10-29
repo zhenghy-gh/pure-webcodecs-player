@@ -139,6 +139,30 @@ test('PAT/PMT：拒绝非法 section_syntax_indicator 与保留位', () => {
   assert.throws(() => parsePMT(pmt), (e) => e.code === 'PARSE_ERROR' && /PMT section header flags/.test(e.message));
 });
 
+test('PAT/PMT：拒绝 PID 与长度字段中清零的保留位', () => {
+  const pat = buildPAT([{ number: 1, pid: 0x1000 }]);
+  pat[10] &= 0x1f;
+  assert.throws(
+    () => parsePAT(pat),
+    (error) => error.code === 'PARSE_ERROR' && /PAT program_map_PID reserved bits/.test(error.message),
+  );
+
+  const pmtFields = [
+    { name: 'PCR_PID', offset: 8, mask: 0x1f },
+    { name: 'program_info_length', offset: 10, mask: 0x0f },
+    { name: 'elementary_PID', offset: 13, mask: 0x1f },
+    { name: 'ES_info_length', offset: 15, mask: 0x0f },
+  ];
+  for (const field of pmtFields) {
+    const pmt = buildPMT({ pcrPid: 0x0101, streams: [{ streamType: 0x1b, pid: 0x0101 }] });
+    pmt[field.offset] &= field.mask;
+    assert.throws(
+      () => parsePMT(pmt),
+      (error) => error.code === 'PARSE_ERROR' && error.message.includes(field.name) && /reserved bits/.test(error.message),
+    );
+  }
+});
+
 test('mpegCrc32 与已知向量一致', () => {
   // "123456789" 的 MPEG-2 CRC32 = 0x0376E6E7
   const data = new Uint8Array([0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39]);
