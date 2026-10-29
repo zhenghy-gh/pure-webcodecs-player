@@ -138,6 +138,7 @@ export function parseSidx(buf, contentStart, contentEnd) {
   requireBytes(8);
   const referenceId = dv.getUint32(p); p += 4;
   const timescale = dv.getUint32(p); p += 4;
+  if (timescale === 0) throw notSupported('ISO-BMFF sidx timescale=0 无效');
   let ept;
   let firstOffset;
   if (version === 1) {

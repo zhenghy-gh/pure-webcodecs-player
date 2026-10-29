@@ -62,6 +62,15 @@ test('sidx：version=0 引用表与 SAP 位解析', () => {
   assert.equal(r1.startsWithSAP, false);
 });
 
+test('sidx：拒绝零 timescale', () => {
+  const bytes = buildSidxBytes({ timescale: 0, refs: [] });
+  const head = readBoxHeader(bytes, 0);
+  assert.throws(
+    () => parseSidx(bytes, head.headerSize, head.size),
+    (error) => error.code === 'NOT_SUPPORTED' && /timescale=0/.test(error.message),
+  );
+});
+
 test('sidx：拒绝未知 FullBox 版本', () => {
   const bytes = buildSidxBytes({ refs: [] });
   const head = readBoxHeader(bytes, 0);
