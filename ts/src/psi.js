@@ -12,6 +12,8 @@
 
 import { parseError } from '../../core/src/errors.js';
 
+const MAX_PAT_PMT_SECTION_LENGTH = 1021;
+
 /** MPEG-2 CRC32：多项式 0x04C11DB7，初值/终值全 1，MSB 先行 */
 export function mpegCrc32(bytes, start = 0, end = bytes.length) {
   let crc = 0xffffffff;
@@ -62,6 +64,9 @@ function assertSection(section, minLength, name, expectedTableId) {
     throw parseError(`${name} section truncated`);
   }
   const sectionLength = ((section[1] & 0x0f) << 8) | section[2];
+  if (sectionLength > MAX_PAT_PMT_SECTION_LENGTH) {
+    throw parseError(`${name} section_length ${sectionLength} exceeds maximum ${MAX_PAT_PMT_SECTION_LENGTH}`);
+  }
   const totalLength = 3 + sectionLength;
   if (sectionLength < minLength - 3 || totalLength !== section.length) {
     throw parseError(`${name} section length mismatch`);

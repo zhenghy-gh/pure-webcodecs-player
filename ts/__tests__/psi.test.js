@@ -96,6 +96,29 @@ test('PAT/PMT：声明 section_length 与实际字节数不一致时拒绝', () 
   );
 });
 
+test('PAT/PMT：section_length 受 MPEG-2 1021 字节上限约束', () => {
+  const maxPat = buildPAT(Array.from({ length: 253 }, (_, i) => ({ number: i + 1, pid: 0x100 + i })));
+  assert.equal(((maxPat[1] & 0x0f) << 8) | maxPat[2], 1021);
+  assert.equal(parsePAT(maxPat).programs.length, 253);
+
+  const oversizedPat = buildPAT(Array.from({ length: 254 }, (_, i) => ({ number: i + 1, pid: 0x100 + i })));
+  assert.equal(((oversizedPat[1] & 0x0f) << 8) | oversizedPat[2], 1025);
+  assert.throws(
+    () => parsePAT(oversizedPat),
+    (error) => error.code === 'PARSE_ERROR' && /section_length 1025 exceeds maximum 1021/.test(error.message),
+  );
+
+  const oversizedPmt = buildPMT({
+    pcrPid: 0x0100,
+    streams: Array.from({ length: 202 }, (_, i) => ({ streamType: 0x1b, pid: 0x100 + i })),
+  });
+  assert.equal(((oversizedPmt[1] & 0x0f) << 8) | oversizedPmt[2], 1023);
+  assert.throws(
+    () => parsePMT(oversizedPmt),
+    (error) => error.code === 'PARSE_ERROR' && /section_length 1023 exceeds maximum 1021/.test(error.message),
+  );
+});
+
 test('PAT/PMT：拒绝不匹配的 table_id', () => {
   const pat = buildPAT([{ number: 1, pid: 0x1000 }]);
   pat[0] = 0x02;
