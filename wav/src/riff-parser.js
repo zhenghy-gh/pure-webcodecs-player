@@ -134,7 +134,12 @@ export function parseWavHeader(bytes) {
     );
   }
 
-  const frames = Math.floor(dataChunk.size / Math.max(1, format.blockAlign));
+  const expectedBlockAlign = format.channels * format.bitsPerSample / 8;
+  if (format.blockAlign !== expectedBlockAlign) {
+    throw parseError(`fmt 子块 blockAlign ${format.blockAlign} 与当前音频格式应有值 ${expectedBlockAlign} 不符`);
+  }
+
+  const frames = Math.floor(dataChunk.size / format.blockAlign);
   // byteRate=0（畸形头）→ 时长未知，避免 Infinity（评审建议）
   const durationUs = format.byteRate > 0 && frames > 0
     ? Math.round((dataChunk.size / format.byteRate) * 1e6)

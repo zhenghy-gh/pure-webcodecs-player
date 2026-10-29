@@ -21,11 +21,11 @@ function buildWav(opt = {}) {
   const sampleRate = opt.sampleRate ?? 8000;
   const bits = opt.bitsPerSample ?? (formatTag === WAVE_FORMAT.IEEE_FLOAT ? 32 : 16);
   const bytesPerSample = bits >> 3;
-  const blockAlign = channels * bytesPerSample;
+  const blockAlign = opt.blockAlign ?? channels * bytesPerSample;
   const byteRate = opt.byteRate ?? sampleRate * blockAlign;
   const frames = opt.frames ?? 8;
   const fmtSize = opt.fmtSize ?? (extensible ? 40 : 16);
-  const dataBytes = frames * blockAlign;
+  const dataBytes = frames * channels * bytesPerSample;
 
   const total = 12 + (8 + fmtSize) + (8 + dataBytes);
   const buf = new ArrayBuffer(total);
@@ -169,6 +169,11 @@ describe('blockAlign/byteRate 解析与边界', () => {
     const h = parseWavHeader(buildWav({ channels: ch, sampleRate: sr, bitsPerSample: bits }));
     assert.equal(h.format.blockAlign, ch * (bits >> 3));
     assert.equal(h.format.byteRate, sr * ch * (bits >> 3));
+  });
+
+  test('多声道 PCM blockAlign 与帧大小不符时拒绝', () => {
+    const bytes = buildWav({ channels: 2, bitsPerSample: 16, blockAlign: 2, byteRate: 32000 });
+    assert.throws(() => parseWavHeader(bytes), (e) => e.code === ErrorCode.PARSE_ERROR && /blockAlign/.test(e.message));
   });
 
   test('字节内错值 byteRate 被原样保留（解析器不重算）', () => {
