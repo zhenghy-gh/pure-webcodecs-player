@@ -62,6 +62,29 @@ test('FLV DataOffset 扩展头跨 push 后仍从首个 Tag 解析', () => {
   assert.equal(got.errors.length, 0);
 });
 
+test('FLV DataOffset 头扩展上限边界可等待，超限立即拒绝', () => {
+  const makeHeader = (dataOffset) => {
+    const header = Uint8Array.from([0x46, 0x4c, 0x56, 1, 0x05, 0, 0, 0, 9, 0, 0, 0, 0]);
+    new DataView(header.buffer).setUint32(5, dataOffset, false);
+    return header;
+  };
+
+  const { d: boundaryDemuxer, got: boundary } = collect();
+  boundaryDemuxer.push(makeHeader(9 + 8 * 1024 * 1024));
+  assert.equal(boundary.errors.length, 0);
+  assert.equal(boundaryDemuxer.headerParsed, false);
+  assert.equal(boundaryDemuxer.buffer.length, 13);
+
+  const { d, got } = collect();
+  d.push(makeHeader(9 + 8 * 1024 * 1024 + 1));
+
+  assert.equal(got.header, null);
+  assert.equal(got.errors.length, 1);
+  assert.equal(got.errors[0].code, 'PARSE_ERROR');
+  assert.equal(d.headerParsed, false);
+  assert.equal(d.buffer.length, 0);
+});
+
 test('FLV 头拒绝未知版本和非零保留 flag', () => {
   const invalidHeaders = [
     { name: 'unsupported version', bytes: [0x46, 0x4c, 0x56, 2, 0x05, 0, 0, 0, 9, 0, 0, 0, 0] },

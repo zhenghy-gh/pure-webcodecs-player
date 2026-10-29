@@ -27,6 +27,7 @@ const HEADER_TOTAL = HEADER_SIZE + 4;
 const TAG_HEADER_LEN = 11;
 /** 防御上限：单 Tag 声明长度超过此值视为流损坏 */
 const MAX_TAG_SIZE = 8 * 1024 * 1024;
+const MAX_HEADER_EXTENSION_SIZE = MAX_TAG_SIZE;
 
 export class FlvDemuxer extends MiniEmitter {
   constructor(options = {}) {
@@ -98,7 +99,13 @@ export class FlvDemuxer extends MiniEmitter {
       }
       const dataOffset = ((this.buffer[5] << 24) | (this.buffer[6] << 16)
         | (this.buffer[7] << 8) | this.buffer[8]) >>> 0;
-      const headerEnd = Math.max(dataOffset, HEADER_SIZE) + 4;
+      const headerStart = Math.max(dataOffset, HEADER_SIZE);
+      if (headerStart - HEADER_SIZE > MAX_HEADER_EXTENSION_SIZE) {
+        this.#emitError(errors.parse(`FLV header extension exceeds ${MAX_HEADER_EXTENSION_SIZE} bytes`));
+        this.buffer = new Uint8Array(0);
+        return;
+      }
+      const headerEnd = headerStart + 4;
       if (this.buffer.length < headerEnd) return;
       this.hasAudio = (this.buffer[4] & 0x04) !== 0;
       this.hasVideo = (this.buffer[4] & 0x01) !== 0;
