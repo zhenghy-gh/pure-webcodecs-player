@@ -145,6 +145,13 @@ export class SegmentLoader {
             { url, status: res.status, fatal }
           );
         }
+        if (!(byteRange && byteRange.length > 0) && res.status === 206) {
+          throw new LoadError(
+            ErrorCode.SOURCE_ERROR,
+            `未请求 BYTERANGE 却收到部分内容（HTTP 206） ${url}`,
+            { url, status: res.status, fatal: true }
+          );
+        }
         if (!res.ok && res.status !== 206) {
           // 4xx 视为不可恢复资源错误，5xx 允许重试
           const fatal = res.status >= 400 && res.status < 500;

@@ -114,6 +114,33 @@ test('BYTERANGE 非整数或终点溢出时在 fetch 前拒绝', async () => {
   assert.equal(attempts, 0);
 });
 
+test('普通分片请求收到未请求的 206 时拒绝且不读取响应体', async () => {
+  let reads = 0;
+  let rangeHeader;
+  const loader = new SegmentLoader({
+    fetchImpl: async (_url, init) => {
+      rangeHeader = init.headers.Range;
+      return {
+        ok: true,
+        status: 206,
+        headers: { get: () => null },
+        arrayBuffer: async () => {
+          reads += 1;
+          return new Uint8Array([0xaa]).buffer;
+        },
+      };
+    },
+    maxRetry: 0,
+  });
+
+  await assert.rejects(
+    loader.load('https://cdn.example.test/seg.ts'),
+    (error) => error instanceof LoadError && error.code === 'SOURCE_ERROR' && error.status === 206 && error.fatal,
+  );
+  assert.equal(rangeHeader, undefined);
+  assert.equal(reads, 0);
+});
+
 test('delay：进入退避前 signal 已中止 → 统一返回 ABORTED LoadError', async () => {
   const ctrl = new AbortController();
   const loader = new SegmentLoader({
