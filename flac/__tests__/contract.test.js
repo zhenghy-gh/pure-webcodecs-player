@@ -75,6 +75,30 @@ test('ended seek 后恢复迭代（wav#2 同款修复回归）', async () => {
   assert.ok(again, 'seek 后应能重新迭代产出首帧');
 });
 
+test('seek invalidates an iterator created before seek but not started yet', async () => {
+  const bytes = await readFix('sample-basic.flac');
+  let reads = 0;
+  const source = {
+    size: bytes.length,
+    async read(offset, length) {
+      reads += 1;
+      return bytes.subarray(offset, offset + length);
+    },
+    async close() {},
+  };
+  const d = new FlacDemuxer(source);
+  await d.open();
+  const stale = d.samples(1)[Symbol.asyncIterator]();
+
+  await d.seek(0);
+  const readsAfterSeek = reads;
+  assert.deepEqual(await stale.next(), { done: true, value: undefined });
+  assert.equal(reads, readsAfterSeek, 'stale iterator must not read a pre-seek frame');
+
+  const fresh = await d.readSample(1);
+  assert.equal(fresh.timestamp, 0, 'new iterator starts at the seek target');
+});
+
 test('destroy 幂等 + 销毁后调用抛 STATE_ERROR', async () => {
   const bytes = await readFix('sample-basic.flac');
   const d = new FlacDemuxer(mem(bytes));
