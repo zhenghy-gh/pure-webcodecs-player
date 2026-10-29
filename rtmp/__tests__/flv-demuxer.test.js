@@ -39,6 +39,21 @@ test('FLV 头解析：仅视频标志', () => {
   assert.equal(got.header.hasAudio, false);
 });
 
+test('FLV 头拒绝未知版本和非零保留 flag', () => {
+  const invalidHeaders = [
+    { name: 'unsupported version', bytes: [0x46, 0x4c, 0x56, 2, 0x05, 0, 0, 0, 9, 0, 0, 0, 0] },
+    { name: 'reserved flag', bytes: [0x46, 0x4c, 0x56, 1, 0x85, 0, 0, 0, 9, 0, 0, 0, 0] },
+  ];
+  for (const item of invalidHeaders) {
+    const { d, got } = collect();
+    d.push(Uint8Array.from(item.bytes));
+    assert.equal(got.header, null, `${item.name} must not emit a header`);
+    assert.equal(got.errors.length, 1);
+    assert.equal(got.errors[0].code, 'PARSE_ERROR');
+    assert.equal(d.headerParsed, false);
+  }
+});
+
 test('onMetaData：AMF0 ECMA 数组字段完整', () => {
   const { d, got } = collect();
   d.push(buildStream());

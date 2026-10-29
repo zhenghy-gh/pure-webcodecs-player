@@ -90,6 +90,11 @@ export class FlvDemuxer extends MiniEmitter {
         this.buffer = new Uint8Array(0);
         return;
       }
+      if (this.buffer[3] !== 1 || (this.buffer[4] & 0xf8) !== 0) {
+        this.#emitError(errors.parse(`FLV 文件头版本或保留标志非法: version=${this.buffer[3]} flags=0x${this.buffer[4].toString(16)}`));
+        this.buffer = new Uint8Array(0);
+        return;
+      }
       this.hasAudio = (this.buffer[4] & 0x04) !== 0;
       this.hasVideo = (this.buffer[4] & 0x01) !== 0;
       this.headerParsed = true;
