@@ -79,6 +79,27 @@ test('元数据块截断：首读 64KB 触发块越界 → 按 cap 全量重读�
   assert.equal(dem.flacMetadata.audioOffset, 4 + (4 + 34) + (4 + 70000), 'audioOffset 落在音频起点');
 });
 
+test('size 未知时大元数据可重读至 2 MiB cap', async () => {
+  const bytes = buildFlac({
+    streamInfo: { totalSamples: 0 },
+    extraBlocks: [{ type: 1, body: new Uint8Array(70000) }],
+  });
+  let reads = 0;
+  const source = {
+    size: null,
+    async read(offset, length) {
+      reads += 1;
+      return bytes.subarray(offset, offset + length);
+    },
+    async close() {},
+  };
+  const dem = new FlacDemuxer(source);
+  const info = await dem.parseInit();
+  assert.equal(info.container, 'flac');
+  assert.equal(dem.flacMetadata.audioOffset, 4 + (4 + 34) + (4 + 70000));
+  assert.equal(reads, 2);
+});
+
 test('getBufferedRanges：durationUs 有效时返回全区间', async () => {
   const bytes = buildFlac({ streamInfo: { totalSamples: 48000 } });
   const dem = new FlacDemuxer(memorySource(bytes));

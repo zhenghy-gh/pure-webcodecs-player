@@ -64,7 +64,7 @@ export class FlacDemuxer extends Demuxer {
     if (this.stateValue !== 'opening') throw stateError(`parseInit 需处于 opening 态，当前 ${this.stateValue}`);
     try {
       // 元数据通常 < 64KB；上限 2MB 兜底异常大封面等
-      const cap = Math.min(this.#source.size ?? 65536, 2 * 1024 * 1024);
+      const cap = Math.min(this.#source.size ?? 2 * 1024 * 1024, 2 * 1024 * 1024);
       let bytes = await this.#source.read(0, Math.min(65536, cap));
       try {
         this.flacMetadata = parseMetadata(bytes);
