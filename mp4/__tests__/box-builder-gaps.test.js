@@ -22,6 +22,19 @@ test('buildFree：size=8 零填充头；size=16 补两个 U32', () => {
   assert.ok([...f16.subarray(8)].every((b) => b === 0), 'free 体全零填充');
 });
 
+test('buildFree：非对齐尺寸精确保留，拒绝非法尺寸', () => {
+  for (const size of [9, 10, 11, 13]) {
+    const free = buildFree(size);
+    const view = new DataView(free.buffer, free.byteOffset, free.byteLength);
+    assert.equal(free.byteLength, size);
+    assert.equal(view.getUint32(0), size);
+    assert.ok([...free.subarray(8)].every((byte) => byte === 0));
+  }
+  for (const size of [7, 8.5, NaN]) {
+    assert.throws(() => buildFree(size), RangeError);
+  }
+});
+
 test('buildHvcC：解码私有配置字节直通', () => {
   const priv = new Uint8Array([0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x23, 0xc0]);
   const b = buildHvcC(priv);

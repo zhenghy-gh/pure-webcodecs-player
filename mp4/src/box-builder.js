@@ -52,8 +52,14 @@ export function buildFtyp({ majorBrand = 'isom', minorVersion = 512, compatible 
 }
 
 export function buildFree(size = 8) {
+  if (!Number.isSafeInteger(size) || size < 8) {
+    throw new RangeError('free box size must be a safe integer >= 8');
+  }
   return box('free', (w) => {
-    for (let i = 8; i < size; i += 4) w.writeU32(0);
+    const paddingBytes = size - 8;
+    const fullWords = Math.floor(paddingBytes / 4);
+    for (let i = 0; i < fullWords; i++) w.writeU32(0);
+    for (let i = fullWords * 4; i < paddingBytes; i++) w.writeU8(0);
   });
 }
 
