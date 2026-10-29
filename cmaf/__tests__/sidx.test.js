@@ -62,6 +62,16 @@ test('sidx：version=0 引用表与 SAP 位解析', () => {
   assert.equal(r1.startsWithSAP, false);
 });
 
+test('sidx：拒绝未知 FullBox 版本', () => {
+  const bytes = buildSidxBytes({ refs: [] });
+  const head = readBoxHeader(bytes, 0);
+  bytes[head.headerSize] = 2;
+  assert.throws(
+    () => parseSidx(bytes, head.headerSize, head.size),
+    (error) => error.code === 'NOT_SUPPORTED' && /sidx.*版本/.test(error.message),
+  );
+});
+
 test('sidx：reference_count 超出当前盒剩余引用表时抛受控错误', () => {
   const bytes = buildSidxBytes({ refs: [{ size: 100, duration: 9000, startsWithSAP: true, sapType: 1 }] });
   const head = readBoxHeader(bytes, 0);
@@ -155,6 +165,16 @@ test('splitChunks：流内 sidx 被捕获为 segmentIndex', () => {
     }
     return out;
   }
+});
+
+test('prft：拒绝未知 FullBox 版本', async () => {
+  const { parsePrft } = await import('../src/isobmff.js');
+  const bytes = new Uint8Array(40);
+  bytes[8] = 2;
+  assert.throws(
+    () => parsePrft(bytes, 8, bytes.length),
+    (error) => error.code === 'NOT_SUPPORTED' && /prft.*版本/.test(error.message),
+  );
 });
 
 test('prft：截断字段与越界内容边界抛受控 NOT_SUPPORTED', async () => {

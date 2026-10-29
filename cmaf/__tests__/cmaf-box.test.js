@@ -219,6 +219,20 @@ test('parseTfdt：v0(u32) 与 v1(64bit) 双版本', () => {
   assert.equal(parseTfdt(v1, 8), 0x1_0000_0001);
 });
 
+test('parseTrun/parseTfdt：拒绝未知 FullBox 版本', () => {
+  const trun = buildTrun(2, 0, 0, []);
+  assert.throws(
+    () => parseTrun(trun, 8, trun.length),
+    (error) => error.code === 'NOT_SUPPORTED' && /trun.*版本/.test(error.message),
+  );
+
+  const tfdt = buildFullBox('tfdt', 2, new Uint8Array(4));
+  assert.throws(
+    () => parseTfdt(tfdt, 8),
+    (error) => error.code === 'NOT_SUPPORTED' && /tfdt.*版本/.test(error.message),
+  );
+});
+
 test('parseMfhd：sequenceNumber 解析', () => {
   const box = buildFullBox('mfhd', 0, (() => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, 77); return b; })());
   assert.equal(parseMfhd(box, 8), 77);

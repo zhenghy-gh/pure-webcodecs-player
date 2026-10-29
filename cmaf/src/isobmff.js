@@ -86,6 +86,7 @@ export function parsePrft(buf, contentStart, contentEnd = buf.byteLength) {
   }
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const { version } = readVersionFlags(buf, contentStart);
+  assertSupportedVersion('prft', version);
   const fieldSize = version === 1 ? 8 : 4;
   const requiredEnd = contentStart + 12 + fieldSize * 2;
   if (requiredEnd > contentEnd) {
@@ -132,6 +133,7 @@ export function parseSidx(buf, contentStart, contentEnd) {
   };
   requireBytes(4, '头部');
   const { version } = readVersionFlags(buf, p);
+  assertSupportedVersion('sidx', version);
   p += 4;
   requireBytes(8);
   const referenceId = dv.getUint32(p); p += 4;
@@ -190,6 +192,12 @@ function readVersionFlags(buf, contentStart) {
   return { version: v, flags };
 }
 
+function assertSupportedVersion(type, version) {
+  if (version !== 0 && version !== 1) {
+    throw notSupported(`ISO-BMFF ${type} 版本不支持: ${version}`);
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* 结构化解析                                                          */
 /* ------------------------------------------------------------------ */
@@ -212,6 +220,7 @@ export function parseTrun(buf, contentStart, contentEnd) {
   requireBytes(8);
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const { version, flags } = readVersionFlags(buf, contentStart);
+  assertSupportedVersion('trun', version);
   p += 4;
   const sampleCount = dv.getUint32(p); p += 4;
   const hasDataOffset = !!(flags & 0x000001);
@@ -274,6 +283,7 @@ export function parseTfdt(buf, contentStart, contentEnd = buf.length) {
   }
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const { version } = readVersionFlags(buf, contentStart);
+  assertSupportedVersion('tfdt', version);
   const valueSize = version === 1 ? 8 : 4;
   if (contentStart + 4 + valueSize > contentEnd) {
     throw notSupported(`ISO-BMFF tfdt 数据截断: end=${contentEnd}`);
