@@ -80,6 +80,16 @@ test('PAT/PMT：声明长度或循环边界损坏时拒绝解析', () => {
   );
 });
 
+test('PAT/PMT：拒绝不匹配的 table_id', () => {
+  const pat = buildPAT([{ number: 1, pid: 0x1000 }]);
+  pat[0] = 0x02;
+  assert.throws(() => parsePAT(pat), (e) => e.code === 'PARSE_ERROR' && /PAT table_id mismatch/.test(e.message));
+
+  const pmt = buildPMT({ pcrPid: 0x0101, streams: [{ streamType: 0x1b, pid: 0x0101 }] });
+  pmt[0] = 0x00;
+  assert.throws(() => parsePMT(pmt), (e) => e.code === 'PARSE_ERROR' && /PMT table_id mismatch/.test(e.message));
+});
+
 test('mpegCrc32 与已知向量一致', () => {
   // "123456789" 的 MPEG-2 CRC32 = 0x0376E6E7
   const data = new Uint8Array([0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39]);

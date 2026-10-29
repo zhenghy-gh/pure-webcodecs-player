@@ -42,7 +42,7 @@ function parseSectionHeader(section) {
  * @returns {{ programs: Array<{ number:number, pid:number }>, versionNumber:number, crcOk:boolean }}
  */
 export function parsePAT(section) {
-  const header = assertSection(section, 12, 'PAT');
+  const header = assertSection(section, 12, 'PAT', 0x00);
   const bodyEnd = 3 + header.sectionLength - 4;
   if ((bodyEnd - 8) % 4 !== 0) throw parseError('PAT program loop truncated');
   const programs = [];
@@ -57,7 +57,7 @@ export function parsePAT(section) {
   return { programs, versionNumber: header.versionNumber, crcOk: expected === actual };
 }
 
-function assertSection(section, minLength, name) {
+function assertSection(section, minLength, name, expectedTableId) {
   if (!(section instanceof Uint8Array) || section.length < minLength) {
     throw parseError(`${name} section truncated`);
   }
@@ -66,7 +66,11 @@ function assertSection(section, minLength, name) {
   if (sectionLength < minLength - 3 || totalLength !== section.length) {
     throw parseError(`${name} section length mismatch`);
   }
-  return parseSectionHeader(section);
+  const header = parseSectionHeader(section);
+  if (header.tableId !== expectedTableId) {
+    throw parseError(`${name} table_id mismatch: expected 0x${expectedTableId.toString(16)}, got 0x${header.tableId.toString(16)}`);
+  }
+  return header;
 }
 
 /** PMT 中常见的 stream_type 映射（节选自 ISO 13818-1 / ITU-T H.222） */
@@ -88,7 +92,7 @@ export const STREAM_TYPE_MAP = {
  * @returns {{ pcrPid:number, streams:Array<{pid:number, streamType:number, codec:string|undefined}>, versionNumber:number, crcOk:boolean }}
  */
 export function parsePMT(section) {
-  const header = assertSection(section, 16, 'PMT');
+  const header = assertSection(section, 16, 'PMT', 0x02);
   const bodyEnd = 3 + header.sectionLength - 4;
   const pcrPid = ((section[8] & 0x1f) << 8) | section[9];
   const programInfoLength = ((section[10] & 0x0f) << 8) | section[11];
