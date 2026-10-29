@@ -22,8 +22,8 @@ export class TorrentAssembler extends Emitter {
    */
   constructor({ size, pieceLength, verifyPiece = null }) {
     super();
-    if (!Number.isInteger(size) || size < 0) throw new PlayerError('PARSE_ERROR', `非法 size: ${size}`);
-    if (!Number.isInteger(pieceLength) || pieceLength <= 0) {
+    if (!Number.isSafeInteger(size) || size < 0) throw new PlayerError('PARSE_ERROR', `非法 size: ${size}`);
+    if (!Number.isSafeInteger(pieceLength) || pieceLength <= 0) {
       throw new PlayerError('PARSE_ERROR', `非法 pieceLength: ${pieceLength}`);
     }
     this.size = size;
@@ -104,7 +104,7 @@ export class TorrentAssembler extends Emitter {
    */
   async read(offset, length) {
     if (this._destroyed) throw new PlayerError('STATE_ERROR', 'assembler 已销毁');
-    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(length) || length < 0) {
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 0) {
       throw new PlayerError('SOURCE_ERROR', `read 参数非法: offset=${offset} length=${length}`);
     }
     if (length === 0) return new Uint8Array(0);
