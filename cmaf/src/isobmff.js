@@ -70,6 +70,14 @@ export function* iterateBoxes(buf, start = 0, end = buf.length) {
   }
 }
 
+function isValidContentRange(buf, start, end) {
+  return Number.isSafeInteger(start)
+    && Number.isSafeInteger(end)
+    && start >= 0
+    && start <= end
+    && end <= buf.byteLength;
+}
+
 /**
  * 解析 prft（Producer Reference Time，ISO 14496-12 §8.16.5）—— LL 方向的
  * 生产者时钟参考。media_time 使用 reference_track_timescale 的 ticks；
@@ -78,7 +86,7 @@ export function* iterateBoxes(buf, start = 0, end = buf.length) {
  *            producerTimeTicks:number, producerTimeNtp:{seconds:number,fraction:number}}}
  */
 export function parsePrft(buf, contentStart, contentEnd = buf.byteLength) {
-  if (contentStart < 0 || contentStart > contentEnd || contentEnd > buf.byteLength) {
+  if (!isValidContentRange(buf, contentStart, contentEnd)) {
     throw notSupported(`ISO-BMFF prft 边界非法: start=${contentStart} end=${contentEnd}`);
   }
   if (contentStart + 4 > contentEnd) {
@@ -137,7 +145,7 @@ export function findBox(buf, start, end, type) {
  *                              durationTicks:number,startsWithSAP:boolean,sapType:number}>}}
  */
 export function parseSidx(buf, contentStart, contentEnd) {
-  if (contentStart < 0 || contentStart > contentEnd || contentEnd > buf.byteLength) {
+  if (!isValidContentRange(buf, contentStart, contentEnd)) {
     throw notSupported(`ISO-BMFF sidx 边界非法: start=${contentStart} end=${contentEnd}`);
   }
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);

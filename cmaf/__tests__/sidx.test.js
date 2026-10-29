@@ -197,6 +197,24 @@ test('prft：截断字段与越界内容边界抛受控 NOT_SUPPORTED', async ()
   assert.throws(() => parsePrft(bytes, 8, 16), error => error.code === 'NOT_SUPPORTED');
 });
 
+test('sidx：拒绝非数值 contentEnd 边界', () => {
+  const bytes = buildSidxBytes({ timescale: 1, refs: [] });
+  const head = readBoxHeader(bytes, 0);
+  assert.throws(
+    () => parseSidx(bytes, head.headerSize, Number.NaN),
+    (error) => error.code === 'NOT_SUPPORTED' && /边界非法/.test(error.message),
+  );
+});
+
+test('prft：拒绝非数值 contentEnd 边界', async () => {
+  const { parsePrft } = await import('../src/isobmff.js');
+  const bytes = new Uint8Array(40);
+  assert.throws(
+    () => parsePrft(bytes, 8, Number.NaN),
+    (error) => error.code === 'NOT_SUPPORTED' && /边界非法/.test(error.message),
+  );
+});
+
 test('prft：生产者时钟参考与 NTP 精度（v0/v1 双版本）', async () => {
   const { parsePrft } = await import('../src/isobmff.js');
   const build = (version, producer, media) => {
