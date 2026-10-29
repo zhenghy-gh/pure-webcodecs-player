@@ -7,6 +7,15 @@
  */
 import { sourceError } from './errors.js';
 
+function validateByteReadArguments(offset, length) {
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw sourceError(`read out of range: offset=${offset}`);
+  }
+  if (length !== undefined && (!Number.isSafeInteger(length) || length < 0)) {
+    throw sourceError(`read length must be a non-negative safe integer: ${length}`);
+  }
+}
+
 /** 内存数据源：测试与"整文件拖入"场景 */
 export class MemoryDataSource {
   /** @param {Uint8Array|ArrayBuffer} bytes */
@@ -20,6 +29,7 @@ export class MemoryDataSource {
   async open() {}
 
   async read(offset, length = undefined) {
+    validateByteReadArguments(offset, length);
     const start = offset;
     const end = length === undefined ? this.bytes.byteLength : offset + length;
     if (start < 0 || end > this.bytes.byteLength || start > end) {
@@ -47,6 +57,7 @@ export class BlobDataSource {
   async open() {}
 
   async read(offset, length = undefined) {
+    validateByteReadArguments(offset, length);
     const end = length === undefined ? this.blob.size : Math.min(this.blob.size, offset + length);
     if (offset < 0 || offset > this.blob.size) {
       throw sourceError(`read out of range: offset=${offset}`);
@@ -112,7 +123,8 @@ export class ChunkBuffer {
 
   /** @returns {Promise<Uint8Array>} 恰好 length 字节 */
   async read(offset, length = undefined) {
-    if (offset < 0 || offset > this._len) {
+    validateByteReadArguments(offset, length);
+    if (offset > this._len) {
       throw sourceError(`ChunkBuffer read out of range: offset=${offset} size=${this._len}`);
     }
     const want = length === undefined ? this._len - offset : length;
