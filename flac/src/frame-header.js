@@ -121,7 +121,7 @@ export function parseFrameHeader(bytes, startOffset) {
 
   if (sampleRateCode === 12) sampleRate = reader.readBits(8) * 1000;        // kHz
   else if (sampleRateCode === 13) sampleRate = reader.readBits(16);         // Hz
-  else if (sampleRateCode === 14) sampleRate = Math.floor(reader.readBits(16) / 10);
+  else if (sampleRateCode === 14) sampleRate = reader.readBits(16) * 10; // 10-Hz units
 
   reader.alignToByte();
   const headerBytes = reader.byteOffset + (reader.bitPos >> 3) - startOffset + 1; // +CRC8

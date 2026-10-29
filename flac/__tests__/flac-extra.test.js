@@ -7,7 +7,7 @@
  *  · SEEKTABLE 占位点、乱序点、残尾字节与 seek 校正落点；
  *  · 帧头 CRC-8 损坏后建索引的重同步语义；
  *  · Rice 分区参数边界（参数 0、5 位参数、转义分区、整除与首分区容量校验）；
- *  · 帧头扩展字段（blockSizeCode=7 的 16 位块大小 + sampleRateCode=13 的 Hz 扩展）。
+ *  · 帧头扩展字段（blockSizeCode=7 的块大小 + sampleRateCode=13/14 的采样率）。
  * fixture 策略与 flac.test.js 一致：内置迷你编码器程序化生成合法流，不落盘。
  */
 import { test, describe } from 'node:test';
@@ -41,7 +41,7 @@ function writeSigned(w, v, bps) {
 
 /**
  * 编码帧头。返回 BitWriter（调用方继续写子帧）。
- * 支持 blockSizeCode 显式覆盖（6/7 扩展）与 sampleRateCode=13 的 16 位 Hz 扩展。
+ * 支持 blockSizeCode 显式覆盖（6/7 扩展）与 sampleRateCode=13/14 的 16 位扩展。
  */
 function encodeFrameHeader(o) {
   const w = new BitWriter();
@@ -64,6 +64,7 @@ function encodeFrameHeader(o) {
   if (blockSizeCode === 6) w.writeBits(o.blockSize - 1, 8);
   if (blockSizeCode === 7) w.writeBits(o.blockSize - 1, 16);
   if (sampleRateCode === 13) w.writeBits(o.extSampleRateHz, 16); // 16 位 Hz 扩展
+  if (sampleRateCode === 14) w.writeBits(o.extSampleRate10HzUnits, 16); // Hz / 10
   return w;
 }
 
@@ -540,6 +541,14 @@ describe('Rice 分区参数边界', () => {
  * ============================================================ */
 
 describe('帧头扩展字段', () => {
+  test('sampleRateCode=14 的 10-Hz 单位还原为 Hz', () => {
+    const frameHeader = finalizeHeader(encodeFrameHeader({
+      blockSizeCode: 6, blockSize: 8, sampleRateCode: 14, extSampleRate10HzUnits: 4800,
+    }));
+    const { header } = parseFrameHeader(frameHeader, 0);
+    assert.equal(header.sampleRate, 48000);
+  });
+
   test('blockSizeCode=7（16 位块大小 4096）与 sampleRateCode=13（Hz 扩展 12345）联合解析', () => {
     const value = -12345;
     const sub = new BitWriter();
