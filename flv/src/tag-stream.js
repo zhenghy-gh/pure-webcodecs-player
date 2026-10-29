@@ -125,6 +125,7 @@ export class FlvTagStream {
   /** 标记流结束（截断尾部被丢弃） */
   end() {
     this.finished = true;
+    this.buffer = new Uint8Array(0);
   }
 
   /**

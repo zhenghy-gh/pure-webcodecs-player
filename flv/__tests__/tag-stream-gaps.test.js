@@ -53,6 +53,19 @@ test('reset()：全部状态归零，可重新从头解析', () => {
   assert.deepEqual([...out2[0].data], [0xaa]);
 });
 
+test('end()：丢弃截断 tag 缓冲并忽略后续 push', () => {
+  const ts = new FlvTagStream();
+  const partialTag = new Uint8Array([18, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0xaa]);
+  assert.deepEqual(ts.push(new Uint8Array([...prologue(), ...partialTag])), []);
+  assert.equal(ts.buffer.length, partialTag.length);
+
+  ts.end();
+  assert.equal(ts.finished, true);
+  assert.equal(ts.buffer.length, 0);
+  assert.deepEqual(ts.push(partialTag), []);
+  assert.equal(ts.buffer.length, 0);
+});
+
 /* 登记不硬造：tag-stream.js:106-107「dataSize > 128MB」守卫结构性不可达——
  * dataSize 由 3 字节拼出（24 位上限 0xFFFFFF≈16MB），永远小于阈值；
  * 收紧阈值会改变现有行为（16MB 内 Tag 均合法放行），维持现状登记。 */
