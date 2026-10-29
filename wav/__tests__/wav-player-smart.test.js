@@ -188,6 +188,55 @@ describe('WavPlayer 推送循环调度（Fake WebAudio + mock timers）', () => 
     });
   });
 
+  test('播放中 load 替换：暂停并 flush 旧缓冲，立即重播新文件', async (t) => {
+    await withPlayer(t, {}, async (player, fakes) => {
+      const tracker = new WriteTracker();
+      await player.play();
+      const node = fakes.nodeInstances[0];
+      drain(node, tracker);
+      assert.deepEqual(tracker.segs.at(-1), [[0, 8192], [8192, 12288]]);
+
+      player.load(buildWav({ frames: 24000 }));
+      assert.equal(player.state, 'ready');
+      assert.deepEqual(node.port.sent.map(({ msg }) => msg), [
+        { type: 'pause', value: true },
+        { type: 'flush', baseFrame: 0 },
+      ]);
+      drain(node, tracker);
+      assert.deepEqual(tracker.flushes, [0]);
+
+      await player.play();
+      drain(node, tracker);
+      assert.deepEqual(tracker.segs.at(-1).slice(0, 2), [[0, 8192], [8192, 12288]]);
+      tickUntilEof(t, node, tracker);
+      assert.equal(tracker.eof, true);
+      assert.ok(tracker.contiguous());
+      assert.equal(tracker.segs.at(-1).at(-1)[1], 24000);
+    });
+  });
+
+  test('load 替换已发送 EOF 的文件后重新发送新 EOF', async (t) => {
+    await withPlayer(t, {}, async (player, fakes) => {
+      const tracker = new WriteTracker();
+      await player.play();
+      const node = fakes.nodeInstances[0];
+      tickUntilEof(t, node, tracker);
+      assert.equal(tracker.eof, true);
+
+      player.load(buildWav({ frames: 12000 }));
+      assert.deepEqual(node.port.sent.map(({ msg }) => msg), [
+        { type: 'pause', value: true },
+        { type: 'flush', baseFrame: 0 },
+      ]);
+      drain(node, tracker);
+      await player.play();
+      drain(node, tracker);
+      tickUntilEof(t, node, tracker);
+      assert.equal(tracker.eof, true);
+      assert.equal(tracker.segs.at(-1).at(-1)[1], 12000);
+    });
+  });
+
   test('暂停→恢复：循环先自灭，play 续启且不重复装载', async (t) => {
     await withPlayer(t, {}, async (player, fakes) => {
       const tracker = new WriteTracker();

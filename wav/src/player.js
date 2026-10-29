@@ -89,6 +89,16 @@ export class WavPlayer {
     const data = bytes.subarray(header.dataChunk.offset, header.dataChunk.offset + header.dataChunk.size);
     const conv = convertToFloat32Planar(data, header.format);
 
+    if (this.#node) {
+      this.#node.port.postMessage({ type: 'pause', value: true });
+      this.#node.port.postMessage({ type: 'flush', baseFrame: 0 });
+    }
+    this.#pushGen++;
+    this.#pushing = false;
+    this.#nextPushFrame = 0;
+    this.#workletBuffered = 0;
+    this.#eofSent = false;
+
     this.header = header;
     this.planar = conv.planar;
     this.sampleRate = header.format.sampleRate;
@@ -286,7 +296,8 @@ export class WavPlayer {
     const gen = ++this.#pushGen; // 新推送循环使旧循环失效（load/stop 场景）
     this.#pushing = true;
     const pushNext = () => {
-      if (!this.#node || gen !== this.#pushGen || this.state !== 'playing') {
+      if (gen !== this.#pushGen) return;
+      if (!this.#node || this.state !== 'playing') {
         this.#pushing = false;
         return;
       }
