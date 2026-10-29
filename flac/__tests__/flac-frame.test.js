@@ -52,7 +52,9 @@ function encodeFrameHeader(o) {
   writeUtfCodedNumber(w, o.codedNumber ?? 0);
   if (blockSizeCode === 6) w.writeBits((o.blockSize ?? 1) - 1, 8);
   if (blockSizeCode === 7) w.writeBits((o.blockSize ?? 1) - 1, 16);
+  if (sampleRateCode === 12) w.writeBits(o.extSampleRateKHz ?? 44, 8);
   if (sampleRateCode === 13) w.writeBits(o.extSampleRateHz ?? 12345, 16);
+  if (sampleRateCode === 14) w.writeBits(o.extSampleRate10HzUnits ?? 4800, 16);
   w.alignToByte();
   const b = w.toUint8Array();
   return concatBytes(b, new Uint8Array([crc8(b)]));
@@ -83,6 +85,22 @@ describe('帧头错误分支', () => {
   test('sampleRateCode=1111 非法抛错', () => {
     const head = encodeFrameHeader({ sampleRateCode: 15 });
     assert.throws(() => parseFrameHeader(head, 0), (e) => e.code === 'PARSE_ERROR' && /1111/.test(e.message));
+  });
+  test('扩展 sample-rate code 12/13/14 拒绝零值，code 0 保持 STREAMINFO 回退', () => {
+    const cases = [
+      { sampleRateCode: 12, extSampleRateKHz: 0 },
+      { sampleRateCode: 13, extSampleRateHz: 0 },
+      { sampleRateCode: 14, extSampleRate10HzUnits: 0 },
+    ];
+    for (const options of cases) {
+      const head = encodeFrameHeader(options);
+      assert.throws(
+        () => parseFrameHeader(head, 0),
+        (error) => error.code === 'PARSE_ERROR' && /扩展采样率/.test(error.message),
+      );
+    }
+    assert.equal(parseFrameHeader(encodeFrameHeader({ sampleRateCode: 12 }), 0).header.sampleRate, 44000);
+    assert.equal(parseFrameHeader(encodeFrameHeader({ sampleRateCode: 0 }), 0).header.sampleRate, 0);
   });
   test('sampleSizeCode=011 保留值抛错', () => {
     const head = encodeFrameHeader({ sampleSizeCode: 3 });
