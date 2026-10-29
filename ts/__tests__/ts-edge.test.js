@@ -81,6 +81,22 @@ test('PsiAssembler：pointer_field 非零时正确跳过上一节残余', async 
   assert.deepEqual(parsed.programs, [{ number: 1, pid: 0x1000 }]);
 });
 
+test('PsiAssembler：PUSI pointer bytes finish the pending section', () => {
+  const pid = 0x0000;
+  const first = buildPAT([{ number: 1, pid: 0x1000 }]);
+  const next = buildPAT([{ number: 2, pid: 0x1001 }]);
+  const splitAt = first.length - 4;
+  const tail = first.subarray(splitAt);
+  const received = [];
+  const asm = new PsiAssembler((sectionPid, sec) => received.push({ pid: sectionPid, sec }));
+
+  asm.feed(pid, concatBytes([new Uint8Array([0]), first.subarray(0, splitAt)]), true);
+  assert.equal(received.length, 0, '首个 TS 载荷只含 section 前缀');
+  asm.feed(pid, concatBytes([new Uint8Array([tail.length]), tail, next]), true);
+
+  assert.deepEqual(received.map(({ sec }) => parsePAT(sec).programs[0].number), [1, 2]);
+});
+
 test('多节目 PAT：两套 PMT 并存、轨道按 PID 区分', async () => {
   resetCc();
   const A = 0x0101, B = 0x0201, PMT_A = 0x1000, PMT_B = 0x1001;

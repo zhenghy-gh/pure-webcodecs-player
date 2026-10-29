@@ -140,10 +140,16 @@ export class PsiAssembler {
     if (payload.length === 0) return;
     if (pusi) {
       const pointerField = payload[0];
-      // 同包内 pointer_field 之后可能还有上一节的残余——直接丢弃旧缓存
+      const pointerEnd = 1 + pointerField;
+      const pending = this.pending.get(pid);
+      if (pending && pointerField > 0) {
+        // Pointer bytes finish the previous section before the new one starts.
+        this._append(pending, payload.subarray(1, pointerEnd));
+        this._drain(pid, pending);
+      }
       this._startNew(pid);
       const state = this.pending.get(pid);
-      this._append(state, payload.subarray(1 + pointerField));
+      this._append(state, payload.subarray(pointerEnd));
       this._drain(pid, state, true);
     } else {
       const state = this.pending.get(pid);
