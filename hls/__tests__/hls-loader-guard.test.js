@@ -25,6 +25,50 @@ function textRes(text, status = 200) {
   };
 }
 
+test('BYTERANGE 可见 Content-Range 匹配时接受', async () => {
+  const loader = new SegmentLoader({
+    maxRetry: 0,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 206,
+      headers: {
+        get: (name) => name.toLowerCase() === 'content-range'
+          ? 'bytes 10-13/1000'
+          : name.toLowerCase() === 'content-length' ? '4' : null,
+      },
+      arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+    }),
+  });
+  const result = await loader.load('https://cdn/range.bin', { byteRange: { length: 4, offset: 10 } });
+  assert.deepEqual([...result.data], [1, 2, 3, 4]);
+});
+
+test('BYTERANGE 同长度但 Content-Range 起止错位时拒绝', async () => {
+  let attempts = 0;
+  const loader = new SegmentLoader({
+    maxRetry: 0,
+    fetchImpl: async (_url, init) => {
+      attempts += 1;
+      assert.equal(init.headers.Range, 'bytes=10-13');
+      return {
+        ok: true,
+        status: 206,
+        headers: {
+          get: (name) => name.toLowerCase() === 'content-range'
+            ? 'bytes 0-3/1000'
+            : name.toLowerCase() === 'content-length' ? '4' : null,
+        },
+        arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+      };
+    },
+  });
+  await assert.rejects(
+    () => loader.load('https://cdn/range.bin', { byteRange: { length: 4, offset: 10 } }),
+    (e) => e instanceof LoadError && e.code === 'SOURCE_ERROR' && e.status === 206 && e.fatal === true,
+  );
+  assert.equal(attempts, 1);
+});
+
 test('410 Gone：4xx 家族 → SOURCE_ERROR fatal 不重试', async () => {
   let attempts = 0;
   const loader = new SegmentLoader({

@@ -141,6 +141,29 @@ export class SegmentLoader {
           );
         }
 
+        if (byteRange && byteRange.length > 0) {
+          const contentRange = res.headers.get('content-range');
+          // 跨域响应可能不暴露此非 safelist 头；可见时严格校验。
+          if (contentRange != null) {
+            const match = /^bytes\s+(\d+)-(\d+)\/(?:\d+|\*)$/i.exec(contentRange.trim());
+            const start = match ? Number(match[1]) : NaN;
+            const end = match ? Number(match[2]) : NaN;
+            const expectedEnd = byteRange.offset + byteRange.length - 1;
+            if (
+              !Number.isSafeInteger(start) ||
+              !Number.isSafeInteger(end) ||
+              start !== byteRange.offset ||
+              end !== expectedEnd
+            ) {
+              throw new LoadError(
+                ErrorCode.SOURCE_ERROR,
+                `BYTERANGE Content-Range 不匹配（期望 bytes ${byteRange.offset}-${expectedEnd}，实际 ${contentRange}） ${url}`,
+                { url, status: res.status, fatal: true }
+              );
+            }
+          }
+        }
+
         const totalHeader = Number(res.headers.get('content-length')) || null;
         let data;
         if (res.body && typeof res.body.getReader === 'function') {
