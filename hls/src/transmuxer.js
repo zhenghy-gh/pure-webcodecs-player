@@ -35,12 +35,17 @@ export function sniffContainer(head) {
     const type = ascii(4, 4);
     if (size > 8 && /^(ftyp|styp|moof|sidx|emsg|prft)$/.test(type)) return 'fmp4';
   }
-  // MPEG-TS：首字节与后续每 188/192 字节均为 0x47
-  if (
-    head[0] === TS_SYNC &&
-    (head.length < 377 || (head[188] === TS_SYNC && head[376] === TS_SYNC))
-  ) {
-    return 'ts';
+  // MPEG-TS：188-byte packets or M2TS 192-byte cells with a 4-byte prefix.
+  for (const [stride, syncOffset] of [[188, 0], [192, 4]]) {
+    const secondSync = syncOffset + stride;
+    const thirdSync = secondSync + stride;
+    if (head[syncOffset] !== TS_SYNC) continue;
+    if (
+      (syncOffset === 0 && head.length < thirdSync + 1) ||
+      (head[secondSync] === TS_SYNC && head[thirdSync] === TS_SYNC)
+    ) {
+      return 'ts';
+    }
   }
   return 'unknown';
 }

@@ -17,6 +17,23 @@ test('process：isInit=true 时无条件直通（即便字节形似 TS）', asyn
   assert.deepEqual(out, { kind: 'passthrough', mediaSegment: ts });
 });
 
+test('process：192-byte M2TS 分片可识别并转封装', async () => {
+  const ts = assembleTs({
+    video: { codec: 'h264', width: 320, height: 240, frames: 3, gopSize: 3 },
+    audio: { mode: 'adts', count: 2 },
+  });
+  assert.equal(ts.byteLength % 188, 0);
+  const packetCount = ts.byteLength / 188;
+  const m2ts = new Uint8Array(packetCount * 192);
+  for (let i = 0; i < packetCount; i++) {
+    m2ts.set(ts.subarray(i * 188, (i + 1) * 188), i * 192 + 4);
+  }
+  assert.equal(sniffContainer(m2ts), 'ts');
+  const out = await new Transmuxer().process(m2ts);
+  assert.equal(out.kind, 'transmuxed');
+  assert.ok(out.video.mediaSegment.byteLength > 0);
+});
+
 test('process：TS 媒体分片 → transmuxed（双轨 codecs + init/media 段），reset/destroy 可重建', async () => {
   const ts = assembleTs({
     video: { codec: 'h264', width: 320, height: 240, frames: 3, gopSize: 3 },
