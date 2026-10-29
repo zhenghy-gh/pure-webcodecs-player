@@ -12,6 +12,27 @@ function prologue() {
   return new Uint8Array([0x46, 0x4c, 0x56, 0x01, 0x05, 0, 0, 0, 9, 0, 0, 0, 0]);
 }
 
+test('DataOffset 头扩展上限边界可等待，超限抛错并清缓冲', () => {
+  const makePrologue = (dataOffset) => {
+    const bytes = prologue();
+    new DataView(bytes.buffer).setUint32(5, dataOffset, false);
+    return bytes;
+  };
+
+  const boundary = new FlvTagStream();
+  assert.deepEqual(boundary.push(makePrologue(9 + 8 * 1024 * 1024)), []);
+  assert.equal(boundary.headerDone, false);
+  assert.equal(boundary.buffer.length, 13);
+
+  const oversized = new FlvTagStream();
+  assert.throws(
+    () => oversized.push(makePrologue(9 + 8 * 1024 * 1024 + 1)),
+    /header extension exceeds 8388608 bytes/,
+  );
+  assert.equal(oversized.headerDone, false);
+  assert.equal(oversized.buffer.length, 0);
+});
+
 test('reset()：全部状态归零，可重新从头解析', () => {
   const ts = new FlvTagStream();
   // 一个完整 script tag（type=18, dataSize=1）：11 头 + 1 数据 + 4 PreviousTagSize

@@ -23,6 +23,7 @@ export const FLV_TAG_SCRIPT = 18;
 const HEADER_SIZE = 9;        // 'FLV'+version+flags+DataOffset
 const PROLOGUE_SIZE = 13;     // Header + PreviousTagSize0
 const TAG_HEADER_SIZE = 11;
+const MAX_HEADER_EXTENSION_SIZE = 8 * 1024 * 1024;
 
 /**
  * 解析 FLV 文件头。
@@ -89,6 +90,10 @@ export class FlvTagStream {
       const header = parseFlvHeader(this.buffer);
       if (!header) throw new Error('FLV: 魔数不匹配，不是合法的 FLV 文件');
       const prologue = header.dataOffset >= HEADER_SIZE ? header.dataOffset : HEADER_SIZE;
+      if (prologue - HEADER_SIZE > MAX_HEADER_EXTENSION_SIZE) {
+        this.buffer = new Uint8Array(0);
+        throw new Error(`FLV: header extension exceeds ${MAX_HEADER_EXTENSION_SIZE} bytes`);
+      }
       if (this.buffer.length < prologue + 4) return out;
       this.header = header;
       this._take(prologue);
