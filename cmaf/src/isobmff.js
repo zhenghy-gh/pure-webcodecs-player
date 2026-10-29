@@ -173,8 +173,17 @@ export function parseSidx(buf, contentStart, contentEnd) {
   let firstOffset;
   if (version === 1) {
     requireBytes(16);
-    ept = Number(dv.getBigUint64(p)); p += 8;
-    firstOffset = Number(dv.getBigUint64(p)); p += 8;
+    const earliestPresentationTime = dv.getBigUint64(p); p += 8;
+    const firstOffsetValue = dv.getBigUint64(p); p += 8;
+    const maxSafeInteger = BigInt(Number.MAX_SAFE_INTEGER);
+    if (earliestPresentationTime > maxSafeInteger) {
+      throw notSupported('ISO-BMFF sidx earliestPresentationTime exceeds safe integer range');
+    }
+    if (firstOffsetValue > maxSafeInteger) {
+      throw notSupported('ISO-BMFF sidx firstOffset exceeds safe integer range');
+    }
+    ept = Number(earliestPresentationTime);
+    firstOffset = Number(firstOffsetValue);
   } else {
     requireBytes(8);
     ept = dv.getUint32(p); p += 4;

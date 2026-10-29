@@ -35,6 +35,21 @@ function buildSidxBytes({ refId = 1, timescale = 90000, ept = 0, firstOffset = 0
   return out;
 }
 
+function buildSidxV1Bytes(earliestPresentationTime, firstOffset) {
+  const body = new Uint8Array(32);
+  const dv = new DataView(body.buffer);
+  body[0] = 1;
+  dv.setUint32(4, 1);
+  dv.setUint32(8, 90000);
+  dv.setBigUint64(12, earliestPresentationTime);
+  dv.setBigUint64(20, firstOffset);
+  const out = new Uint8Array(8 + body.length);
+  new DataView(out.buffer).setUint32(0, out.length);
+  out.set([0x73, 0x69, 0x64, 0x78], 4);
+  out.set(body, 8);
+  return out;
+}
+
 test('sidx：version=0 引用表与 SAP 位解析', () => {
   const bytes = buildSidxBytes({
     refId: 256,
@@ -135,6 +150,28 @@ test('sidx：version=1 解析 64 位 earliestPresentationTime/firstOffset', () =
     startsWithSAP: true,
     sapType: 2,
   }]);
+});
+
+test('sidx：version=1 拒绝超过安全整数范围的 u64', () => {
+  const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+  const atLimit = buildSidxV1Bytes(maxSafe, maxSafe);
+  const limitHead = readBoxHeader(atLimit, 0);
+  const parsed = parseSidx(atLimit, limitHead.headerSize, limitHead.size);
+  assert.equal(parsed.earliestPresentationTimeTicks, Number.MAX_SAFE_INTEGER);
+  assert.equal(parsed.firstOffset, Number.MAX_SAFE_INTEGER);
+
+  const cases = [
+    { label: 'earliestPresentationTime', ept: maxSafe + 1n, offset: maxSafe },
+    { label: 'firstOffset', ept: maxSafe, offset: maxSafe + 1n },
+  ];
+  for (const item of cases) {
+    const bytes = buildSidxV1Bytes(item.ept, item.offset);
+    const head = readBoxHeader(bytes, 0);
+    assert.throws(
+      () => parseSidx(bytes, head.headerSize, head.size),
+      (error) => error.code === 'NOT_SUPPORTED' && error.message.includes(item.label) && /safe integer range/.test(error.message),
+    );
+  }
 });
 
 test('splitChunks：流内 sidx 被捕获为 segmentIndex', () => {
