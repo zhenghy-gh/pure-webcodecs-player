@@ -90,6 +90,16 @@ test('PAT/PMT：拒绝不匹配的 table_id', () => {
   assert.throws(() => parsePMT(pmt), (e) => e.code === 'PARSE_ERROR' && /PMT table_id mismatch/.test(e.message));
 });
 
+test('PAT/PMT：拒绝非法 section_syntax_indicator 与保留位', () => {
+  const pat = buildPAT([{ number: 1, pid: 0x1000 }]);
+  pat[1] &= 0x7f;
+  assert.throws(() => parsePAT(pat), (e) => e.code === 'PARSE_ERROR' && /PAT section header flags/.test(e.message));
+
+  const pmt = buildPMT({ pcrPid: 0x0101, streams: [{ streamType: 0x1b, pid: 0x0101 }] });
+  pmt[1] &= 0xcf;
+  assert.throws(() => parsePMT(pmt), (e) => e.code === 'PARSE_ERROR' && /PMT section header flags/.test(e.message));
+});
+
 test('mpegCrc32 与已知向量一致', () => {
   // "123456789" 的 MPEG-2 CRC32 = 0x0376E6E7
   const data = new Uint8Array([0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39]);

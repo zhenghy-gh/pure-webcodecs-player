@@ -66,6 +66,8 @@ function assertSection(section, minLength, name, expectedTableId) {
   if (sectionLength < minLength - 3 || totalLength !== section.length) {
     throw parseError(`${name} section length mismatch`);
   }
+  // PAT/PMT use long-form sections: syntax=1, zero=0 and reserved bits=11.
+  if ((section[1] & 0xf0) !== 0xb0) throw parseError(name + ' section header flags invalid');
   const header = parseSectionHeader(section);
   if (header.tableId !== expectedTableId) {
     throw parseError(`${name} table_id mismatch: expected 0x${expectedTableId.toString(16)}, got 0x${header.tableId.toString(16)}`);
