@@ -197,7 +197,7 @@ test('prft：截断字段与越界内容边界抛受控 NOT_SUPPORTED', async ()
   assert.throws(() => parsePrft(bytes, 8, 16), error => error.code === 'NOT_SUPPORTED');
 });
 
-test('prft：生产者时钟参考（v0/v1 双版本）', async () => {
+test('prft：生产者时钟参考与 NTP 精度（v0/v1 双版本）', async () => {
   const { parsePrft } = await import('../src/isobmff.js');
   const build = (version, producer, media) => {
     const body = new Uint8Array(version === 1 ? 28 : 20); // vf+refId+tscale+(v1:8+8 / v0:4+4)
@@ -225,4 +225,18 @@ test('prft：生产者时钟参考（v0/v1 双版本）', async () => {
     assert.equal(r.referenceTimescale, 90000);
     assert.equal(r.mediaTimeTicks, 90090, `v${version} media_time 应解析`);
   }
+
+  const ntpSeconds = 4_000_000_000;
+  const ntpFraction = 0x89abcdef;
+  const rawNtp = (BigInt(ntpSeconds) << 32n) | BigInt(ntpFraction);
+  const v1 = build(1, rawNtp, 90090);
+  const precise = parsePrft(v1, 8, v1.length);
+  assert.deepEqual(precise.producerTimeNtp, {
+    seconds: ntpSeconds,
+    fraction: ntpFraction / 2 ** 32,
+  });
+  assert.equal(precise.producerTimeTicks, Number(rawNtp), 'legacy numeric field remains compatible');
+
+  const v0 = build(0, ntpSeconds, 90090);
+  assert.deepEqual(parsePrft(v0, 8, v0.length).producerTimeNtp, { seconds: ntpSeconds, fraction: 0 });
 });

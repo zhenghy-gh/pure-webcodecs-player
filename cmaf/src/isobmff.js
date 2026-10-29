@@ -72,10 +72,10 @@ export function* iterateBoxes(buf, start = 0, end = buf.length) {
 
 /**
  * 解析 prft（Producer Reference Time，ISO 14496-12 §8.16.5）—— LL 方向的
- * 生产者时钟参考。timestamp 域为 reference_track_timescale 的 ticks，
- * µs 换算由调用方按轨 timescale 进行（契约 §0.5）。
- * @returns {{referenceTrackId:number, referenceTimescale:number,
- *            mediaTimeTicks:number, producerTimeTicks:number}}
+ * 生产者时钟参考。media_time 使用 reference_track_timescale 的 ticks；
+ * producer_time 以 NTP seconds/fraction 拆分精确返回，producerTimeTicks 保留旧数值字段。
+ * @returns {{referenceTrackId:number, referenceTimescale:number, mediaTimeTicks:number,
+ *            producerTimeTicks:number, producerTimeNtp:{seconds:number,fraction:number}}}
  */
 export function parsePrft(buf, contentStart, contentEnd = buf.byteLength) {
   if (contentStart < 0 || contentStart > contentEnd || contentEnd > buf.byteLength) {
@@ -96,13 +96,29 @@ export function parsePrft(buf, contentStart, contentEnd = buf.byteLength) {
   const referenceTrackId = dv.getUint32(p); p += 4;
   const referenceTimescale = dv.getUint32(p); p += 4;
   if (version === 1) {
-    const producerTime = Number(dv.getBigUint64(p)); p += 8;
+    const producerTimeRaw = dv.getBigUint64(p); p += 8;
     const mediaTime = Number(dv.getBigUint64(p));
-    return { referenceTrackId, referenceTimescale, mediaTimeTicks: mediaTime, producerTimeTicks: producerTime };
+    const producerTimeNtp = {
+      seconds: Number(producerTimeRaw >> 32n),
+      fraction: Number(producerTimeRaw & 0xffffffffn) / 2 ** 32,
+    };
+    return {
+      referenceTrackId,
+      referenceTimescale,
+      mediaTimeTicks: mediaTime,
+      producerTimeTicks: Number(producerTimeRaw),
+      producerTimeNtp,
+    };
   }
   const producerTime = dv.getUint32(p); p += 4;
   const mediaTime = dv.getUint32(p);
-  return { referenceTrackId, referenceTimescale, mediaTimeTicks: mediaTime, producerTimeTicks: producerTime };
+  return {
+    referenceTrackId,
+    referenceTimescale,
+    mediaTimeTicks: mediaTime,
+    producerTimeTicks: producerTime,
+    producerTimeNtp: { seconds: producerTime, fraction: 0 },
+  };
 }
 
 /** 在 box 列表中找指定类型（首个） */
