@@ -100,7 +100,7 @@ class WavPcmSink extends AudioWorkletProcessor {
 
   buffered() { return this.writePos - Math.floor(this.consumed); }
 
-  process(_inputs, outputs) {
+  process(_inputs, outputs, parameters) {
     const out = outputs[0];
     const outCh = Math.min(out.length, this.channels);
     const n = out[0].length;
@@ -110,7 +110,8 @@ class WavPcmSink extends AudioWorkletProcessor {
       return true;
     }
 
-    const rate = this.parameters.playbackRate.length > 0 ? this.parameters.playbackRate[0] : 1;
+    const rateValues = parameters?.playbackRate;
+    const rate = rateValues?.length ? rateValues[0] : 1;
     let under = this.buffered() < 2;
 
     let underAnnounced = this.lastUnderrun;

@@ -35,11 +35,23 @@ function instantiateProcessor({ channels = 1, capacityFrames = 1024, sampleRate 
   factory((name, cls) => { registry[name] = cls; }, sampleRate, 0, 0, Base);
   const Ctor = registry[WORKLET_NAME];
   const node = new Ctor({ processorOptions: { channels, capacityFrames } });
-  node.parameters = { playbackRate: [1] };
   return node;
 }
 
+function processBlock(node, inputs, outputs, playbackRate = 1) {
+  return node.process(inputs, outputs, { playbackRate: Float32Array.of(playbackRate) });
+}
+
 describe('worklet 环形缓冲溢出守卫（阻断1 回归）', () => {
+  test('process 从标准 AudioParam 参数读取播放率', () => {
+    const node = instantiateProcessor({ capacityFrames: 64 });
+    node.handleMessage({ type: 'write', planar: [Float32Array.from({ length: 16 }, (_, i) => i)] });
+    const out = [new Float32Array(4)];
+
+    processBlock(node, [[]], [out], 2);
+
+    assert.deepEqual(Array.from(out[0]), [0, 2, 4, 6]);
+  });
   test('容量外写入被拒并上报 overflow，未消费采样不被覆写', () => {
     const CAP = 1024;
     const node = instantiateProcessor({ channels: 1, capacityFrames: CAP });
@@ -62,7 +74,7 @@ describe('worklet 环形缓冲溢出守卫（阻断1 回归）', () => {
 
     // 消费前 1024 帧：必须严格等于未被覆写的原序列（A 全部 + B 前 124）
     const out = [new Float32Array(CAP)];
-    node.process([[]], [out]);
+    processBlock(node, [[]], [out]);
     for (let i = 0; i < CAP - 1; i++) {   // 末帧因插值前瞻自然为静音
       const expect = i < 900 ? i * 0.001 : bStart + (i - 900) * 0.001;
       if (Math.abs(out[0][i] - expect) > 1e-6) {
@@ -80,7 +92,7 @@ describe('worklet 环形缓冲溢出守卫（阻断1 回归）', () => {
     node.handleMessage({ type: 'write', planar: [Float32Array.from([0.5, 0.25])] });
     node.handleMessage({ type: 'eof' });               // 真实时序：推完即发 eof，尾帧保持生效
     const o2 = [new Float32Array(16)];
-    node.process([[]], [o2]);
+    processBlock(node, [[]], [o2]);
     assert.ok(Math.abs(o2[0][0] - 0.5) < 1e-6);
     assert.ok(Math.abs(o2[0][1] - 0.25) < 1e-6);       // eof 尾帧保持：末帧不再被前瞻吞掉
   });
@@ -104,7 +116,7 @@ describe('worklet 环形缓冲溢出守卫（阻断1 回归）', () => {
 
     // 整环消费：前 CAP 个样本必须与首写序列严格一致（覆写即失真）
     const out = [new Float32Array(CAP)];
-    node.process([[]], [out]);
+    processBlock(node, [[]], [out]);
     for (let i = 0; i < CAP; i++) {
       if (Math.abs(out[0][i] - i * 1.0) > 1e-6) {
         assert.fail(`第 ${i} 样本被覆写：实得 ${out[0][i]}，应为 ${i}`);
