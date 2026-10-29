@@ -344,6 +344,7 @@ export class TsStreamEngine extends Emitter {
       if (pid === 0x0000 && section[0] === 0x00) {
         const pat = parsePAT(section);
         if (!pat.crcOk) this._warn('PAT CRC 校验失败，仍尝试解析');
+        if (pat.currentNext !== 1) return;
         for (const prog of pat.programs) {
           this.programNumber = prog.number;
           if (prog.pid !== 0) this.pmtPids.add(prog.pid);
@@ -353,6 +354,7 @@ export class TsStreamEngine extends Emitter {
       if (this.pmtPids.has(pid) && section[0] === 0x02) {
         const pmt = parsePMT(section);
         if (!pmt.crcOk) this._warn('PMT CRC 校验失败，仍尝试解析');
+        if (pmt.currentNext !== 1) return;
 
         // ---- 版本对账（按 PMT 分账）：同 PID 同版本跳过；换版仅重建该 PMT 名下的流，
         //      多节目（多个 PMT）互不影响——修复「只增不减/双状态分裂」。----

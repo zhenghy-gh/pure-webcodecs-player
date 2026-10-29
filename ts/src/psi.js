@@ -29,7 +29,7 @@ function parseSectionHeader(section) {
   return {
     tableId: section[0],
     sectionLength: ((section[1] & 0x0f) << 8) | section[2],
-    // section_syntax_indicator 在 [1] 最高位；version 取 current_next=1 的版本
+    // section_syntax_indicator 在 [1] 最高位；version 与 current_next 独立。
     versionNumber: (section[5] >> 1) & 0x1f,
     currentNext: section[5] & 0x01,
     sectionNumber: section[6],
@@ -39,7 +39,7 @@ function parseSectionHeader(section) {
 
 /**
  * 解析 PAT。section 为完整字节（含 CRC）。
- * @returns {{ programs: Array<{ number:number, pid:number }>, versionNumber:number, crcOk:boolean }}
+ * @returns {{ programs: Array<{ number:number, pid:number }>, versionNumber:number, currentNext:number, crcOk:boolean }}
  */
 export function parsePAT(section) {
   const header = assertSection(section, 12, 'PAT', 0x00);
@@ -54,7 +54,7 @@ export function parsePAT(section) {
   const expected = ((section[bodyEnd] << 24) | (section[bodyEnd + 1] << 16)
     | (section[bodyEnd + 2] << 8) | section[bodyEnd + 3]) >>> 0;
   const actual = mpegCrc32(section, 0, bodyEnd);
-  return { programs, versionNumber: header.versionNumber, crcOk: expected === actual };
+  return { programs, versionNumber: header.versionNumber, currentNext: header.currentNext, crcOk: expected === actual };
 }
 
 function assertSection(section, minLength, name, expectedTableId) {
@@ -89,7 +89,7 @@ export const STREAM_TYPE_MAP = {
 
 /**
  * 解析 PMT。
- * @returns {{ pcrPid:number, streams:Array<{pid:number, streamType:number, codec:string|undefined}>, versionNumber:number, crcOk:boolean }}
+ * @returns {{ pcrPid:number, streams:Array<{pid:number, streamType:number, codec:string|undefined}>, versionNumber:number, currentNext:number, crcOk:boolean }}
  */
 export function parsePMT(section) {
   const header = assertSection(section, 16, 'PMT', 0x02);
@@ -115,7 +115,7 @@ export function parsePMT(section) {
   const expected = ((section[bodyEnd] << 24) | (section[bodyEnd + 1] << 16)
     | (section[bodyEnd + 2] << 8) | section[bodyEnd + 3]) >>> 0;
   const actual = mpegCrc32(section, 0, bodyEnd);
-  return { pcrPid, streams, versionNumber: header.versionNumber, crcOk: expected === actual };
+  return { pcrPid, streams, versionNumber: header.versionNumber, currentNext: header.currentNext, crcOk: expected === actual };
 }
 
 /**

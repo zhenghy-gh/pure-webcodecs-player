@@ -89,7 +89,7 @@ export function buildSection(tableId, bodyBytes, extra = {}) {
   head[2] = bodyLength & 0xff;
   head[3] = (extra.streamIdHi ?? 0x00);
   head[4] = (extra.streamIdLo ?? 0x01);
-  head[5] = 0xc1 | ((extra.version ?? 0) << 1);   // reserved+version+current_next
+  head[5] = 0xc0 | ((extra.version ?? 0) << 1) | (extra.currentNext ?? 1); // reserved+version+current_next
   head[6] = extra.sectionNumber ?? 0;
   head[7] = extra.lastSectionNumber ?? 0;
 
@@ -107,17 +107,17 @@ export function buildSection(tableId, bodyBytes, extra = {}) {
 }
 
 /** PAT：programs=[{number,pid}]（number 0 会作为 NIT 被解析端跳过） */
-export function buildPAT(programs, version = 0) {
+export function buildPAT(programs, version = 0, currentNext = 1) {
   const w = new BitWriter();
   for (const p of programs) {
     w.writeBits(p.number, 16);
     w.writeBits(0xe000 | p.pid, 16);
   }
-  return buildSection(0x00, w.finish(), { streamIdHi: 0x00, streamIdLo: 0x01, version });
+  return buildSection(0x00, w.finish(), { streamIdHi: 0x00, streamIdLo: 0x01, version, currentNext });
 }
 
 /** PMT：streams=[{streamType,pid}] */
-export function buildPMT({ pcrPid = 0x1000, streams }, version = 0) {
+export function buildPMT({ pcrPid = 0x1000, streams }, version = 0, currentNext = 1) {
   const w = new BitWriter();
   w.writeBits(0xe000 | pcrPid, 16);
   w.writeBits(0xf000, 16);                       // program_info_length=0
@@ -126,7 +126,7 @@ export function buildPMT({ pcrPid = 0x1000, streams }, version = 0) {
     w.writeBits(0xe000 | s.pid, 16);
     w.writeBits(0xf000, 16);                     // ES_info_length=0
   }
-  return buildSection(0x02, w.finish(), { version });
+  return buildSection(0x02, w.finish(), { version, currentNext });
 }
 
 /** 将一个 section 封装进 TS 包序列（pointer_field=0；跨包自动续） */

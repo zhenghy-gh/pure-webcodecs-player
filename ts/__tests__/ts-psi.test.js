@@ -80,6 +80,31 @@ test('CRC 校验失败：引擎告警但继续解析（PAT/PMT 各一）', () =>
   assert.equal(ev.samples.length, 1, '解析链路不受 CRC 失败影响');
 });
 
+test('future PAT/PMT sections do not replace current program state', () => {
+  resetCc();
+  const e = mkEngine();
+  const ev = attachCollector(e);
+  e._parsePacket(psiCell(0x0000, buildPAT([{ number: 1, pid: PMT_PID }])));
+  e._parsePacket(psiCell(PMT_PID, buildPMT({
+    pcrPid: VIDEO_PID, streams: [{ streamType: 0x1b, pid: VIDEO_PID }],
+  })));
+  assert.equal(e.tracks.length, 1);
+
+  e._parsePacket(psiCell(0x0000, buildPAT([{ number: 2, pid: 0x1001 }], 1, 0)));
+  assert.equal(e.programNumber, 1, 'future PAT must not replace the active program');
+  assert.ok(e.pmtPids.has(PMT_PID));
+  assert.equal(e.pmtPids.has(0x1001), false);
+
+  e._parsePacket(psiCell(PMT_PID, buildPMT({
+    pcrPid: VIDEO_PID, streams: [{ streamType: 0x0f, pid: 0x1002 }],
+  }, 1, 0)));
+  assert.equal(e.pmtVersions.get(PMT_PID), 0);
+  assert.equal(e.streams.has(VIDEO_PID), true);
+  assert.equal(e.streams.has(0x1002), false);
+  assert.equal(e.tracks.length, 1);
+  assert.equal(ev.errors.length, 0);
+});
+
 /* ------------------------------ stream_type 映射 ------------------------------ */
 
 test('stream_type→codec 全映射：支持/忽略分流与 LATM 标记', () => {
