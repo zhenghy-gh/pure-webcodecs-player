@@ -159,6 +159,25 @@ describe('超大/截断子块容错', () => {
     assert.equal(h.durationUs, Math.round((4 / (8000 * 2)) * 1e6));
   });
 
+  test('损坏的 LIST/INFO 子块不会阻止 data 继续解析', () => {
+    const info = Uint8Array.from([
+      0x49, 0x4e, 0x46, 0x4f,
+      0x49, 0x4e, 0x41, 0x4d,
+      5, 0, 0, 0,
+      0x61,
+    ]);
+    const bytes = assemble([
+      { id: 'fmt ', body: fmtBody() },
+      { id: 'LIST', body: info },
+      { id: 'data', body: dataBody(16) },
+    ]);
+
+    const wav = parseWavHeader(bytes);
+    assert.equal(wav.codec, 'pcm-s16');
+    assert.equal(wav.dataChunk.size, 16);
+    assert.deepEqual(wav.info, {});
+  });
+
   test('data 后追加未知块也被跳过（循环到末尾）', () => {
     const bytes = assemble([
       { id: 'fmt ', body: fmtBody() },
