@@ -72,3 +72,28 @@ test('destroy：removeSourceBuffer 抛错被销毁期 catch 吞掉（278-279）'
     assert.equal(c.video, null);
   });
 });
+
+test('attach: createObjectURL failure preserves the original error and cleans pending state', async () => {
+  await withMse(async () => {
+    const failure = new Error('object URL unavailable');
+    const c = new MseController();
+    let removedSrc = 0;
+    globalThis.URL = { createObjectURL() { throw failure; } };
+
+    const promise = c.attach({
+      src: '',
+      removeAttribute(name) {
+        assert.equal(name, 'src');
+        removedSrc += 1;
+      },
+    });
+
+    await assert.rejects(promise, (error) => error === failure);
+    assert.equal(removedSrc, 1);
+    assert.equal(c.mediaSource, null);
+    assert.equal(c.video, null);
+    assert.equal(c._objectUrl, null);
+    assert.equal(c._attachCleanup, null);
+    assert.equal(c._attachReject, null);
+  });
+});
