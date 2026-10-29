@@ -33,6 +33,7 @@ const GUID_TAG_MAP = Object.freeze({
   0x0006: WAVE_FORMAT.ALAW,
   0x0007: WAVE_FORMAT.MULAW,
 });
+const SUBFORMAT_GUID_TAIL = [0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71];
 
 /** format tag + 位深 → 契约 §3 的规范 codec 字符串；未知返回 null */
 export function waveCodecString(formatTag, bitsPerSample) {
@@ -164,6 +165,8 @@ function parseFmtChunk(bytes, offset, size) {
       const channelMask = dv.getUint32(offset + 20, true);
       // SubFormat GUID 前 2 字节即真实格式码，后 14 字节为固定模板
       const guidTag = dv.getUint16(offset + 24, true);
+      const validGuidTail = SUBFORMAT_GUID_TAIL.every((byte, i) => dv.getUint8(offset + 26 + i) === byte);
+      if (!validGuidTail) throw notSupported('EXTENSIBLE SubFormat GUID 模板不受支持');
       const real = GUID_TAG_MAP[guidTag];
       if (real === undefined) {
         throw notSupported(`EXTENSIBLE SubFormat 0x${guidTag.toString(16)} 不受支持`);

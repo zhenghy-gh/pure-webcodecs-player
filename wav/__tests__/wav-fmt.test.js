@@ -139,6 +139,12 @@ describe('WAVE_FORMAT_EXTENSIBLE', () => {
       (e) => e.code === ErrorCode.NOT_SUPPORTED);
   });
 
+  test('SubFormat 前缀为 PCM 但 GUID 模板不符 → NOT_SUPPORTED', () => {
+    const bytes = buildWav({ extensible: true, formatTag: WAVE_FORMAT.PCM, bitsPerSample: 16 });
+    bytes[46] ^= 0x01;
+    assert.throws(() => parseWavHeader(bytes), (e) => e.code === ErrorCode.NOT_SUPPORTED);
+  });
+
   test('extensible 但无 cbSize（仅 16 字节、tag=0xfffe）→ NOT_SUPPORTED', () => {
     // 解析器在 codec 映射阶段即抛 NOT_SUPPORTED（formatTag 0xfffe 无法映射）
     assert.throws(() => parseWavHeader(buildWav({ writtenTag: WAVE_FORMAT.EXTENSIBLE, fmtSize: 16,
