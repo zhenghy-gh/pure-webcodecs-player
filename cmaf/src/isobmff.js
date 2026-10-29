@@ -54,6 +54,9 @@ export function readBoxHeader(buf, off = 0) {
  * @yields {{type:string,size:number,contentStart:number,contentEnd:number}}
  */
 export function* iterateBoxes(buf, start = 0, end = buf.length) {
+  if (!Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(end) || end < start) {
+    throw notSupported(`ISO-BMFF box 范围非法: start=${start} end=${end}`);
+  }
   let off = start;
   while (off < end) {
     const head = readBoxHeader(buf, off);

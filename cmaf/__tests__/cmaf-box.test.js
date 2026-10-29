@@ -158,6 +158,29 @@ test('iterateBoxes：init 缓冲顶层顺序为 ftyp→moov', () => {
   assert.ok(findTagInBuf(init, 0, init.length, 'trak') >= 0, 'moov 内应含 trak');
 });
 
+test('iterateBoxes：拒绝无效 bounds 但保留缓冲截断语义', () => {
+  const box = makeBox('free', 8);
+  const invalidRanges = [
+    [Number.NaN, box.length],
+    [0, Number.NaN],
+    [0.5, box.length],
+    [0, box.length + 0.5],
+    [-1, box.length],
+    [8, 7],
+    [0, Number.POSITIVE_INFINITY],
+  ];
+  for (const [start, end] of invalidRanges) {
+    assert.throws(
+      () => [...iterateBoxes(box, start, end)],
+      (error) => error.code === 'NOT_SUPPORTED',
+    );
+  }
+  assert.deepEqual(
+    [...iterateBoxes(box, 0, box.length + 8)].map((entry) => entry.type),
+    ['free'],
+  );
+});
+
 /* ---------------- parseTrun ---------------- */
 
 /** 手工造 trun box（standalone，vf 起点在偏移 8） */
