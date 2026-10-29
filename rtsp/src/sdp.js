@@ -77,12 +77,12 @@ export function parseSdp(text) {
       result.sessionName = value;
     } else if (key === 'm') {
       inSession = false;
-      const [type, port, proto, pts] = value.split(/\s+/);
+      const [type, port, proto, ...pts] = value.split(/\s+/);
       current = {
         type,
         port,
         protocol: proto,
-        payloads: (pts ?? '').split(' ').filter(Boolean).map(Number),
+        payloads: pts.map(Number),
         rtpmap: {},
         fmtp: {},
         control: null,

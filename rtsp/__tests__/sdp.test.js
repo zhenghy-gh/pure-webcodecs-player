@@ -64,6 +64,18 @@ test('H264 SDP：rtpmap/fmtp/sprop-parameter-sets 完整提取', () => {
   assert.deepEqual(Array.from(h264.pps[0]), Array.from(pps));
 });
 
+test('SDP m= 行保留所有 payload type 并保持顺序', () => {
+  const sdp = parseSdp([
+    'v=0',
+    'm=video 5006 RTP/AVP 96 97',
+    'a=rtpmap:96 H264/90000',
+    'a=rtpmap:97 H265/90000',
+  ].join('\r\n'));
+
+  assert.deepEqual(sdp.media[0].payloads, [96, 97]);
+  assert.deepEqual(Object.keys(sdp.media[0].rtpmap), ['96', '97']);
+});
+
 test('fmtp 参数解析器', () => {
   const p = parseFmtpParams('packetization-mode=1;profile-level-id=42c01e;sprop-parameter-sets=AAA,BBB');
   assert.equal(p['packetization-mode'], '1');
