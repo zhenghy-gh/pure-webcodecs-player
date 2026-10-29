@@ -22,13 +22,17 @@ import { SubtitleError, ErrorCode } from './errors.js';
 /** @typedef {import('./layout.js').Drawable} Drawable */
 
 /**
- * 渲染器是否可用（浏览器且 canvas 可创建）。
+ * 渲染器是否可用（能创建画布并取得 2D 上下文）。
  * @returns {boolean} Node 下恒 false
  */
 export function isRendererSupported() {
-  return typeof document !== 'undefined' &&
-    typeof /** @type {any} */ (document).createElement === 'function' &&
-    !!/** @type {any} */ (document).createElement('canvas').getContext;
+  try {
+    if (typeof document === 'undefined' || typeof document.createElement !== 'function') return false;
+    const canvas = document.createElement('canvas');
+    return typeof canvas?.getContext === 'function' && !!canvas.getContext('2d');
+  } catch {
+    return false;
+  }
 }
 
 /**

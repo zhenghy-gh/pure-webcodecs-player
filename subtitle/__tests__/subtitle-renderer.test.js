@@ -81,6 +81,38 @@ test('isRendererSupported：Node 环境下恒 false', () => {
   assert.equal(isRendererSupported(), false);
 });
 
+test('isRendererSupported：检查真实 2D context 并吞掉环境探测异常', () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  try {
+    let requestedContext = null;
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: {
+        createElement: (tag) => ({
+          getContext: (kind) => { requestedContext = [tag, kind]; return null; },
+        }),
+      },
+    });
+    assert.equal(isRendererSupported(), false);
+    assert.deepEqual(requestedContext, ['canvas', '2d']);
+
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: { createElement: () => ({ getContext: () => ({}) }) },
+    });
+    assert.equal(isRendererSupported(), true);
+
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: { createElement: () => { throw new Error('canvas unavailable'); } },
+    });
+    assert.equal(isRendererSupported(), false);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'document', previous);
+    else delete globalThis.document;
+  }
+});
+
 /* ---------------- 构造函数错误分支 ---------------- */
 
 test('Renderer：非 canvas（null）构造抛 STATE_ERROR', () => {
