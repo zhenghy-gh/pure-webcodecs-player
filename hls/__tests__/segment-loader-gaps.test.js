@@ -90,6 +90,30 @@ test('重试退避期间外部中止 → 统一返回 ABORTED LoadError', async 
   );
 });
 
+test('BYTERANGE 非整数或终点溢出时在 fetch 前拒绝', async () => {
+  let attempts = 0;
+  const loader = new SegmentLoader({
+    fetchImpl: async () => {
+      attempts += 1;
+      return { ok: true, status: 206, headers: { get: () => null }, arrayBuffer: async () => new ArrayBuffer(2) };
+    },
+    maxRetry: 2,
+    retryDelayMs: 1,
+  });
+
+  for (const byteRange of [
+    { offset: 0.5, length: 2 },
+    { offset: Number.MAX_SAFE_INTEGER, length: 2 },
+    { offset: 0, length: NaN },
+  ]) {
+    await assert.rejects(
+      loader.load('https://cdn.example.test/seg.ts', { byteRange }),
+      (error) => error instanceof LoadError && error.code === 'SOURCE_ERROR' && error.fatal,
+    );
+  }
+  assert.equal(attempts, 0);
+});
+
 test('delay：进入退避前 signal 已中止 → 统一返回 ABORTED LoadError', async () => {
   const ctrl = new AbortController();
   const loader = new SegmentLoader({

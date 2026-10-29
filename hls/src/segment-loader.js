@@ -112,6 +112,20 @@ export class SegmentLoader {
     } catch (err) {
       throw new LoadError(ErrorCode.NETWORK_ERROR, err.message, { url, fatal: true, network: true });
     }
+    let byteRangeEnd = null;
+    if (byteRange && !Number.isSafeInteger(byteRange.length)) {
+      throw new LoadError(ErrorCode.SOURCE_ERROR, 'BYTERANGE length 必须为安全整数 ' + url, { url, fatal: true });
+    }
+    if (byteRange && byteRange.length > 0) {
+      if (!Number.isSafeInteger(byteRange.offset) || byteRange.offset < 0) {
+        throw new LoadError(ErrorCode.SOURCE_ERROR, 'BYTERANGE offset 必须为非负安全整数 ' + url, { url, fatal: true });
+      }
+      byteRangeEnd = byteRange.offset + (byteRange.length - 1);
+      if (!Number.isSafeInteger(byteRangeEnd)) {
+        throw new LoadError(ErrorCode.SOURCE_ERROR, 'BYTERANGE end 超出安全整数范围 ' + url, { url, fatal: true });
+      }
+    }
+
     let lastErr = null;
 
     for (let attempt = 0; attempt <= this.maxRetry; attempt++) {
@@ -120,7 +134,7 @@ export class SegmentLoader {
         bounded = this._boundedSignal(url, signal);
         const headers = {};
         if (byteRange && byteRange.length > 0) {
-          headers['Range'] = `bytes=${byteRange.offset}-${byteRange.offset + byteRange.length - 1}`;
+          headers['Range'] = `bytes=${byteRange.offset}-${byteRangeEnd}`;
         }
         const res = await this._fetch(url, { headers: { ...headers }, signal: bounded.signal, mode: 'cors', credentials: this.credentials });
         if (byteRange && byteRange.length > 0 && res.status !== 206) {
@@ -148,7 +162,7 @@ export class SegmentLoader {
             const match = /^bytes\s+(\d+)-(\d+)\/(?:\d+|\*)$/i.exec(contentRange.trim());
             const start = match ? Number(match[1]) : NaN;
             const end = match ? Number(match[2]) : NaN;
-            const expectedEnd = byteRange.offset + byteRange.length - 1;
+            const expectedEnd = byteRangeEnd;
             if (
               !Number.isSafeInteger(start) ||
               !Number.isSafeInteger(end) ||
