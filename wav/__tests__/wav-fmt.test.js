@@ -122,6 +122,13 @@ describe('WAVE_FORMAT_EXTENSIBLE', () => {
     assert.equal(h.format.validBitsPerSample, 24);
   });
 
+  test('有效位深超过容器位深 → PARSE_ERROR', () => {
+    assert.throws(
+      () => parseWavHeader(buildWav({ extensible: true, formatTag: WAVE_FORMAT.PCM, bitsPerSample: 16, validBits: 17 })),
+      (error) => error.code === ErrorCode.PARSE_ERROR,
+    );
+  });
+
   test('SubFormat GUID=IEEE_FLOAT 还原 pcm-f32', () => {
     const h = parseWavHeader(buildWav({ extensible: true, formatTag: WAVE_FORMAT.IEEE_FLOAT, bitsPerSample: 32 }));
     assert.equal(h.format.extensible, true);

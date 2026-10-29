@@ -162,6 +162,9 @@ function parseFmtChunk(bytes, offset, size) {
     if (formatTag === WAVE_FORMAT.EXTENSIBLE && size >= 40 && cbSize >= 22) {
       isExtensible = true;
       const validBits = dv.getUint16(offset + 18, true);
+      if (validBits > bitsPerSample) {
+        throw parseError(`有效位深 ${validBits} 超过容器位深 ${bitsPerSample}`);
+      }
       const channelMask = dv.getUint32(offset + 20, true);
       // SubFormat GUID 前 2 字节即真实格式码，后 14 字节为固定模板
       const guidTag = dv.getUint16(offset + 24, true);
