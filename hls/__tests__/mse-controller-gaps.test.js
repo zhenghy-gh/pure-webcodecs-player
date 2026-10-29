@@ -21,6 +21,7 @@ class FakeMediaSource {
   static isTypeSupported() { return true; }
   constructor() { this.readyState = 'open'; this.listeners = new Map(); this.sb = new FakeSourceBuffer(); queueMicrotask(() => this.fire('sourceopen')); }
   addEventListener(type, fn) { if (!this.listeners.has(type)) this.listeners.set(type, []); this.listeners.get(type).push(fn); }
+  removeEventListener(type, fn) { this.listeners.set(type, (this.listeners.get(type) ?? []).filter((f) => f !== fn)); }
   fire(type) { for (const fn of [...(this.listeners.get(type) ?? [])]) fn({ type }); }
   addSourceBuffer() { return this.sb; }
   removeSourceBuffer() { throw new Error('SB 已移除'); }
@@ -95,5 +96,44 @@ test('attach: createObjectURL failure preserves the original error and cleans pe
     assert.equal(c._objectUrl, null);
     assert.equal(c._attachCleanup, null);
     assert.equal(c._attachReject, null);
+  });
+});
+
+test('attach: video src failure revokes URL and removes pending listeners', async () => {
+  await withMse(async () => {
+    const failure = new Error('video src assignment failed');
+    const revoked = [];
+    let mediaSource;
+    let removedSrc = 0;
+    class CapturingMediaSource extends FakeMediaSource {
+      constructor() {
+        super();
+        mediaSource = this;
+      }
+    }
+    globalThis.MediaSource = CapturingMediaSource;
+    globalThis.URL = {
+      createObjectURL: () => 'blob:src-failed',
+      revokeObjectURL: (url) => revoked.push(url),
+    };
+    const video = {
+      set src(_value) { throw failure; },
+      removeAttribute(name) {
+        assert.equal(name, 'src');
+        removedSrc += 1;
+      },
+    };
+    const controller = new MseController();
+
+    await assert.rejects(controller.attach(video), (error) => error === failure);
+    assert.deepEqual(revoked, ['blob:src-failed']);
+    assert.equal(removedSrc, 1);
+    assert.equal(mediaSource.listeners.get('sourceopen').length, 0);
+    assert.equal(mediaSource.listeners.get('sourceerror').length, 0);
+    assert.equal(controller.mediaSource, null);
+    assert.equal(controller.video, null);
+    assert.equal(controller._objectUrl, null);
+    assert.equal(controller._attachCleanup, null);
+    assert.equal(controller._attachReject, null);
   });
 });
