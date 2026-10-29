@@ -334,11 +334,15 @@ export class TsDemuxer extends Demuxer {
   _waitForTracks() {
     if (this.engine.tracks.length > 0 || this.engine.complete) return Promise.resolve();
     return new Promise((resolve) => {
-      const offs = [
-        this.engine.once('tracks', resolve),
-        this.engine.once('complete', resolve),
-      ];
-      void offs;
+      const offs = [];
+      const finish = () => {
+        for (const off of offs) off();
+        resolve();
+      };
+      offs.push(
+        this.engine.once('tracks', finish),
+        this.engine.once('complete', finish),
+      );
     });
   }
 
