@@ -139,6 +139,8 @@ export function parseMagnet(uri) {
 
   const dnParam = params.get('dn');
   const xlParam = params.get('xl');
+  const parsedXl = xlParam !== null && /^\d+$/.test(xlParam) ? Number(xlParam) : null;
+  const xl = Number.isSafeInteger(parsedXl) ? parsedXl : null;
   const tr = [...new Set(params.getAll('tr').filter(Boolean))];
 
   return {
@@ -146,7 +148,7 @@ export function parseMagnet(uri) {
     infoHashRaw,
     wasBase32,
     dn: dnParam || null,
-    xl: xlParam !== null && /^\d+$/.test(xlParam) ? Number(xlParam) : null,
+    xl,
     tr,
     raw: uri,
   };
@@ -166,6 +168,6 @@ export function buildMagnet({ infoHash, dn = null, tr = [], xl = null }) {
   params.set('xt', `urn:btih:${hex}`);
   if (dn) params.set('dn', dn);
   for (const t of tr) if (t) params.append('tr', t);
-  if (Number.isInteger(xl) && xl >= 0) params.set('xl', String(xl));
+  if (Number.isSafeInteger(xl) && xl >= 0) params.set('xl', String(xl));
   return `magnet:?${params.toString()}`;
 }

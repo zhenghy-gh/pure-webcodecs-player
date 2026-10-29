@@ -81,6 +81,12 @@ test('parseMagnet：tr 去重保序并过滤空串', () => {
   assert.deepEqual(m.tr, ['wss://a', 'wss://b']);
 });
 
+test('parseMagnet：xl 保留安全整数并拒绝不精确十进制值', () => {
+  const prefix = `magnet:?xt=urn:btih:${HEX}&xl=`;
+  assert.equal(parseMagnet(prefix + Number.MAX_SAFE_INTEGER).xl, Number.MAX_SAFE_INTEGER);
+  assert.equal(parseMagnet(prefix + '9007199254740993').xl, null);
+});
+
 test('parseMagnet：多 xt 中首个 btih 格式坏时跳过取后续合法项', () => {
   const good = 'c'.repeat(40);
   const m = parseMagnet(`magnet:?xt=urn:btih:zzzz&xt=urn:btih:${good}`);
@@ -115,11 +121,12 @@ test('parseMagnet：scheme 大小写不敏感但要求 query 分隔符', () => {
 
 // ── buildMagnet 过滤分支 ─────────────────────────────────
 
-test('buildMagnet：xl 非法（负数/小数/NaN）不写入；0 合法', () => {
-  for (const xl of [-1, 1.5, NaN]) {
+test('buildMagnet：xl 非法或不安全时不写入；安全边界合法', () => {
+  for (const xl of [-1, 1.5, NaN, Number.MAX_SAFE_INTEGER + 1]) {
     assert.ok(!buildMagnet({ infoHash: HEX, xl }).includes('xl='), `xl=${xl} 不应写入`);
   }
   assert.ok(buildMagnet({ infoHash: HEX, xl: 0 }).includes('xl=0'));
+  assert.ok(buildMagnet({ infoHash: HEX, xl: Number.MAX_SAFE_INTEGER }).includes(`xl=${Number.MAX_SAFE_INTEGER}`));
 });
 
 test('buildMagnet：空 tr 项与空 dn 被过滤', () => {
