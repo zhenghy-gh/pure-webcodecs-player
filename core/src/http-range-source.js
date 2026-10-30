@@ -224,12 +224,12 @@ export class HttpRangeDataSource {
       }
     }
     const buf = await res.arrayBuffer();
+    const got = buf.byteLength;
+    const expected = endInclusive - start + 1;
+    if (got < expected && start + got < this.size) {
+      throw sourceError(`short range response: got ${got}, want ${expected}`);
+    }
     if (res.status === 206) {
-      const got = buf.byteLength;
-      const expected = endInclusive - start + 1;
-      if (got < expected && start + got < this.size) {
-        throw sourceError(`short range response: got ${got}, want ${expected}`);
-      }
       return new Uint8Array(buf).subarray(0, Math.min(got, expected));
     }
     // 200 整文件响应且 start=0：直接可用

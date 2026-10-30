@@ -597,6 +597,60 @@ test('_rangeGet：错误状态丢弃响应体且清理失败不覆盖状态错�
   }
 });
 
+test('_rangeGet：200 短响应在切块前拒绝，重试不命中不足块', async () => {
+  const whole = makeWhole(8);
+  for (const got of [2, 0, 1, 3]) {
+    let heads = 0;
+    let requests = 0;
+    const ds = new HttpRangeDataSource('https://fixture.invalid/short-200.mp4', {
+      chunkSize: 4,
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'HEAD') { heads++; return fakeRes(200, { headers: { 'content-length': '8' } }); }
+        assert.equal(init.headers.Range, 'bytes=0-3');
+        requests++;
+        return fakeRes(200, { body: whole.slice(0, requests === 1 ? got : whole.length) });
+      },
+    });
+    // 旧实现只读首字节即可安全暴露接受短块，避免执行跨出不足块的危险组装。
+    await assert.rejects(() => ds.read(0, 1), (e) => e.code === 'SOURCE_ERROR'
+      && e.message === 'short range response: got ' + got + ', want 4');
+    assert.equal(ds._cache.size, 0);
+    assert.equal(requests, 1);
+    assert.equal(ds.size, 8);
+    assert.deepEqual([...await ds.read(0, 1)], [0]);
+    assert.deepEqual([...await ds.read(3, 1)], [3]);
+    assert.equal(ds._cache.get(0).byteLength, 4);
+    assert.equal(requests, 2);
+    assert.equal(heads, 1);
+    await ds.close();
+  }
+});
+
+test('_rangeGet：200 覆盖本次区间即可，保留超出区间截取和尾块', async () => {
+  for (const [size, bodyLength, length, range] of [
+    [8, 4, 4, 'bytes=0-3'], [8, 6, 4, 'bytes=0-3'], [8, 8, 4, 'bytes=0-3'],
+    [6, 6, 9, 'bytes=0-5'],
+  ]) {
+    const whole = makeWhole(size);
+    let requests = 0;
+    const ds = new HttpRangeDataSource('https://fixture.invalid/valid-200.mp4', {
+      chunkSize: 4,
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': String(size) } });
+        assert.equal(init.headers.Range, range);
+        requests++;
+        return fakeRes(200, { body: whole.slice(0, bodyLength) });
+      },
+    });
+    const expected = whole.slice(0, Math.min(length, size));
+    assert.deepEqual(await ds.read(0, length), expected);
+    assert.deepEqual(await ds.read(0, length), expected);
+    assert.equal(requests, 1);
+    assert.equal(ds.size, size);
+    await ds.close();
+  }
+});
+
 test('_rangeGet：206 短响应且未到文件尾 → SOURCE_ERROR（short range response）', async () => {
   const whole = makeWhole(1024);
   const ds = new HttpRangeDataSource('http://fixture.invalid/short.mp4', {
