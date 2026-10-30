@@ -38,6 +38,13 @@ test('base32↔hex：crypto 真实 sha1 往返性质验证', () => {
 test('base32：RFC4648 字母表不含 0/1/8/9；非法字符报 PARSE_ERROR', () => {
   assert.throws(() => base32ToHex('0OIL1234'.padEnd(32, 'A')), PlayerError);
   assert.throws(() => base32Decode('@@@'), PlayerError);
+  assert.throws(
+    () => base32Decode('A!'),
+    (error) =>
+      error instanceof PlayerError &&
+      error.code === 'PARSE_ERROR' &&
+      /Base32 非法字符: !/.test(error.message),
+  );
   assert.throws(() => base32Encode('not-bytes'), PlayerError);
 });
 
