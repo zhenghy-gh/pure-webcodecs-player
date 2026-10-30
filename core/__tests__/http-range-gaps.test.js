@@ -441,6 +441,74 @@ test('_rangeGet：取消整文件响应体自身抛错也不覆盖原 SOURCE_ERR
   );
 });
 
+test('_rangeGet：取消异步拒绝或不结束仍保留原 Range 错误', async () => {
+  for (const mode of ['reject', 'pending']) {
+    let cancelled = 0;
+    let bodyReads = 0;
+    const controller = new AbortController();
+    const response = new Response(new ReadableStream({
+      cancel() {
+        cancelled++;
+        return mode === 'reject' ? Promise.reject(new Error('cancel rejected')) : new Promise(() => {});
+      },
+    }), { status: 200 });
+    response.arrayBuffer = async () => { bodyReads++; throw new Error('must not read rejected body'); };
+    const ds = new HttpRangeDataSource('https://fixture.invalid/cancel-async.mp4', {
+      chunkSize: 4, requestInit: { signal: controller.signal },
+      fetchImpl: async (_url, init) => {
+        assert.equal(init.signal, controller.signal);
+        if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '16' } });
+        assert.equal(init.headers.Range, 'bytes=4-7');
+        return response;
+      },
+    });
+    await assert.rejects(() => ds.read(4, 1), (error) => error.code === 'SOURCE_ERROR'
+      && /server ignored Range header/.test(error.message));
+    assert.equal(cancelled, 1);
+    assert.equal(bodyReads, 0);
+    assert.equal(ds._cache.size, 0);
+    assert.equal(controller.signal.aborted, false);
+    await new Promise((resolve) => setImmediate(resolve));
+    await ds.close();
+  }
+});
+
+test('_rangeGet：错误状态丢弃响应体且清理失败不覆盖状态错误', async () => {
+  for (const status of [404, 500]) {
+    for (const mode of ['throw', 'reject', 'pending', 'no-body']) {
+      let cancelled = 0;
+      let bodyReads = 0;
+      const controller = new AbortController();
+      const response = {
+        status,
+        body: mode === 'no-body' ? null : { cancel() {
+          cancelled++;
+          if (mode === 'throw') throw new Error('cancel threw');
+          return mode === 'reject' ? Promise.reject(new Error('cancel rejected')) : new Promise(() => {});
+        } },
+        async arrayBuffer() { bodyReads++; throw new Error('must not read rejected body'); },
+      };
+      const ds = new HttpRangeDataSource('https://fixture.invalid/cancel-status.mp4', {
+        chunkSize: 4, requestInit: { signal: controller.signal },
+        fetchImpl: async (_url, init) => {
+          assert.equal(init.signal, controller.signal);
+          if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '16' } });
+          assert.equal(init.headers.Range, 'bytes=4-7');
+          return response;
+        },
+      });
+      await assert.rejects(() => ds.read(4, 1), (error) => error.code === 'SOURCE_ERROR'
+        && error.message.includes('range request failed (' + status + ')'));
+      assert.equal(cancelled, mode === 'no-body' ? 0 : 1);
+      assert.equal(bodyReads, 0);
+      assert.equal(ds._cache.size, 0);
+      assert.equal(controller.signal.aborted, false);
+      await new Promise((resolve) => setImmediate(resolve));
+      await ds.close();
+    }
+  }
+});
+
 test('_rangeGet：206 短响应且未到文件尾 → SOURCE_ERROR（short range response）', async () => {
   const whole = makeWhole(1024);
   const ds = new HttpRangeDataSource('http://fixture.invalid/short.mp4', {

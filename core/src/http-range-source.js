@@ -12,6 +12,12 @@ import { DEFAULT_MAX_READ_BYTES, assertByteLength } from './limits.js';
 
 const DEFAULT_CHUNK = 1 << 18; // 256KB
 
+function cancelResponseBody(res) {
+  try {
+    Promise.resolve(res.body?.cancel?.()).catch(() => {});
+  } catch { /* 尽力清理，不覆盖请求结果，也不等待取消完成 */ }
+}
+
 function mergeHeaders(...sources) {
   const merged = new Map();
   for (const source of sources) {
@@ -125,9 +131,7 @@ export class HttpRangeDataSource {
         this.size = total;
         this.acceptRanges = true;
       } finally {
-        try {
-          Promise.resolve(res.body?.cancel?.()).catch(() => {});
-        } catch { /* 尽力清理，不覆盖探测结果 */ }
+        cancelResponseBody(res);
       }
     }
     this._opened = true;
@@ -191,15 +195,12 @@ export class HttpRangeDataSource {
   async _rangeGet(start, endInclusive) {
     const res = await this._fetch(this.url, this._requestInit({ Range: `bytes=${start}-${endInclusive}` }));
     if (res.status !== 206 && res.status !== 200) {
+      cancelResponseBody(res);
       throw sourceError(`range request failed (${res.status}) for ${this.url}`);
     }
     if (res.status === 200 && start > 0) {
       // 不支持 Range 的服务器返回整文件 200 —— 对渐进加载是硬错误
-      try {
-        res.body?.cancel?.();
-      } catch {
-        /* 忽略 */
-      }
+      cancelResponseBody(res);
       throw sourceError(`server ignored Range header (got 200) for ${this.url}`);
     }
     if (res.status === 206) {
@@ -211,9 +212,7 @@ export class HttpRangeDataSource {
         const actualEnd = match ? Number(match[2]) : NaN;
         if (!Number.isSafeInteger(actualStart) || !Number.isSafeInteger(actualEnd)
           || actualStart !== start || actualEnd !== endInclusive) {
-          try {
-            Promise.resolve(res.body?.cancel?.()).catch(() => {});
-          } catch { /* 尽力释放，保留区间错误 */ }
+          cancelResponseBody(res);
           throw sourceError(
             `Content-Range mismatch: expected bytes ${start}-${endInclusive}, got ${contentRange}`,
           );
