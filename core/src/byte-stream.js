@@ -10,7 +10,7 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder('utf-8');
 
 function resolveByteWindow(available, byteOffset, byteLength) {
-  const start = byteOffset ?? 0;
+  const start = byteOffset === undefined ? 0 : byteOffset;
   const length = byteLength === undefined ? available - start : byteLength;
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(length)
     || start < 0 || length < 0 || length > available || start > available - length) {
