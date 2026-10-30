@@ -665,6 +665,52 @@ test('_rangeGet：206 短响应且未到文件尾 → SOURCE_ERROR（short range
 });
 
 
+test('requestInit.method 不能覆盖内部 HEAD 与 Range GET', async () => {
+  for (const override of ['POST', 'HEAD', 'DELETE']) {
+    const requests = [];
+    const whole = makeWhole(8);
+    const ds = new HttpRangeDataSource('https://fixture.invalid/fixed-method.mp4', {
+      chunkSize: 4,
+      requestInit: { method: override, credentials: 'include', headers: { Authorization: 'token' } },
+      fetchImpl: async (_url, init) => {
+        requests.push(init);
+        assert.equal(init.credentials, 'include');
+        assert.equal(init.headers.Authorization, 'token');
+        if (init.headers.Range === undefined) {
+          assert.equal(init.method, 'HEAD');
+          return fakeRes(200, { headers: { 'content-length': '8' } });
+        }
+        assert.equal(init.method, 'GET');
+        const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(init.headers.Range);
+        return fakeRes(206, { body: whole.slice(Number(start), Number(end) + 1) });
+      },
+    });
+    assert.deepEqual([...await ds.read(4, 2)], [4, 5]);
+    assert.deepEqual(requests.map((request) => request.method), ['HEAD', 'GET']);
+    await ds.close();
+  }
+});
+
+test('requestInit.method 不改变 Range GET 探测方法', async () => {
+  const methods = [];
+  const ds = new HttpRangeDataSource('https://fixture.invalid/probe-method.mp4', {
+    chunkSize: 4,
+    requestInit: { method: 'POST' },
+    fetchImpl: async (_url, init) => {
+      methods.push(init.method);
+      if (init.method === 'HEAD') return fakeRes(405);
+      assert.equal(init.method, 'GET');
+      if (init.headers.Range === 'bytes=0-0') {
+        return fakeRes(206, { headers: { 'content-range': 'bytes 0-0/4' } });
+      }
+      return fakeRes(206, { body: new Uint8Array([1, 2, 3, 4]) });
+    },
+  });
+  assert.deepEqual([...await ds.read(0, 1)], [1]);
+  assert.deepEqual(methods, ['HEAD', 'GET', 'GET']);
+  await ds.close();
+});
+
 test('requestInit.headers：保留自定义头并在探测与分段请求中发送 Range', async () => {
   const whole = makeWhole(256);
   const requests = [];

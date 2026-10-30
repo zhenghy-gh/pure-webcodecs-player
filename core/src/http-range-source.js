@@ -107,7 +107,7 @@ export class HttpRangeDataSource {
 
     if (!Number.isFinite(this.size)) {
       // 退路：GET 首字节，从 Content-Range 里拿总长
-      const res = await this._fetch(this.url, this._requestInit({ Range: 'bytes=0-0' }));
+      const res = await this._fetch(this.url, this._requestInit({ Range: 'bytes=0-0' }, { method: 'GET' }));
       try {
         if (res.status !== 206) {
           throw sourceError(
@@ -194,7 +194,7 @@ export class HttpRangeDataSource {
   }
 
   async _rangeGet(start, endInclusive) {
-    const res = await this._fetch(this.url, this._requestInit({ Range: `bytes=${start}-${endInclusive}` }));
+    const res = await this._fetch(this.url, this._requestInit({ Range: `bytes=${start}-${endInclusive}` }, { method: 'GET' }));
     if (res.status !== 206 && res.status !== 200) {
       cancelResponseBody(res);
       throw sourceError(`range request failed (${res.status}) for ${this.url}`);
