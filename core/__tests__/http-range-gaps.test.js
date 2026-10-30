@@ -205,6 +205,63 @@ test('requestInit.headers：保留自定义头并在探测与分段请求中发�
   assert.equal(requests[2].headers.Authorization, 'Bearer token');
   assert.equal(requests[2].headers.Range, 'bytes=128-255');
 });
+test('HeadersInit 合并保留认证、大小写覆盖及内部 Range', async () => {
+  const whole = makeWhole(256);
+  const optionHeaders = new Headers({ Authorization: 'old', 'X-Option': 'yes', range: 'bytes=9-9' });
+  const requestHeaders = [['authorization', 'Bearer token'], ['X-Repeat', 'one'], ['x-repeat', 'two']];
+  const requests = [];
+  const ds = new HttpRangeDataSource('https://fixture.invalid/headers.mp4', {
+    chunkSize: 128,
+    headers: optionHeaders,
+    requestInit: { headers: requestHeaders, credentials: 'include' },
+    fetchImpl: async (_url, init) => {
+      const headers = new Headers(init.headers);
+      requests.push({ headers, credentials: init.credentials, raw: init.headers });
+      if (headers.get('authorization') !== 'Bearer token') return fakeRes(401);
+      if (init.method === 'HEAD') return fakeRes(405);
+      const range = headers.get('range');
+      if (range === 'bytes=0-0') return fakeRes(206, { headers: { 'content-range': 'bytes 0-0/256' } });
+      const match = /^bytes=(\d+)-(\d+)$/.exec(range ?? '');
+      assert.ok(match);
+      return fakeRes(206, { body: whole.slice(Number(match[1]), Number(match[2]) + 1) });
+    },
+  });
+  assert.deepEqual([...await ds.read(128, 8)], [...whole.slice(128, 136)]);
+  assert.deepEqual(requests.map((r) => r.headers.get('range')), ['bytes=9-9', 'bytes=0-0', 'bytes=128-255']);
+  for (const request of requests) {
+    assert.equal(request.headers.get('authorization'), 'Bearer token');
+    assert.equal(request.headers.get('x-option'), 'yes');
+    assert.equal(request.headers.get('x-repeat'), 'one, two');
+    assert.equal(request.credentials, 'include');
+    assert.equal(Object.getPrototypeOf(request.raw), Object.prototype);
+  }
+  assert.equal(optionHeaders.get('authorization'), 'old');
+  assert.deepEqual(requestHeaders, [['authorization', 'Bearer token'], ['X-Repeat', 'one'], ['x-repeat', 'two']]);
+});
+
+test('无全局 Headers 时自定义 fetch 仍可合并普通对象和元组', async () => {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'Headers');
+  Object.defineProperty(globalThis, 'Headers', { value: undefined, configurable: true });
+  try {
+    const ds = new HttpRangeDataSource('https://fixture.invalid/no-headers.mp4', {
+      headers: [['authorization', 'old'], ['range', 'bytes=9-9']],
+      requestInit: { headers: { Authorization: 'new' } },
+      fetchImpl: async (_url, init) => {
+        assert.equal(init.headers.Authorization, 'new');
+        if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '4' } });
+        assert.equal(init.headers.Range, 'bytes=0-3');
+        assert.equal(Object.keys(init.headers).filter((key) => key.toLowerCase() === 'range').length, 1);
+        return fakeRes(206, { body: new Uint8Array([1, 2, 3, 4]) });
+      },
+      chunkSize: 4,
+    });
+    assert.deepEqual([...await ds.read(0, 4)], [1, 2, 3, 4]);
+  } finally {
+    if (saved) Object.defineProperty(globalThis, 'Headers', saved);
+    else delete globalThis.Headers;
+  }
+});
+
 test('_rangeGet：200 整文件且 start=0 → 直接截取可用区间', async () => {
   const whole = makeWhole(512);
   const ds = new HttpRangeDataSource('http://fixture.invalid/full.mp4', {

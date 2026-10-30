@@ -12,6 +12,28 @@ import { DEFAULT_MAX_READ_BYTES, assertByteLength } from './limits.js';
 
 const DEFAULT_CHUNK = 1 << 18; // 256KB
 
+function mergeHeaders(...sources) {
+  const merged = new Map();
+  for (const source of sources) {
+    if (source == null) continue;
+    const layer = new Map();
+    const add = (name, value) => {
+      const key = String(name).toLowerCase();
+      const previous = layer.get(key);
+      layer.set(key, previous ? [previous[0], String(previous[1]) + ', ' + String(value)] : [String(name), value]);
+    };
+    if (Array.isArray(source)) {
+      for (const [name, value] of source) add(name, value);
+    } else if (typeof source.forEach === 'function') {
+      source.forEach((value, name) => add(name, value));
+    } else {
+      for (const [name, value] of Object.entries(source)) add(name, value);
+    }
+    for (const [key, entry] of layer) merged.set(key, entry);
+  }
+  return Object.fromEntries(merged.values());
+}
+
 export class HttpRangeDataSource {
   /**
    * @param {string} url
@@ -49,11 +71,7 @@ export class HttpRangeDataSource {
     return {
       ...requestInit,
       ...init,
-      headers: {
-        ...this.headers,
-        ...(requestHeaders ?? {}),
-        ...(headers ?? {}),
-      },
+      headers: mergeHeaders(this.headers, requestHeaders, headers),
     };
   }
   async open() {
