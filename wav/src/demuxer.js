@@ -249,6 +249,7 @@ export class WavDemuxer extends Demuxer {
     const signal = options?.signal ?? null;
     throwIfAborted(signal, `readSample(${trackId}) aborted`);
     if (!this.#reader || !this.#readerActive) {
+      if (this.state === 'ended') return null;
       this.#reader = this.samples(trackId, options)[Symbol.asyncIterator]();
       this.#readerActive = true;
     }

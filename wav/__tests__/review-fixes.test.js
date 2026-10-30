@@ -234,6 +234,7 @@ describe('评审严重/建议项回归', () => {
       assert.equal(s.keyframe, true);
     }
     assert.ok(got >= 1);
+    assert.equal(await dem.readSample(1), null, 'repeated EOS stays null');
 
     const r = await dem.seek(Math.round(20 / 8000 * 1e6));
     assert.ok(r.actualTimestampUs >= 0);
