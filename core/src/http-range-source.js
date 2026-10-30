@@ -7,6 +7,7 @@
  * - 服务器不支持 Range 时抛 SOURCE_ERROR 并给出明确提示。
  */
 import { sourceError } from './errors.js';
+import { supportsByteRanges } from './http-range-utils.js';
 import { assertSafeUrl } from './url-guard.js';
 import { DEFAULT_MAX_READ_BYTES, assertByteLength } from './limits.js';
 
@@ -98,7 +99,7 @@ export class HttpRangeDataSource {
         const len = rawLength != null && /^[0-9]+$/.test(rawLength.trim()) ? Number(rawLength) : NaN;
         if (Number.isSafeInteger(len) && len >= 0) {
           this.size = len;
-          this.acceptRanges = (res.headers.get('accept-ranges') ?? '').includes('bytes');
+          this.acceptRanges = supportsByteRanges(res.headers.get('accept-ranges'));
         }
       }
     } catch {

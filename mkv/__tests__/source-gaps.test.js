@@ -37,6 +37,26 @@ test('BlobSource 拒绝无 slice 的对象（BAD_BLOB）', () => {
   });
 });
 
+test('FetchSource Accept-Ranges compares complete range-unit tokens case-insensitively', async () => {
+  for (const [value, expected] of [
+    ['bytes', true], ['BYTES', true], ['ByTeS', true], ['items, Bytes', true],
+    ['items, pages', false], ['NONE', false], ['none, bytes', false],
+    ['bytesx', false], ['xbytes', false], [', bytes', false], ['bytes,', false],
+    ['items,,bytes', false], ['bytes=', false], ['items,\tBYTES\t', true], ['', false], [null, false],
+  ]) {
+    const headers = { 'content-length': '4' };
+    if (value !== null) headers['accept-ranges'] = value;
+    const src = await FetchSource.open('http://x/accept-ranges.mkv', {
+      fetchImpl: async (_url, init) => {
+        assert.equal(init.method, 'HEAD');
+        return fakeRes({ headers });
+      },
+    });
+    assert.equal(src.byteLength, 4);
+    assert.equal(src.acceptRanges, expected, String(value));
+  }
+});
+
 test('FetchSource HEAD 失败回退 GET Range:0-0：200 视为不支持 Range', async () => {
   const calls = [];
   const fetchImpl = async (url, init) => {

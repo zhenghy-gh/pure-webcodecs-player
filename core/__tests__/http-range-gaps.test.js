@@ -154,6 +154,28 @@ test('HEAD 非法 Content-Length 回退探测，随后可读正确数据', async
   }
 });
 
+test('HEAD Accept-Ranges compares complete range-unit tokens case-insensitively', async () => {
+  for (const [value, expected] of [
+    ['bytes', true], ['BYTES', true], ['ByTeS', true], ['items, Bytes', true],
+    ['items, pages', false], ['NONE', false], ['none, bytes', false],
+    ['bytesx', false], ['xbytes', false], [', bytes', false], ['bytes,', false],
+    ['items,,bytes', false], ['bytes=', false], ['items,\tBYTES\t', true], ['', false], [null, false],
+  ]) {
+    const headers = { 'content-length': '4' };
+    if (value !== null) headers['accept-ranges'] = value;
+    const ds = new HttpRangeDataSource('https://fixture.invalid/accept-ranges.mp4', {
+      fetchImpl: async (_url, init) => {
+        assert.equal(init.method, 'HEAD');
+        return fakeRes(200, { headers });
+      },
+    });
+    await ds.open();
+    assert.equal(ds.size, 4);
+    assert.equal(ds.acceptRanges, expected, String(value));
+    await ds.close();
+  }
+});
+
 test('HEAD 合法非负安全长度包含零，不额外发 GET', async () => {
   for (const value of ['0', '000', '1', '00012', ' 42 ', String(Number.MAX_SAFE_INTEGER)]) {
     let requests = 0;

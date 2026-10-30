@@ -15,6 +15,7 @@
  */
 
 import { PlayerError } from '../../core/src/errors.js';
+import { supportsByteRanges } from '../../core/src/http-range-utils.js';
 
 /**
  * 数据源错误：契约 §11.3 十码中的 SOURCE_ERROR 家族
@@ -129,7 +130,7 @@ export class FetchSource {
         }
       }
       this.acceptRanges =
-        (res.headers.get('accept-ranges') || '').includes('bytes') ||
+        supportsByteRanges(res.headers.get('accept-ranges')) ||
         res.status === 206;
       const lenHeader = res.headers.get('content-length') ?? res.headers.get('content-range');
       if (lenHeader) {
