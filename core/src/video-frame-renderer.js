@@ -26,6 +26,15 @@ void main() {
   gl_FragColor = texture2D(u_texture, v_uv);
 }`;
 
+const MAX_CANVAS_DIMENSION = 0xFFFFFFFF;
+
+function toCanvasDimension(value) {
+  if (!Number.isFinite(value) || value < 0 || value > MAX_CANVAS_DIMENSION) {
+    throw new RangeError('canvas dimensions must be finite unsigned 32-bit values');
+  }
+  return Math.trunc(value);
+}
+
 /**
  * 契约 §6 工厂：创建统一 VideoRenderer 实例。
  * `preference` 是定稿参数名，`mode` 作为迁移期兼容参数保留。
@@ -123,8 +132,10 @@ export class VideoFrameRenderer extends Emitter {
 
   /** 调整画布物理尺寸 */
   resize(width, height) {
-    if (this.canvas.width !== width) this.canvas.width = width;
-    if (this.canvas.height !== height) this.canvas.height = height;
+    const pixelWidth = toCanvasDimension(width);
+    const pixelHeight = toCanvasDimension(height);
+    if (this.canvas.width !== pixelWidth) this.canvas.width = pixelWidth;
+    if (this.canvas.height !== pixelHeight) this.canvas.height = pixelHeight;
   }
 
   /** 计算 fit 适配后的目标矩形（CSS 像素） */

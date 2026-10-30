@@ -386,6 +386,65 @@ test('resize：仅在尺寸变化时改写 canvas（避免无谓重排）', asyn
   });
 });
 
+test('resize 将fraction归一为canvas整数，重复请求不重复重置', async () => {
+  await withDocument(() => {
+    let width = 100;
+    let height = 80;
+    let widthWrites = 0;
+    let heightWrites = 0;
+    const canvas = makeCanvas({ ctx: new Fake2D() });
+    Object.defineProperties(canvas, {
+      width: { configurable: true, get: () => width, set: (value) => { width = Math.trunc(value); widthWrites += 1; } },
+      height: { configurable: true, get: () => height, set: (value) => { height = Math.trunc(value); heightWrites += 1; } },
+    });
+    const renderer = new VideoFrameRenderer(canvas, { mode: '2d' });
+    renderer.resize(320.8, 240.4);
+    renderer.resize(320.8, 240.4);
+    assert.equal(canvas.width, 320);
+    assert.equal(canvas.height, 240);
+    assert.equal(widthWrites, 1);
+    assert.equal(heightWrites, 1);
+  });
+});
+
+test('resize 非法维度在改写任一维前拒绝', async () => {
+  await withDocument(() => {
+    let width = 100;
+    let height = 80;
+    let widthWrites = 0;
+    let heightWrites = 0;
+    const canvas = makeCanvas({ ctx: new Fake2D() });
+    Object.defineProperties(canvas, {
+      width: { configurable: true, get: () => width, set: (value) => { width = Math.trunc(value); widthWrites += 1; } },
+      height: { configurable: true, get: () => height, set: (value) => { height = Math.trunc(value); heightWrites += 1; } },
+    });
+    const renderer = new VideoFrameRenderer(canvas, { mode: '2d' });
+    for (const [nextWidth, nextHeight] of [
+      [NaN, 80], [Infinity, 80], [-Infinity, 80], [undefined, 80], [null, 80], [-1, 80], [-0.25, 80], ['120', 80], [0x100000000, 80],
+      [120, NaN], [120, Infinity], [120, -Infinity], [120, undefined], [120, null], [120, -1], [120, -0.25], [120, '80'], [120, 0x100000000],
+    ]) {
+      assert.throws(() => renderer.resize(nextWidth, nextHeight), RangeError);
+      assert.equal(canvas.width, 100);
+      assert.equal(canvas.height, 80);
+      assert.equal(widthWrites, 0);
+      assert.equal(heightWrites, 0);
+    }
+  });
+});
+
+test('resize 接受unsigned-long边界并将小于1px的fraction截为0', async () => {
+  await withDocument(() => {
+    const canvas = makeCanvas({ ctx: new Fake2D(), width: 100, height: 80 });
+    const renderer = new VideoFrameRenderer(canvas, { mode: '2d' });
+    renderer.resize(0, 0xFFFFFFFF);
+    assert.equal(canvas.width, 0);
+    assert.equal(canvas.height, 0xFFFFFFFF);
+    renderer.resize(0.75, 0.25);
+    assert.equal(canvas.width, 0);
+    assert.equal(canvas.height, 0);
+  });
+});
+
 test('clear：2D 填充指定颜色；WebGL 调用 gl.clear', async () => {
   await withDocument(() => {
     const ctx = new Fake2D();
