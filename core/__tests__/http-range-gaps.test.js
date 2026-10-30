@@ -715,7 +715,9 @@ test('_rangeGet：200 整文件且 start=0 → 直接截取可用区间', async 
 });
 
 test('206 可见 Content-Range 错位或非法时拒绝，正确重试不命中坏缓存', async () => {
-  for (const contentRange of ['bytes 0-3/12', 'bytes 4-8/12', 'garbage', '', 'bytes 9007199254740993-9007199254740996/*']) {
+  const invalid = ['bytes 0-3/12', 'bytes 4-8/12', 'garbage', '', 'bytes 9007199254740993-9007199254740996/*'];
+  invalid.push(...['0', '6', '8', '11', '13', '9007199254740991', '9007199254740992'].map((total) => 'bytes 4-7/' + total));
+  for (const contentRange of invalid) {
     let requests = 0;
     let cancelled = 0;
     let bodyReads = 0;
@@ -740,13 +742,17 @@ test('206 可见 Content-Range 错位或非法时拒绝，正确重试不命中�
     assert.deepEqual([...await ds.read(4, 4)], [4, 5, 6, 7]);
     assert.equal(requests, 2);
     assert.equal(bodyReads, 1);
+    assert.equal(cancelled, 1);
+    assert.equal(ds.size, 12);
+    assert.deepEqual([...await ds.read(4, 4)], [4, 5, 6, 7]);
+    assert.equal(requests, 2);
     await ds.close();
   }
 });
 
 test('206 匹配或不可见 Content-Range 保留跨块与尾块读取', async () => {
   const whole = makeWhole(10);
-  for (const visible of [true, false]) {
+  for (const total of ['10', '00010', '*', null]) {
     const ds = new HttpRangeDataSource('https://fixture.invalid/ranges.mp4', {
       chunkSize: 4,
       fetchImpl: async (_url, init) => {
@@ -754,7 +760,7 @@ test('206 匹配或不可见 Content-Range 保留跨块与尾块读取', async (
         const [, startText, endText] = /^bytes=(\d+)-(\d+)$/.exec(init.headers.Range);
         const start = Number(startText), end = Number(endText);
         return fakeRes(206, {
-          headers: visible ? { 'content-range': 'BYTES ' + start + '-' + end + '/*' } : {},
+          headers: total != null ? { 'content-range': 'BYTES ' + start + '-' + end + '/' + total } : {},
           body: whole.slice(start, end + 1),
         });
       },

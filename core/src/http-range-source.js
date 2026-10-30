@@ -208,11 +208,14 @@ export class HttpRangeDataSource {
       const contentRange = res.headers.get('content-range');
       // 跨域可能未暴露此响应头；可见时校验，避免错位数据进入缓存。
       if (contentRange != null) {
-        const match = /^bytes\s+(\d+)-(\d+)\/(?:\d+|\*)$/i.exec(contentRange.trim());
+        const match = /^bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i.exec(contentRange.trim());
         const actualStart = match ? Number(match[1]) : NaN;
         const actualEnd = match ? Number(match[2]) : NaN;
+        const actualTotal = match ? Number(match[3]) : NaN;
+        const validTotal = match?.[3] === '*' || (Number.isSafeInteger(actualTotal)
+          && actualTotal > 0 && actualTotal === this.size);
         if (!Number.isSafeInteger(actualStart) || !Number.isSafeInteger(actualEnd)
-          || actualStart !== start || actualEnd !== endInclusive) {
+          || actualStart !== start || actualEnd !== endInclusive || !validTotal) {
           cancelResponseBody(res);
           throw sourceError(
             `Content-Range mismatch: expected bytes ${start}-${endInclusive}, got ${contentRange}`,
