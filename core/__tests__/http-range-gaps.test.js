@@ -32,6 +32,83 @@ function deferred() {
   return { promise, resolve };
 }
 
+test('构造：非法分块或缓存配置同步 SOURCE_ERROR，且不发请求', () => {
+  let requests = 0;
+  const fetchImpl = async () => { requests++; return fakeRes(200); };
+  const nonNumbers = ['4', true, false, {}, [], 1n, Symbol('option')];
+  const cases = [
+    ['chunkSize', [0, -0, -1, 0.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1, ...nonNumbers]],
+    ['maxCachedBlocks', [-1, 0.5, NaN, -Infinity, Number.MAX_SAFE_INTEGER + 1, ...nonNumbers]],
+  ];
+  for (const [name, values] of cases) {
+    for (const value of values) {
+      assert.throws(() => new HttpRangeDataSource('https://fixture.invalid/options.mp4', {
+        fetchImpl, [name]: value,
+      }), (error) => error.code === 'SOURCE_ERROR' && error.message.includes(name));
+    }
+  }
+  for (const value of [undefined, null]) {
+    const ds = new HttpRangeDataSource('https://fixture.invalid/default-options.mp4', {
+      fetchImpl, chunkSize: value, maxCachedBlocks: value,
+    });
+    assert.equal(ds.chunkSize, 1 << 18);
+    assert.equal(ds.maxCachedBlocks, 64);
+  }
+  assert.doesNotThrow(() => new HttpRangeDataSource('https://fixture.invalid/boundary-options.mp4', {
+    fetchImpl, chunkSize: Number.MAX_SAFE_INTEGER, maxCachedBlocks: Number.MAX_SAFE_INTEGER,
+  }));
+  assert.equal(requests, 0);
+});
+
+test('构造：chunkSize=1 且零缓存时跨块、尾读及重读完整', async () => {
+  const whole = makeWhole(5);
+  for (const capacity of [0, -0]) {
+    const ranges = [];
+    let heads = 0;
+    const ds = new HttpRangeDataSource('https://fixture.invalid/no-cache.mp4', {
+      chunkSize: 1, maxCachedBlocks: capacity,
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'HEAD') {
+          heads++;
+          return fakeRes(200, { headers: { 'content-length': '5' } });
+        }
+        ranges.push(init.headers.Range);
+        const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(init.headers.Range);
+        return fakeRes(206, { body: whole.slice(Number(start), Number(end) + 1) });
+      },
+    });
+    assert.deepEqual([...await ds.read(1, 3)], [1, 2, 3]);
+    assert.equal(ds._cache.size, 0);
+    assert.deepEqual([...await ds.read(4, 9)], [4]);
+    assert.equal(ds._cache.size, 0);
+    assert.deepEqual([...await ds.read(1, 3)], [1, 2, 3]);
+    assert.equal(ds._cache.size, 0);
+    assert.deepEqual(ranges, ['bytes=1-3', 'bytes=4-4', 'bytes=1-3']);
+    assert.equal(heads, 1);
+    await ds.close();
+  }
+});
+
+test('构造：Infinity 缓存容量保留命中且不淘汰', async () => {
+  const whole = makeWhole(6);
+  const ranges = [];
+  const ds = new HttpRangeDataSource('https://fixture.invalid/unbounded-cache.mp4', {
+    chunkSize: 2, maxCachedBlocks: Infinity,
+    fetchImpl: async (_url, init) => {
+      if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '6' } });
+      ranges.push(init.headers.Range);
+      const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(init.headers.Range);
+      return fakeRes(206, { body: whole.slice(Number(start), Number(end) + 1) });
+    },
+  });
+  assert.deepEqual([...await ds.read(0, 2)], [0, 1]);
+  assert.deepEqual([...await ds.read(4, 2)], [4, 5]);
+  assert.deepEqual([...await ds.read(0, 2)], [0, 1]);
+  assert.deepEqual(ranges, ['bytes=0-1', 'bytes=4-5']);
+  assert.equal(ds._cache.size, 2);
+  await ds.close();
+});
+
 test('构造：环境无 fetch → SOURCE_ERROR（非 TypeError）', () => {
   const saved = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
   Object.defineProperty(globalThis, 'fetch', { value: undefined, configurable: true });

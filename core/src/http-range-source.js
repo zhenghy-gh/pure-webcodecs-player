@@ -43,6 +43,7 @@ export class HttpRangeDataSource {
    *   fetchImpl?: typeof fetch,
    *   maxReadLength?: number,
    * }} [options]
+   *   chunkSize：正安全整数；maxCachedBlocks：非负安全整数或 Infinity，0 禁用缓存。
    *   maxReadLength：单次 read 的字节上界（默认 64MB），防畸形长度字段触发超大 Range 请求
    */
   constructor(url, options = {}) {
@@ -50,6 +51,13 @@ export class HttpRangeDataSource {
     this.url = assertSafeUrl(url, { what: 'HTTP Range 数据源', code: 'source' });
     this.chunkSize = options.chunkSize ?? DEFAULT_CHUNK;
     this.maxCachedBlocks = options.maxCachedBlocks ?? 64;
+    if (!Number.isSafeInteger(this.chunkSize) || this.chunkSize <= 0) {
+      throw sourceError('chunkSize must be a positive safe integer');
+    }
+    if (this.maxCachedBlocks !== Infinity
+      && (!Number.isSafeInteger(this.maxCachedBlocks) || this.maxCachedBlocks < 0)) {
+      throw sourceError('maxCachedBlocks must be a non-negative safe integer or Infinity');
+    }
     this.maxReadLength = options.maxReadLength ?? DEFAULT_MAX_READ_BYTES;
     this.headers = options.headers ?? {};
     this.requestInit = options.requestInit ?? {};
