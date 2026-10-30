@@ -27,7 +27,9 @@ export function setLogLevel(level) {
 /** 二进制安全预览：最多前 16 字节 hex（§11.4 禁打印二进制本体） */
 export function logBytes(bytes, max = 16) {
   if (!bytes || typeof bytes.byteLength !== 'number') return String(bytes);
-  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const u8 = ArrayBuffer.isView(bytes)
+    ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    : new Uint8Array(bytes);
   const n = Math.min(max, u8.byteLength);
   let s = '';
   for (let i = 0; i < n; i++) s += u8[i].toString(16).padStart(2, '0');
