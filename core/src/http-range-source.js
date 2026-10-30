@@ -37,6 +37,7 @@ export class HttpRangeDataSource {
     }
     /** @type {Map<number, Uint8Array>} LRU：Map 保插入序，命中即重插 */
     this._cache = new Map();
+    this._cacheGeneration = 0;
     this.size = Infinity;
     this.uri = url;
     this.acceptRanges = false;
@@ -98,6 +99,7 @@ export class HttpRangeDataSource {
 
   /** @returns {Promise<Uint8Array>} 恰好 length 字节 */
   async read(offset, length) {
+    const cacheGeneration = this._cacheGeneration;
     if (!this._opened) await this.open();
     if (offset < 0 || offset >= this.size) {
       throw sourceError(`read out of range: offset=${offset} size=${this.size}`);
@@ -126,11 +128,11 @@ export class HttpRangeDataSource {
     }
     if (missingStart !== null) missingRuns.push([missingStart, lastBlock]);
 
-    for (const [start, end] of missingRuns) await this._prefetch(start, end, blocks);
+    for (const [start, end] of missingRuns) await this._prefetch(start, end, blocks, cacheGeneration);
     return this._assemble(offset, want, blocks);
   }
 
-  async _prefetch(firstBlock, lastBlock, blocks = null) {
+  async _prefetch(firstBlock, lastBlock, blocks = null, cacheGeneration = this._cacheGeneration) {
     // 连续块合并为一次 Range 请求，减少请求数
     const start = firstBlock * this.chunkSize;
     const endInclusive = Math.min(lastBlock * this.chunkSize + this.chunkSize - 1, this.size - 1);
@@ -143,7 +145,7 @@ export class HttpRangeDataSource {
       const blockBytes = bytes.subarray(relStart, Math.min(relStart + this.chunkSize, bytes.byteLength));
       const stored = blockBytes.slice();
       blocks?.set(b, stored);
-      this._put(b, stored);
+      if (cacheGeneration === this._cacheGeneration) this._put(b, stored);
     }
   }
 
@@ -208,6 +210,7 @@ export class HttpRangeDataSource {
   }
 
   async close() {
+    this._cacheGeneration += 1;
     this._cache.clear();
   }
 }

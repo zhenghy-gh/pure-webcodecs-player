@@ -26,6 +26,12 @@ const fakeRes = (status, { headers = {}, body = null } = {}) => ({
   arrayBuffer: async () => body ?? new ArrayBuffer(0),
 });
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((res) => { resolve = res; });
+  return { promise, resolve };
+}
+
 test('构造：环境无 fetch → SOURCE_ERROR（非 TypeError）', () => {
   const saved = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
   Object.defineProperty(globalThis, 'fetch', { value: undefined, configurable: true });
@@ -212,4 +218,29 @@ test('_rangeGet：200 整文件且 start=0 → 直接截取可用区间', async 
   const part = await ds.read(0, 20);
   assert.deepEqual([...part], [...whole.subarray(0, 20)]);
   assert.equal(ds.acceptRanges, true);
+});
+
+test('close：多段在途 read 正常完成，但不回填已清理缓存', async () => {
+  const firstRange = deferred();
+  let rangeRequests = 0;
+  const ds = new HttpRangeDataSource('https://fixture.invalid/close.mp4', {
+    chunkSize: 4,
+    fetchImpl: async (_url, init = {}) => {
+      if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '12', 'accept-ranges': 'bytes' } });
+      rangeRequests++;
+      if (rangeRequests === 1) return firstRange.promise;
+      return fakeRes(206, { body: new Uint8Array([9, 10, 11, 12]).buffer });
+    },
+  });
+  await ds.open();
+  ds._put(1, new Uint8Array([5, 6, 7, 8]));
+  const reading = ds.read(0, 12);
+  assert.equal(rangeRequests, 1);
+
+  await ds.close();
+  assert.equal(ds._cache.size, 0);
+  firstRange.resolve(fakeRes(206, { body: new Uint8Array([1, 2, 3, 4]).buffer }));
+  assert.deepEqual([...await reading], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.equal(rangeRequests, 2);
+  assert.equal(ds._cache.size, 0);
 });
