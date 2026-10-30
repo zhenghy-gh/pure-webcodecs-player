@@ -9,6 +9,16 @@ import { sourceError } from './errors.js';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder('utf-8');
 
+function resolveByteWindow(available, byteOffset, byteLength) {
+  const start = byteOffset === undefined ? 0 : byteOffset;
+  const length = byteLength === undefined ? available - start : byteLength;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(length)
+    || start < 0 || length < 0 || start + length > available) {
+    throw sourceError(`ByteStream window out of range: offset=${String(start)} length=${String(length)}`);
+  }
+  return { start, length };
+}
+
 /** 大端读取器（只读视图，不复制底层数据） */
 export class ByteStream {
   /**
@@ -17,29 +27,21 @@ export class ByteStream {
    * @param {number} [byteLength]
    */
   constructor(buffer, byteOffset = 0, byteLength = undefined) {
+    const isArrayBuffer = buffer instanceof ArrayBuffer;
+    const isView = ArrayBuffer.isView(buffer);
+    if (!isArrayBuffer && !isView) {
+      throw sourceError('ByteStream expects ArrayBuffer or typed array');
+    }
+    const { start, length } = resolveByteWindow(buffer.byteLength, byteOffset, byteLength);
     let view;
     if (buffer instanceof Uint8Array) {
-      const start = byteOffset ?? 0;
-      const len = byteLength === undefined ? buffer.byteLength - start : byteLength;
-      if (start < 0 || len < 0 || start + len > buffer.byteLength) {
-        throw sourceError(`ByteStream window out of range: offset=${start} length=${len}`);
-      }
-      view = new Uint8Array(buffer.buffer, buffer.byteOffset + start, len);
-    } else if (ArrayBuffer.isView(buffer)) {
-      // 尊重调用方传入的 byteOffset/byteLength 子窗口（此前会丢弃这两个参数）。
-      const start = byteOffset ?? 0;
-      const len = byteLength === undefined ? buffer.byteLength - start : byteLength;
-      if (start < 0 || len < 0 || start + len > buffer.byteLength) {
-        throw sourceError(`ByteStream window out of range: offset=${start} length=${len}`);
-      }
-      const u8 = new Uint8Array(buffer.buffer, buffer.byteOffset + start, len);
+      view = new Uint8Array(buffer.buffer, buffer.byteOffset + start, length);
+    } else if (isView) {
+      // Preserve the caller's byte window for non-Uint8Array views.
+      const u8 = new Uint8Array(buffer.buffer, buffer.byteOffset + start, length);
       return new ByteStream(u8, 0);
-    } else if (buffer instanceof ArrayBuffer) {
-      const start = byteOffset ?? 0;
-      const len = byteLength === undefined ? buffer.byteLength - start : byteLength;
-      view = new Uint8Array(buffer, start, len);
     } else {
-      throw sourceError('ByteStream expects ArrayBuffer or typed array');
+      view = new Uint8Array(buffer, start, length);
     }
     this._view = view;
     this._dataView = new DataView(view.buffer, view.byteOffset, view.byteLength);

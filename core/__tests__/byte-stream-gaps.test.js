@@ -24,6 +24,30 @@ test('构造器：ArrayBufferView 子窗口尊重 byteOffset/byteLength', () => 
   assert.equal(s.readU32(), 0x08070605); // 大端重解释
 });
 
+test('构造器：所有输入类型统一要求合法字节窗口', () => {
+  const makeBuffers = () => [
+    new ArrayBuffer(8), new Uint8Array(8), new Int32Array(2), new DataView(new ArrayBuffer(8)),
+  ];
+  const invalidArguments = [
+    [null, 1], [0, null], [0.5, 1], [0, 1.5], [NaN, 1], [0, NaN],
+    [Infinity, 1], [0, Infinity], [-1, 1], [0, -1],
+    [Number.MAX_SAFE_INTEGER + 1, 0], [0, Number.MAX_SAFE_INTEGER + 1], [7, 2],
+  ];
+  for (const createBuffer of [() => new ArrayBuffer(8), () => new Uint8Array(8),
+    () => new Int32Array(2), () => new DataView(new ArrayBuffer(8))]) {
+    for (const [offset, length] of invalidArguments) {
+      assert.throws(() => new ByteStream(createBuffer(), offset, length),
+        (error) => error.code === 'SOURCE_ERROR', `${String(offset)} / ${String(length)}`);
+    }
+  }
+  for (const buffer of makeBuffers()) {
+    const end = new ByteStream(buffer, 8, 0);
+    assert.equal(end.length, 0);
+    const defaultWindow = new ByteStream(buffer, 2);
+    assert.equal(defaultWindow.length, 6);
+  }
+});
+
 test('构造器：非法类型 → sourceError', () => {
   assert.throws(
     () => new ByteStream('not a buffer'),
