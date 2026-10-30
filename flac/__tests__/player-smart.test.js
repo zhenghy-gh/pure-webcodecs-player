@@ -41,11 +41,12 @@ function makePlayerStub() {
 }
 
 /** 假 AudioContext：decodeAudioData 可编程成功/失败，close 记录次数 */
-function makeAudioContext({ result = null, error = null } = {}) {
+function makeAudioContext({ result = null, error = null, instances = [] } = {}) {
   return class FakeAudioContext {
     constructor() {
       this.closed = 0;
       this.decoded = [];
+      instances.push(this);
     }
     async decodeAudioData(buffer) {
       this.decoded.push(buffer);
@@ -132,7 +133,8 @@ test('encodeF32PlanarToWavBytes：IEEE float 头与 planar→交错字节级', (
 test('loadFlacSmart：decodeAudioData 成功走主路径，WAV 交接且原字节不被分离', async () => {
   const flac = await readFix('sample-basic.flac');
   const player = makePlayerStub();
-  const Ctx = makeAudioContext({ result: makeAudioBuffer() });
+  const contexts = [];
+  const Ctx = makeAudioContext({ result: makeAudioBuffer(), instances: contexts });
 
   await withGlobals({ AudioContext: Ctx }, async () => {
     const r = await loadFlacSmart(player, flac);
@@ -140,6 +142,8 @@ test('loadFlacSmart：decodeAudioData 成功走主路径，WAV 交接且原字�
     assert.equal(r.sampleRate, 48000);
     assert.equal(r.channels, 2);
     assert.equal(r.totalSamples, 4);
+    assert.equal(contexts.length, 1);
+    assert.equal(contexts[0].closed, 1);
     assert.deepEqual(r.tags, {}, '主路径仅做安全的标签提取，无标签时为空对象');
 
     // WAV 头对齐 AudioBuffer 参数，载荷为 planar→交错
@@ -161,7 +165,8 @@ test('loadFlacSmart：decodeAudioData 成功走主路径，WAV 交接且原字�
 test('loadFlacSmart：decodeAudioData 抛错回退纯 JS 解码器（真实 fixture 全链路）', async () => {
   const flac = await readFix('sample-basic.flac');
   const player = makePlayerStub();
-  const Ctx = makeAudioContext({ error: new Error('not supported') });
+  const contexts = [];
+  const Ctx = makeAudioContext({ error: new Error('not supported'), instances: contexts });
 
   await withGlobals({ AudioContext: Ctx }, async () => {
     const r = await loadFlacSmart(player, flac);
@@ -169,6 +174,8 @@ test('loadFlacSmart：decodeAudioData 抛错回退纯 JS 解码器（真实 fixt
     assert.equal(r.sampleRate, 8000);
     assert.equal(r.channels, 1);
     assert.equal(r.totalSamples, 32);
+    assert.equal(contexts.length, 1);
+    assert.equal(contexts[0].closed, 1);
 
     const ref = decodeFlacToPlayable(flac);
     assert.equal(r.totalSamples, ref.totalSamples);

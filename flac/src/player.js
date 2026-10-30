@@ -45,9 +45,14 @@ export async function loadFlacSmart(player, flacBytes) {
   if (typeof AC === 'function') {
     try {
       const ctx = new AC();
-      // decodeAudioData 会分离 buffer，传拷贝避免锁定调用方数据
-      const buf = await ctx.decodeAudioData(flacBytes.slice().buffer);
-      await ctx.close();
+      let buf;
+      try {
+        // decodeAudioData 会分离 buffer，传拷贝避免锁定调用方数据
+        buf = await ctx.decodeAudioData(flacBytes.slice().buffer);
+      } finally {
+        // Cleanup must not mask decode errors or force fallback after success.
+        try { await ctx.close(); } catch { /* best-effort resource release */ }
+      }
       player.load(encodeF32PlanarToWavBytes(audioBufferToPlanar(buf), buf.sampleRate));
       return {
         via: 'decode-audio-data', sampleRate: buf.sampleRate,
