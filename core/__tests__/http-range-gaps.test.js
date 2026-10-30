@@ -46,6 +46,95 @@ test('构造：环境无 fetch → SOURCE_ERROR（非 TypeError）', () => {
   }
 });
 
+test('HEAD 非法 Content-Length 回退探测，随后可读正确数据', async () => {
+  for (const value of ['-1', '-0', '1.5', '1e3', '+1', '0x10', '', '  ', '9007199254740992', '9007199254740993', '1e999', null]) {
+    let probes = 0;
+    let dataRequests = 0;
+    const ds = new HttpRangeDataSource('https://fixture.invalid/head-invalid.mp4', {
+      chunkSize: 4,
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'HEAD') return new Response(null, {
+          headers: value == null ? {} : { 'Content-Length': value, 'Accept-Ranges': 'bytes' },
+        });
+        if (init.headers.Range === 'bytes=0-0') {
+          probes++;
+          return new Response(null, { status: 206, headers: { 'Content-Range': 'bytes 0-0/4' } });
+        }
+        dataRequests++;
+        assert.equal(init.headers.Range, 'bytes=0-3');
+        return new Response(new Uint8Array([1, 2, 3, 4]), {
+          status: 206, headers: { 'Content-Range': 'bytes 0-3/4' },
+        });
+      },
+    });
+    await ds.open();
+    assert.equal(ds.size, 4, String(value));
+    assert.equal(ds.acceptRanges, true);
+    assert.equal(probes, 1);
+    assert.deepEqual([...await ds.read(0, 4)], [1, 2, 3, 4]);
+    assert.equal(dataRequests, 1);
+    await ds.close();
+  }
+});
+
+test('HEAD 合法非负安全长度包含零，不额外发 GET', async () => {
+  for (const value of ['0', '000', '1', '00012', ' 42 ', String(Number.MAX_SAFE_INTEGER)]) {
+    let requests = 0;
+    const ds = new HttpRangeDataSource('https://fixture.invalid/head-valid.mp4', {
+      fetchImpl: async (_url, init) => {
+        requests++;
+        assert.equal(init.method, 'HEAD');
+        return new Response(null, { headers: { 'Content-Length': value, 'Accept-Ranges': 'bytes' } });
+      },
+    });
+    await ds.open();
+    await ds.open();
+    assert.equal(ds.size, Number(value));
+    assert.equal(ds.acceptRanges, true);
+    assert.equal(requests, 1);
+    if (ds.size === 0) await assert.rejects(() => ds.read(0, 1), (error) => error.code === 'SOURCE_ERROR');
+    assert.equal(requests, 1);
+    await ds.close();
+  }
+});
+
+test('HEAD 非法长度且探测失败不污染元数据，重试可成功', async () => {
+  let heads = 0;
+  let probes = 0;
+  let cancelled = 0;
+  const ds = new HttpRangeDataSource('https://fixture.invalid/head-retry.mp4', {
+    fetchImpl: async (_url, init) => {
+      if (init.method === 'HEAD') {
+        heads++;
+        return new Response(null, {
+          headers: { 'Content-Length': '9007199254740993', 'Accept-Ranges': 'bytes' },
+        });
+      }
+      assert.equal(init.headers.Range, 'bytes=0-0');
+      probes++;
+      return fakeRes(probes === 1 ? 416 : 206, {
+        headers: { 'content-range': probes === 1 ? 'bytes */0' : 'bytes 0-0/4' },
+        body: { cancel() { cancelled++; } },
+      });
+    },
+  });
+  await assert.rejects(() => ds.open(), (error) => error.code === 'SOURCE_ERROR' && error.detail.status === 416);
+  assert.equal(ds.size, Infinity);
+  assert.equal(ds.acceptRanges, false);
+  assert.equal(ds._opened, false);
+  assert.equal(heads, 1);
+  assert.equal(probes, 1);
+  assert.equal(cancelled, 1);
+  await ds.open();
+  assert.equal(ds.size, 4);
+  assert.equal(ds.acceptRanges, true);
+  assert.equal(ds._opened, true);
+  assert.equal(heads, 2);
+  assert.equal(probes, 2);
+  assert.equal(cancelled, 2);
+  await ds.close();
+});
+
 test('open 退路：GET 0-0 无 Content-Range → SOURCE_ERROR（不支持 Range）', async () => {
   const whole = makeWhole(256);
   const ds = new HttpRangeDataSource('http://fixture.invalid/nr.mp4', {

@@ -80,8 +80,9 @@ export class HttpRangeDataSource {
     try {
       const res = await this._fetch(this.url, this._requestInit(undefined, { method: 'HEAD' }));
       if (res.ok) {
-        const len = Number(res.headers.get('content-length') ?? NaN);
-        if (Number.isFinite(len)) {
+        const rawLength = res.headers.get('content-length');
+        const len = rawLength != null && /^[0-9]+$/.test(rawLength.trim()) ? Number(rawLength) : NaN;
+        if (Number.isSafeInteger(len) && len >= 0) {
           this.size = len;
           this.acceptRanges = (res.headers.get('accept-ranges') ?? '').includes('bytes');
         }
