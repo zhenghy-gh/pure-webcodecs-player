@@ -49,6 +49,12 @@ test('parsePESHeader：仅 PTS', () => {
   assert.equal(header.dts, null);
 });
 
+test('parsePESHeader：拒绝禁止的 DTS-only PTS_DTS_flags=01', () => {
+  const dts = encodeTimestamp5(90000, 0b0001);
+  const pes = new Uint8Array([0, 0, 1, 0xe0, 0, 9, 0x80, 0x40, 5, ...dts, 0xaa]);
+  assert.equal(parsePESHeader(pes), null);
+});
+
 test('parsePESHeader：非法起始码返回 null', () => {
   assert.equal(parsePESHeader(new Uint8Array([0, 0, 2, 0xe0])), null);
   assert.equal(parsePESHeader(new Uint8Array([0, 0, 1])), null);   // 太短

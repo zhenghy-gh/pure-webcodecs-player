@@ -77,6 +77,7 @@ export function parsePESHeader(data) {
   const declaredLength = (data[4] << 8) | data[5];
   if ((data[6] & 0xc0) !== 0x80) return null; // 必须 '10'
   const flags1 = data[7];
+  if ((flags1 & 0xc0) === 0x40) return null; // PTS_DTS_flags=01 is forbidden.
   const headerDataLength = data[8];
   const hasPts = (flags1 & 0x80) !== 0;
   const hasDts = (flags1 & 0x40) !== 0;
