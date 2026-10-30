@@ -178,6 +178,22 @@ describe('超大/截断子块容错', () => {
     assert.deepEqual(wav.info, {});
   });
 
+  test('LIST/INFO TextDecoder 故障只丢弃元数据，不中断音频解析', (t) => {
+    const bytes = assemble([
+      { id: 'fmt ', body: fmtBody() },
+      { id: 'LIST', body: infoBody({ INAM: 'title' }) },
+      { id: 'data', body: dataBody(16) },
+    ]);
+    t.mock.method(TextDecoder.prototype, 'decode', () => {
+      throw new Error('TextDecoder unavailable');
+    });
+
+    const wav = parseWavHeader(bytes);
+    assert.equal(wav.codec, 'pcm-s16');
+    assert.equal(wav.dataChunk.size, 16);
+    assert.deepEqual(wav.info, {});
+  });
+
   test('data 后追加未知块也被跳过（循环到末尾）', () => {
     const bytes = assemble([
       { id: 'fmt ', body: fmtBody() },
