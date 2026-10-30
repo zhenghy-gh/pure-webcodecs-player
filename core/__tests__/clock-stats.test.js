@@ -37,6 +37,47 @@ test('PlaybackClock 非法倍速抛错', () => {
   assert.throws(() => clock.setRate(-1), RangeError);
 });
 
+test('PlaybackClock 拒绝非法 seek 时间且不改变状态或派发事件', () => {
+  const clock = new PlaybackClock({ now: manualClock().now });
+  const events = [];
+  clock.on('seek', (time) => events.push(['seek', time]));
+  clock.on('play', (time) => events.push(['play', time]));
+
+  clock.seekTo(5);
+  events.length = 0;
+  for (const time of [NaN, Infinity, -Infinity, undefined, null, '5']) {
+    assert.throws(() => clock.seekTo(time), RangeError, `seekTo(${String(time)})`);
+    assert.equal(clock.getTimeSec(), 5);
+    assert.equal(clock.running, false);
+  }
+  for (const time of [NaN, Infinity, -Infinity, null, '5']) {
+    assert.throws(() => clock.play(time), RangeError, `play(${String(time)})`);
+    assert.equal(clock.getTimeSec(), 5);
+    assert.equal(clock.running, false);
+  }
+  assert.deepEqual(events, []);
+});
+
+test('PlaybackClock 保留负时间且运行态非法 seek 不改锚或派发事件', () => {
+  const clock = new PlaybackClock({ now: manualClock().now });
+  const events = [];
+  clock.on('seek', (time) => events.push(['seek', time]));
+  clock.on('play', (time) => events.push(['play', time]));
+
+  clock.seekTo(-2);
+  assert.equal(clock.getTimeSec(), -2);
+  clock.play();
+  events.length = 0;
+  const runningTime = clock.getTimeSec();
+  for (const time of [NaN, Infinity, -Infinity, null, '5']) {
+    assert.throws(() => clock.seekTo(time), RangeError);
+    assert.throws(() => clock.play(time), RangeError);
+    assert.equal(clock.running, true);
+    assert.equal(clock.getTimeSec(), runningTime);
+  }
+  assert.deepEqual(events, []);
+});
+
 test('DEFAULT_SYNC_OPTIONS 对齐 CONTRACTS §7 ±20ms 窗口', () => {
   // 契约硬约束：视频 PTS 对齐 ±20ms 窗口（早到等待、迟到丢帧）。
   assert.equal(DEFAULT_SYNC_OPTIONS.maxLateSec, 0.02, 'maxLateSec 应为 20ms');

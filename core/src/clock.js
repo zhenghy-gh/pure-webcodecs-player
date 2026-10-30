@@ -69,6 +69,7 @@ export class PlaybackClock extends Emitter {
   }
 
   seekTo(sec) {
+    if (!Number.isFinite(sec)) throw new RangeError('media time must be a finite number');
     this._mediaAnchor = sec;
     this._monoAnchor = this._now();
     this.emit('seek', sec);
