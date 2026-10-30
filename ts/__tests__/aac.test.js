@@ -63,6 +63,12 @@ test('AudioSpecificConfig：构造与解析往返（含扩展采样率）', () =
   assert.equal(info2.channels, 1);
 });
 
+test('AudioSpecificConfig：channel_configuration=0（PCE）回退为双声道', () => {
+  // Use raw ASC because the builder normalizes channel config 0 to 1.
+  const info = parseAudioSpecificConfig(new Uint8Array([0x12, 0x00]));
+  assert.deepEqual(info, { aot: 2, sampleRate: 44100, sampleRateIndex: 4, channels: 2 });
+});
+
 test('parseLatmSyncStream：提取 ASC 与裸帧', () => {
   const raw = new Uint8Array(48).fill(0x77);
   const unit = latmStream({ aot: 2, sampleRateIndex: 4, channels: 2, raw });
