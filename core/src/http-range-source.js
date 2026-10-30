@@ -181,6 +181,24 @@ export class HttpRangeDataSource {
       }
       throw sourceError(`server ignored Range header (got 200) for ${this.url}`);
     }
+    if (res.status === 206) {
+      const contentRange = res.headers.get('content-range');
+      // 跨域可能未暴露此响应头；可见时校验，避免错位数据进入缓存。
+      if (contentRange != null) {
+        const match = /^bytes\s+(\d+)-(\d+)\/(?:\d+|\*)$/i.exec(contentRange.trim());
+        const actualStart = match ? Number(match[1]) : NaN;
+        const actualEnd = match ? Number(match[2]) : NaN;
+        if (!Number.isSafeInteger(actualStart) || !Number.isSafeInteger(actualEnd)
+          || actualStart !== start || actualEnd !== endInclusive) {
+          try {
+            Promise.resolve(res.body?.cancel?.()).catch(() => {});
+          } catch { /* 尽力释放，保留区间错误 */ }
+          throw sourceError(
+            `Content-Range mismatch: expected bytes ${start}-${endInclusive}, got ${contentRange}`,
+          );
+        }
+      }
+    }
     const buf = await res.arrayBuffer();
     if (res.status === 206) {
       const got = buf.byteLength;

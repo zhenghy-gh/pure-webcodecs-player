@@ -277,6 +277,56 @@ test('_rangeGet：200 整文件且 start=0 → 直接截取可用区间', async 
   assert.equal(ds.acceptRanges, true);
 });
 
+test('206 可见 Content-Range 错位或非法时拒绝，正确重试不命中坏缓存', async () => {
+  for (const contentRange of ['bytes 0-3/12', 'bytes 4-8/12', 'garbage', '', 'bytes 9007199254740993-9007199254740996/*']) {
+    let requests = 0;
+    let cancelled = 0;
+    let bodyReads = 0;
+    const ds = new HttpRangeDataSource('https://fixture.invalid/misaligned.mp4', {
+      chunkSize: 4,
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '12' } });
+        assert.equal(init.headers.Range, 'bytes=4-7');
+        requests++;
+        return {
+          status: 206,
+          headers: { get: () => requests === 1 ? contentRange : 'bytes 4-7/12' },
+          body: { cancel() { cancelled++; return Promise.reject(new Error('best effort')); } },
+          async arrayBuffer() { bodyReads++; return new Uint8Array(requests === 1 ? [0, 1, 2, 3] : [4, 5, 6, 7]).buffer; },
+        };
+      },
+    });
+    await assert.rejects(() => ds.read(4, 4), (error) => error.code === 'SOURCE_ERROR' && /Content-Range/.test(error.message), contentRange);
+    assert.equal(ds._cache.size, 0);
+    assert.equal(cancelled, 1);
+    assert.equal(bodyReads, 0);
+    assert.deepEqual([...await ds.read(4, 4)], [4, 5, 6, 7]);
+    assert.equal(requests, 2);
+    assert.equal(bodyReads, 1);
+    await ds.close();
+  }
+});
+
+test('206 匹配或不可见 Content-Range 保留跨块与尾块读取', async () => {
+  const whole = makeWhole(10);
+  for (const visible of [true, false]) {
+    const ds = new HttpRangeDataSource('https://fixture.invalid/ranges.mp4', {
+      chunkSize: 4,
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '10' } });
+        const [, startText, endText] = /^bytes=(\d+)-(\d+)$/.exec(init.headers.Range);
+        const start = Number(startText), end = Number(endText);
+        return fakeRes(206, {
+          headers: visible ? { 'content-range': 'BYTES ' + start + '-' + end + '/*' } : {},
+          body: whole.slice(start, end + 1),
+        });
+      },
+    });
+    assert.deepEqual([...await ds.read(2, 20)], [...whole.slice(2)]);
+    await ds.close();
+  }
+});
+
 test('close：多段在途 read 正常完成，但不回填已清理缓存', async () => {
   const firstRange = deferred();
   let rangeRequests = 0;
