@@ -127,6 +127,9 @@ export class HttpRangeDataSource {
 
   /** @returns {Promise<Uint8Array>} 恰好 length 字节 */
   async read(offset, length) {
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw sourceError(`read out of range: offset=${String(offset)}`);
+    }
     const cacheGeneration = this._cacheGeneration;
     if (!this._opened) await this.open();
     if (offset < 0 || offset >= this.size) {

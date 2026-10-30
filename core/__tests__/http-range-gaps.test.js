@@ -251,6 +251,59 @@ test('open 退路：探测响应 body.cancel 抛错 → 吞并且 open 成功', 
   assert.deepEqual([...part], [...whole.subarray(100, 110)]);
 });
 
+test('read 非法 offset 在打开前拒绝，不发 HEAD 或 Range 请求', async () => {
+  const invalid = [0.5, NaN, Infinity, -Infinity, -1, Number.MAX_SAFE_INTEGER + 1, '1', null, undefined, true, {}, 1n, Symbol('offset')];
+  for (const offset of invalid) {
+    let requests = 0;
+    const ds = new HttpRangeDataSource('https://fixture.invalid/invalid-offset.mp4', {
+      chunkSize: 4,
+      fetchImpl: async (_url, init) => {
+        requests++;
+        if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '16' } });
+        return fakeRes(206, { body: makeWhole(16) });
+      },
+    });
+    await assert.rejects(() => ds.read(offset, 2), (error) => error.code === 'SOURCE_ERROR' && /offset/.test(error.message));
+    assert.equal(requests, 0);
+    assert.equal(ds._opened, false);
+    assert.equal(ds.size, Infinity);
+    assert.equal(ds._cache.size, 0);
+  }
+});
+
+test('read 已缓存时仍拒绝非法 offset，合法跨块和尾部读取不变', async () => {
+  const whole = makeWhole(16);
+  const ranges = [];
+  let heads = 0;
+  const ds = new HttpRangeDataSource('https://fixture.invalid/cached-offset.mp4', {
+    chunkSize: 4,
+    fetchImpl: async (_url, init) => {
+      if (init.method === 'HEAD') {
+        heads++;
+        return fakeRes(200, { headers: { 'content-length': '16' } });
+      }
+      ranges.push(init.headers.Range);
+      const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(init.headers.Range);
+      return fakeRes(206, { body: whole.slice(Number(start), Number(end) + 1) });
+    },
+  });
+  assert.deepEqual([...await ds.read(0, 4)], [0, 1, 2, 3]);
+  const cached = [...ds._cache].map(([key, bytes]) => [key, [...bytes]]);
+  for (const offset of [0.5, NaN, '1']) {
+    await assert.rejects(() => ds.read(offset, 2), (error) => error.code === 'SOURCE_ERROR');
+    assert.deepEqual([...ds._cache].map(([key, bytes]) => [key, [...bytes]]), cached);
+    assert.deepEqual(ranges, ['bytes=0-3']);
+    assert.equal(heads, 1);
+  }
+  assert.deepEqual([...await ds.read(-0, 1)], [0]);
+  assert.deepEqual([...await ds.read(3, 4)], [3, 4, 5, 6]);
+  assert.deepEqual([...await ds.read(14, 8)], [14, 15]);
+  await assert.rejects(() => ds.read(16, 1), (error) => error.code === 'SOURCE_ERROR');
+  assert.deepEqual(ranges, ['bytes=0-3', 'bytes=4-7', 'bytes=12-15']);
+  assert.equal(heads, 1);
+  await ds.close();
+});
+
 test('read：offset ≥ size 或 < 0 → SOURCE_ERROR', async () => {
   const whole = makeWhole(256);
   const ds = new HttpRangeDataSource('http://fixture.invalid/oob.mp4', {
