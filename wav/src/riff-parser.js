@@ -72,11 +72,12 @@ export function waveCodecString(formatTag, bitsPerSample) {
 /**
  * 解析 WAV 头部与子块索引。只读元信息，不拷贝采样数据。
  * @param {Uint8Array} bytes 文件头部至少到 data 块为止的字节
+ * @param {{sourceSize?:number|null}} [options] 已知的完整数据源大小
  * @returns {{format:WavFormatInfo} & WavInfo & {
  *           codec:string, durationUs:number|null, totalDataBytes:number}}
  * @throws {PlayerError} PARSE_ERROR / NOT_SUPPORTED / SOURCE_ERROR
  */
-export function parseWavHeader(bytes) {
+export function parseWavHeader(bytes, options = undefined) {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
   if (bytes.length < 12) throw parseError('文件过短，不足 RIFF 头（12 字节）');
@@ -104,10 +105,14 @@ export function parseWavHeader(bytes) {
     const size = dv.getUint32(pos + 4, true);
     const body = pos + 8;
     if (body + size > bytes.length) {
-      // data 块被截断：以实际可得长度继续（流式/未下载完场景），其余块报错
+      // data 可跨头部窗口；已知源长度时以真实 EOF 限制，其余块报错
       if (id === 'data') {
-        chunks.push({ id, offset: body, size: bytes.length - body });
-        dataChunk = { offset: body, size: bytes.length - body };
+        const sourceSize = options?.sourceSize;
+        const available = Number.isSafeInteger(sourceSize) && sourceSize >= bytes.length
+          ? sourceSize - body : bytes.length - body;
+        const dataSize = Math.min(size, available);
+        chunks.push({ id, offset: body, size: dataSize });
+        dataChunk = { offset: body, size: dataSize };
       } else {
         throw parseError(`子块 ${id} 越界：声明 ${size} 字节但仅剩 ${bytes.length - body}`);
       }

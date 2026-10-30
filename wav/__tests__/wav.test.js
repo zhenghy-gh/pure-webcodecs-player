@@ -4,6 +4,7 @@
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { MemoryDataSource, BlobDataSource } from '../../core/src/data-source.js';
 import {
   WavDemuxer,
   parseWavHeader,
@@ -226,6 +227,58 @@ describe('parseWavHeader', () => {
     assert.equal(info.durationUs, parsed.durationUs);
     assert.deepEqual(dem.getBufferedRanges(1), [{ startUs: 0, endUs: parsed.durationUs }]);
     await dem.stop();
+  });
+
+  test('大于头窗口的 WAV 保留完整时长、样本和 seek', async () => {
+    const wav = buildWav({ sampleRate: 48000, frames: 48000 });
+    for (const source of [new MemoryDataSource(wav), new BlobDataSource(new Blob([wav]))]) {
+      const dem = new WavDemuxer(source);
+      const info = await dem.open();
+      assert.equal(info.durationUs, 1_000_000);
+      let bytes = 0;
+      for (;;) {
+        const sample = await dem.readSample(1);
+        if (!sample) break;
+        bytes += sample.data.length;
+      }
+      assert.equal(bytes, 96000);
+      const point = await dem.seek(900_000);
+      const sample = await dem.readSample(1);
+      assert.equal(point.actualTimestampUs, 900_000);
+      assert.equal(sample.timestamp, 900_000);
+      assert.deepEqual(sample.data.subarray(0, 16), wav.subarray(44 + 43200 * 2, 44 + 43200 * 2 + 16));
+      await dem.destroy();
+    }
+  });
+
+  test('已知真实 EOF 限制 data 长度，哨兵长度也不越过 EOF', async () => {
+    const wav = buildWav({ sampleRate: 48000, frames: 48000 });
+    const truncated = wav.subarray(0, 80044);
+    for (const sentinel of [false, true]) {
+      const input = truncated.slice();
+      if (sentinel) new DataView(input.buffer).setUint32(40, 0xffffffff, true);
+      const dem = new WavDemuxer(new MemoryDataSource(input));
+      const info = await dem.open();
+      assert.equal(info.durationUs, Math.round(80000 / 96000 * 1e6));
+      let bytes = 0;
+      for (;;) {
+        const sample = await dem.readSample(1);
+        if (!sample) break;
+        bytes += sample.data.length;
+      }
+      assert.equal(bytes, 80000);
+      await dem.destroy();
+    }
+  });
+
+  test('未知源大小时解析器保留窗口截断行为', async () => {
+    const wav = buildWav({ sampleRate: 48000, frames: 48000 });
+    const source = memorySource(wav);
+    source.size = null;
+    const dem = new WavDemuxer(source);
+    const info = await dem.open();
+    assert.equal(info.durationUs, Math.round((65536 - 44) / 96000 * 1e6));
+    await dem.destroy();
   });
 
   test('源在非 data 子块结束前截断时仍拒绝解析', async () => {

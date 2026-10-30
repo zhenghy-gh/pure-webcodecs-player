@@ -96,7 +96,7 @@ export class WavDemuxer extends Demuxer {
         bytesRead += part.length;
       }
       try {
-        header = parseWavHeader(head.subarray(0, bytesRead));
+        header = parseWavHeader(head.subarray(0, bytesRead), { sourceSize: this.source.size });
         break;
       } catch (error) {
         const canGrow = /子块 .+ 越界/.test(error.message)
