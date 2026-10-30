@@ -328,6 +328,94 @@ test('open 退路：探测响应 body.cancel 抛错 → 吞并且 open 成功', 
   assert.deepEqual([...part], [...whole.subarray(100, 110)]);
 });
 
+test('read 零长度：冷源只探长，不下载业务块，随后仍可正常读取', async () => {
+  let heads = 0;
+  let allowData = false;
+  const ranges = [];
+  const ds = new HttpRangeDataSource('https://fixture.invalid/empty-read.mp4', {
+    chunkSize: 4, maxReadLength: 2,
+    fetchImpl: async (_url, init) => {
+      if (init.method === 'HEAD') { heads++; return fakeRes(200, { headers: { 'content-length': '10' } }); }
+      ranges.push(init.headers.Range);
+      assert.equal(allowData, true, '零长度不应下载业务块');
+      return fakeRes(206, { body: makeWhole(4) });
+    },
+  });
+  for (const offset of [0, 1, 4, 9]) {
+    assert.deepEqual(await ds.read(offset, 0), new Uint8Array(0));
+    assert.equal(ds._cache.size, 0);
+  }
+  assert.equal(heads, 1);
+  assert.deepEqual(ranges, []);
+  await assert.rejects(() => ds.read(10, 0), (e) => e.code === 'SOURCE_ERROR');
+  for (const length of [-1, 3]) await assert.rejects(() => ds.read(1, length), (e) => e.code === 'PARSE_ERROR');
+  allowData = true;
+  assert.deepEqual([...await ds.read(1, 2)], [1, 2]);
+  assert.deepEqual(ranges, ['bytes=0-3']);
+  await ds.close();
+});
+
+test('read 零长度：热源不改变多块 LRU、引用或触发缺块下载', async () => {
+  const ranges = [];
+  const whole = makeWhole(12);
+  const ds = new HttpRangeDataSource('https://fixture.invalid/empty-read-cache.mp4', {
+    chunkSize: 4, maxCachedBlocks: 2,
+    fetchImpl: async (_url, init) => {
+      if (init.method === 'HEAD') return fakeRes(200, { headers: { 'content-length': '12' } });
+      ranges.push(init.headers.Range);
+      const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(init.headers.Range);
+      assert.ok(Number(start) < 8, '零长度缺块不应依赖网络');
+      return fakeRes(206, { body: whole.slice(Number(start), Number(end) + 1) });
+    },
+  });
+  await ds.read(0, 4);
+  await ds.read(4, 4);
+  const cached = [...ds._cache];
+  const contents = cached.map(([, bytes]) => [...bytes]);
+  for (const offset of [1, 4, 7, 9]) {
+    assert.equal((await ds.read(offset, 0)).byteLength, 0);
+    assert.deepEqual([...ds._cache.keys()], [0, 1]);
+    for (const [key, bytes] of cached) assert.equal(ds._cache.get(key), bytes);
+    assert.deepEqual([...ds._cache.values()].map((bytes) => [...bytes]), contents);
+  }
+  assert.deepEqual(ranges, ['bytes=0-3', 'bytes=4-7']);
+  assert.deepEqual([...await ds.read(1, 2)], [1, 2]);
+  await ds.close();
+});
+
+test('read 零长度：保留 HEAD 回退探测 GET、EOF 及空源拒绝', async () => {
+  const calls = [];
+  let cancelled = 0;
+  const ds = new HttpRangeDataSource('https://fixture.invalid/empty-read-probe.mp4', {
+    chunkSize: 4,
+    fetchImpl: async (_url, init) => {
+      calls.push(init.method === 'HEAD' ? 'HEAD' : init.headers.Range);
+      if (init.method === 'HEAD') return fakeRes(405);
+      assert.equal(init.headers.Range, 'bytes=0-0');
+      return fakeRes(206, { headers: { 'content-range': 'bytes 0-0/10' }, body: { cancel() { cancelled++; } } });
+    },
+  });
+  assert.equal((await ds.read(1, 0)).byteLength, 0);
+  assert.deepEqual(calls, ['HEAD', 'bytes=0-0']);
+  assert.equal(cancelled, 1);
+  assert.equal(ds.size, 10);
+  assert.equal(ds._cache.size, 0);
+  await assert.rejects(() => ds.read(10, 0), (e) => e.code === 'SOURCE_ERROR');
+  assert.deepEqual(calls, ['HEAD', 'bytes=0-0']);
+  await ds.close();
+  let emptyHeads = 0;
+  const empty = new HttpRangeDataSource('https://fixture.invalid/empty-source.mp4', {
+    fetchImpl: async (_url, init) => {
+      assert.equal(init.method, 'HEAD');
+      emptyHeads++;
+      return fakeRes(200, { headers: { 'content-length': '0' } });
+    },
+  });
+  await assert.rejects(() => empty.read(0, 0), (e) => e.code === 'SOURCE_ERROR');
+  assert.equal(emptyHeads, 1);
+  await empty.close();
+});
+
 test('read 非法 offset 在打开前拒绝，不发 HEAD 或 Range 请求', async () => {
   const invalid = [0.5, NaN, Infinity, -Infinity, -1, Number.MAX_SAFE_INTEGER + 1, '1', null, undefined, true, {}, 1n, Symbol('offset')];
   for (const offset of invalid) {

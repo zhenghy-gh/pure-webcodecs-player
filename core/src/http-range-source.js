@@ -150,6 +150,7 @@ export class HttpRangeDataSource {
     // I5：单次读取上界——畸形容器长度字段不得触发超大 Range 请求与内存分配
     assertByteLength(length, this.maxReadLength, `HTTP Range 单次读取`);
     const want = Math.min(length, this.size - offset);
+    if (want === 0) return new Uint8Array(0);
 
     const firstBlock = Math.floor(offset / this.chunkSize);
     const lastBlock = Math.floor((offset + want - 1) / this.chunkSize);
