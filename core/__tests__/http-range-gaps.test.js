@@ -76,6 +76,68 @@ test('open 退路：Content-Range 总长不可解析 → SOURCE_ERROR；body.can
   );
 });
 
+test('open 探测拒绝非 206 状态，失败不写元数据且可重试', async () => {
+  for (const [status, contentRange] of [[416, 'bytes */0'], [416, 'bytes */512'], [404, 'bytes 0-0/512'], [500, 'bytes 0-0/512'], [200, 'bytes 0-0/512']]) {
+    let probes = 0;
+    const ds = new HttpRangeDataSource('https://fixture.invalid/probe-status.mp4', {
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'HEAD') return new Response(null, { status: 405 });
+        assert.equal(init.headers.Range, 'bytes=0-0');
+        probes++;
+        return new Response(null, { status: probes === 1 ? status : 206,
+          headers: { 'Content-Range': probes === 1 ? contentRange : 'bytes 0-0/512' } });
+      },
+    });
+    await assert.rejects(() => ds.open(), (error) => error.code === 'SOURCE_ERROR' && error.detail?.status === status);
+    assert.equal(ds.size, Infinity);
+    assert.equal(ds.acceptRanges, false);
+    assert.equal(ds._opened, false);
+    await ds.open();
+    assert.equal(ds.size, 512);
+    assert.equal(probes, 2);
+    await ds.close();
+  }
+});
+
+test('open 探测拒绝非法区间或总长，并尽力清理失败响应体', async () => {
+  const invalid = ['bytes 1-1/512', 'bytes 0-1/512', 'bytes */512', 'items 0-0/512', 'nonsense/512',
+    'bytes 0-0/0', 'bytes 0-0/-1', 'bytes 0-0/1.5', 'bytes 0-0/', 'bytes 0-0/*', 'bytes 0-0/9007199254740993', null];
+  for (const contentRange of invalid) {
+    let cancelled = 0;
+    const ds = new HttpRangeDataSource('https://fixture.invalid/probe-range.mp4', {
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'HEAD') return fakeRes(405);
+        return fakeRes(206, { headers: { 'content-range': contentRange },
+          body: { cancel() { cancelled++; return Promise.reject(new Error('cancel failed')); } } });
+      },
+    });
+    await assert.rejects(() => ds.open(), (error) => error.code === 'SOURCE_ERROR' && error.detail?.status === 206);
+    assert.equal(ds.size, Infinity);
+    assert.equal(ds.acceptRanges, false);
+    assert.equal(ds._opened, false);
+    assert.equal(cancelled, 1);
+  }
+});
+
+test('open 探测接受合法首字节与正安全总长，不等待响应体清理', async () => {
+  for (const total of [1, 512, Number.MAX_SAFE_INTEGER]) {
+    let cancelled = 0;
+    const ds = new HttpRangeDataSource('https://fixture.invalid/probe-valid.mp4', {
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'HEAD') return fakeRes(405);
+        return fakeRes(206, { headers: { 'content-range': '  BYTES 0-0/' + total + '  ' },
+          body: { cancel() { cancelled++; return new Promise(() => {}); } } });
+      },
+    });
+    await ds.open();
+    assert.equal(ds.size, total);
+    assert.equal(ds.acceptRanges, true);
+    assert.equal(ds._opened, true);
+    assert.equal(cancelled, 1);
+    await ds.close();
+  }
+});
+
 test('open 退路：探测响应 body.cancel 抛错 → 吞并且 open 成功', async () => {
   const whole = makeWhole(256);
   const ds = new HttpRangeDataSource('http://fixture.invalid/ok.mp4', {

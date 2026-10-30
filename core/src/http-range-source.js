@@ -93,23 +93,32 @@ export class HttpRangeDataSource {
     if (!Number.isFinite(this.size)) {
       // 退路：GET 首字节，从 Content-Range 里拿总长
       const res = await this._fetch(this.url, this._requestInit({ Range: 'bytes=0-0' }));
-      const contentRange = res.headers.get('content-range');
-      if (!contentRange) {
-        throw sourceError(
-          `server does not support HTTP Range for ${this.url}; progressive MP4 requires it`,
-          { status: res.status },
-        );
-      }
-      const total = Number(contentRange.split('/')[1]);
-      if (!Number.isFinite(total)) {
-        throw sourceError(`cannot determine file size from Content-Range: ${contentRange}`);
-      }
-      this.size = total;
-      this.acceptRanges = true;
       try {
-        res.body?.cancel?.();
-      } catch {
-        /* 忽略 */
+        if (res.status !== 206) {
+          throw sourceError(
+            'server does not support HTTP Range probe (expected 206, got ' + res.status + ') for ' + this.url,
+            { status: res.status },
+          );
+        }
+        const contentRange = res.headers.get('content-range');
+        if (!contentRange) {
+          throw sourceError(
+            'server does not support HTTP Range for ' + this.url + '; progressive MP4 requires it',
+            { status: res.status },
+          );
+        }
+        const match = /^bytes\s+0-0\/(\d+)$/i.exec(contentRange.trim());
+        const total = match ? Number(match[1]) : NaN;
+        if (!Number.isSafeInteger(total) || total < 1) {
+          throw sourceError('cannot determine file size from Content-Range: ' + contentRange,
+            { status: res.status });
+        }
+        this.size = total;
+        this.acceptRanges = true;
+      } finally {
+        try {
+          Promise.resolve(res.body?.cancel?.()).catch(() => {});
+        } catch { /* 尽力清理，不覆盖探测结果 */ }
       }
     }
     this._opened = true;
