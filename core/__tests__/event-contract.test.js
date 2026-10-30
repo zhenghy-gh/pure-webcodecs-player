@@ -22,6 +22,15 @@ test('core Emitter：多参数、取消订阅与 once 语义统一', () => {
   assert.equal(count, 1);
 });
 
+test('core Emitter.once：无效监听器在订阅时立即拒绝', () => {
+  const bus = new Emitter();
+  assert.throws(() => bus.once('invalid', null), {
+    name: 'TypeError',
+    message: 'listener must be a function',
+  });
+  assert.equal(bus.listenerCount('invalid'), 0);
+});
+
 test('平行事件件复用 core Emitter：HLS EventBus、RTMP MiniEmitter、RTSP source', () => {
   assert.equal(EventBus, Emitter);
   assert.ok(MiniEmitter.prototype instanceof Emitter);
