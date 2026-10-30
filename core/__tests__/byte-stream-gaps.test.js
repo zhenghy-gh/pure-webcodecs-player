@@ -29,7 +29,7 @@ test('构造器：所有输入类型统一要求合法字节窗口', () => {
     new ArrayBuffer(8), new Uint8Array(8), new Int32Array(2), new DataView(new ArrayBuffer(8)),
   ];
   const invalidArguments = [
-    [null, 1], [0, null], [0.5, 1], [0, 1.5], [NaN, 1], [0, NaN],
+    [0, null], [0.5, 1], [0, 1.5], [NaN, 1], [0, NaN],
     [Infinity, 1], [0, Infinity], [-1, 1], [0, -1],
     [Number.MAX_SAFE_INTEGER + 1, 0], [0, Number.MAX_SAFE_INTEGER + 1], [7, 2],
   ];
@@ -43,6 +43,10 @@ test('构造器：所有输入类型统一要求合法字节窗口', () => {
   for (const buffer of makeBuffers()) {
     const end = new ByteStream(buffer, 8, 0);
     assert.equal(end.length, 0);
+    const full = new ByteStream(buffer, 0, 8);
+    assert.equal(full.length, 8);
+    const nullishOffset = new ByteStream(buffer, null, 8);
+    assert.equal(nullishOffset.length, 8);
     const defaultWindow = new ByteStream(buffer, 2);
     assert.equal(defaultWindow.length, 6);
   }

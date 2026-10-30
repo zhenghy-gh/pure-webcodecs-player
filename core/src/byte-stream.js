@@ -10,10 +10,10 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder('utf-8');
 
 function resolveByteWindow(available, byteOffset, byteLength) {
-  const start = byteOffset === undefined ? 0 : byteOffset;
+  const start = byteOffset ?? 0;
   const length = byteLength === undefined ? available - start : byteLength;
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(length)
-    || start < 0 || length < 0 || start + length > available) {
+    || start < 0 || length < 0 || length > available || start > available - length) {
     throw sourceError(`ByteStream window out of range: offset=${String(start)} length=${String(length)}`);
   }
   return { start, length };
