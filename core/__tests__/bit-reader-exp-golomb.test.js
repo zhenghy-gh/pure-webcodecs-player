@@ -65,6 +65,22 @@ test('exp-Golomb ue/se 已知序列', () => {
     [0, 1, -1, 2, -2],
   );
 });
+test('有符号 Exp-Golomb 保留32前导零对应的大整数', () => {
+  for (const [suffix, expected] of [
+    ['0'.repeat(32), 2147483648],
+    ['0'.repeat(31) + '1', -2147483648],
+    ['1'.repeat(32), -4294967295],
+  ]) {
+    const bytes = bitsToBytes('0'.repeat(32) + '1' + suffix + '1');
+    const reader = new BitReader(bytes);
+    assert.equal(reader.readSE(), expected);
+    assert.equal(reader.readBit(), 1);
+    const golomb = new ExpGolombReader(bytes);
+    assert.equal(golomb.readSEG(), expected);
+    assert.equal(golomb.readBits(1), 1);
+  }
+});
+
 test('exp-Golomb 过多前导零报 PARSE_ERROR', () => {
   const data = new Uint8Array(64).fill(0);
   const g = new ExpGolombReader(data);
