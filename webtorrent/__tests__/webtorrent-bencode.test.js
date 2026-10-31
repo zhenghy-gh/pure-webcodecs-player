@@ -11,7 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createHash } from 'node:crypto';
-import { bdecode, bencode, bdecodeRaw, decodeAt, parseTorrent, computeInfoHash } from '../src/index.js';
+import { bdecode, bencode, bdecodeRaw, decodeAt, parseTorrent, computeInfoHash, createSource } from '../src/index.js';
 import { PlayerError } from '../../core/src/errors.js';
 
 const enc = (s) => new TextEncoder().encode(s);
@@ -125,6 +125,29 @@ test('parseTorrent 从子视图提取顶层 info 而非前置嵌套同名键', a
   assert.deepEqual(parsed.pieces, pieces);
   assert.deepEqual(parsed.infoBytes, rawInfo);
   assert.equal(await computeInfoHash(parsed.infoBytes), createHash('sha1').update(rawInfo).digest('hex'));
+});
+
+test('createSource 离线路径以原始 info 字节计算 infoHash', async () => {
+  const pieces = Uint8Array.from([0, 0xff, 0x3a, 0x65, ...new Uint8Array(16).fill(7)]);
+  const rawInfo = Uint8Array.from([...enc('d4:name01:a6:lengthi1e12:piece lengthi1e6:pieces20:'), ...pieces, 0x65]);
+  const torrent = Uint8Array.from([...enc('d4:metad4:info3:fooe4:info'), ...rawInfo, 0x65]);
+  const backing = Uint8Array.from([0xff, 0x64, ...torrent, 0xff, 0x65]);
+  const expected = createHash('sha1').update(rawInfo).digest('hex');
+  assert.notEqual(createHash('sha1').update(bencode(bdecode(rawInfo))).digest('hex'), expected);
+  const { source, meta } = await createSource(backing.subarray(2, backing.length - 2));
+  try {
+    assert.equal(meta.mode, 'offline');
+    assert.equal(meta.infoHash, expected);
+    assert.equal(meta.name, 'a');
+    assert.equal(source.size, 1);
+  } finally {
+    await source.close();
+  }
+});
+
+test('createSource 离线路径传播畸形 info 长度解析错误', async () => {
+  const input = enc(`d4:infod6:lengthi1e4:name1e0:a12:piece lengthi1e6:pieces20:${'x'.repeat(20)}ee`);
+  await assert.rejects(() => createSource(input), (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR');
 });
 
 test('parseTorrent 拒绝 info 字典键的畸形长度与截断', () => {
