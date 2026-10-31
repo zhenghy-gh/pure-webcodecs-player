@@ -145,6 +145,34 @@ test('createSource 离线路径以原始 info 字节计算 infoHash', async () =
   }
 });
 
+test('createSource Blob：infoHash 只由原始 info 字节决定', async () => {
+  const rawInfo = (name) => Uint8Array.from([
+    ...enc(`d4:name01:${name}6:lengthi1e12:piece lengthi1e6:pieces20:`),
+    0, 0xff, 0x3a, 0x65, ...new Uint8Array(16).fill(7), 0x65,
+  ]);
+  const makeBlob = (announce, info) => new Blob([enc(`d8:announce3:${announce}4:info`), info, enc('e')]);
+  const first = rawInfo('a');
+  const changed = rawInfo('b');
+  const expected = createHash('sha1').update(first).digest('hex');
+  const changedExpected = createHash('sha1').update(changed).digest('hex');
+  assert.notEqual(expected, changedExpected);
+  for (const [announce, info, hash, name] of [
+    ['one', first, expected, 'a'],
+    ['two', first, expected, 'a'],
+    ['one', changed, changedExpected, 'b'],
+  ]) {
+    const { source, meta } = await createSource(makeBlob(announce, info));
+    try {
+      assert.equal(meta.mode, 'offline');
+      assert.equal(meta.infoHash, hash);
+      assert.equal(meta.name, name);
+      assert.equal(source.size, 1);
+    } finally {
+      await source.close();
+    }
+  }
+});
+
 test('createSource 离线路径传播畸形 info 长度解析错误', async () => {
   const input = enc(`d4:infod6:lengthi1e4:name1e0:a12:piece lengthi1e6:pieces20:${'x'.repeat(20)}ee`);
   await assert.rejects(() => createSource(input), (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR');
