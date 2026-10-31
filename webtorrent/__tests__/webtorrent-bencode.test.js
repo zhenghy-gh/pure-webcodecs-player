@@ -173,6 +173,30 @@ test('createSource Blob：infoHash 只由原始 info 字节决定', async () => 
   }
 });
 
+test('createSource Blob：语义相同的不同 info 编码保留各自哈希', async () => {
+  const rawInfo = (length) => Uint8Array.from([
+    ...enc(`d4:name${length}:a6:lengthi1e12:piece lengthi1e6:pieces20:`),
+    0, 0xff, 0x3a, 0x65, ...new Uint8Array(16).fill(7), 0x65,
+  ]);
+  const variants = [rawInfo('01'), rawInfo('1')];
+  const hashes = variants.map((info) => createHash('sha1').update(info).digest('hex'));
+  assert.notEqual(hashes[0], hashes[1]);
+  for (const [index, info] of variants.entries()) {
+    const input = new Blob([enc('d4:info'), info, enc('e')]);
+    const { source, meta } = await createSource(input);
+    try {
+      assert.equal(meta.mode, 'offline');
+      assert.equal(meta.name, 'a');
+      assert.equal(meta.selected.length, 1);
+      assert.equal(meta.pieceLength, 1);
+      assert.equal(meta.infoHash, hashes[index]);
+      assert.equal(source.size, 1);
+    } finally {
+      await source.close();
+    }
+  }
+});
+
 test('createSource 离线路径传播畸形 info 长度解析错误', async () => {
   const input = enc(`d4:infod6:lengthi1e4:name1e0:a12:piece lengthi1e6:pieces20:${'x'.repeat(20)}ee`);
   await assert.rejects(() => createSource(input), (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR');
