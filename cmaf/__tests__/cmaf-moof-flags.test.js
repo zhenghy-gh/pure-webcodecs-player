@@ -380,6 +380,55 @@ test('splitChunks：moof 后的 free 和 emsg 不妨碍查找同片 mdat', () =>
   assert.deepEqual(input.subarray(sample.dataStart, sample.dataStart + sample.size), new Uint8Array(4).fill(0xab));
 });
 
+function makeMultiMdatFragment(secondOffsetDelta = 0, firstSize = 4, implicitSecond = false, largeSecond = false) {
+  const moof = box('moof', box('traf', tfhd(1), tfdt(0, 0),
+    trun(0, { dataOffset: 0, rows: [{ duration: 10, size: firstSize }] }),
+    trun(0, { dataOffset: implicitSecond ? null : 0, rows: [{ duration: 10, size: 4 }] })));
+  const first = box('mdat', new Uint8Array([1, 2, 3, 4]));
+  const free = box('free', new Uint8Array([5, 6]));
+  const second = (largeSecond ? largeBox : box)('mdat', new Uint8Array([7, 8, 9, 10]));
+  const trafBox = [...iterateBoxes(moof, 8, moof.length)][0];
+  const runs = [...iterateBoxes(moof, trafBox.contentStart, trafBox.contentEnd)].filter((b) => b.type === 'trun');
+  const dv = new DataView(moof.buffer);
+  dv.setInt32(runs[0].contentStart + 8, moof.length + 8);
+  if (!implicitSecond) dv.setInt32(runs[1].contentStart + 8, moof.length + first.length + free.length + (largeSecond ? 16 : 8) + secondOffsetDelta);
+  return concatAll([styp(), moof, first, free, second]);
+}
+
+test('splitChunks：同一 moof 可通过显式偏移引用多个 mdat', () => {
+  for (const largeSecond of [false, true]) {
+    const bytes = makeMultiMdatFragment(0, 4, false, largeSecond);
+    const backing = new Uint8Array(bytes.length + 3);
+    backing.set(bytes, 3);
+    const input = backing.subarray(3);
+    const mdats = [...iterateBoxes(input)].filter((b) => b.type === 'mdat');
+    const samples = splitChunks(input).chunks[0].tracks[0].samples;
+    assert.deepEqual(samples.map((s) => s.dataStart), mdats.map((b) => b.contentStart));
+    assert.deepEqual(samples.map((s) => [...input.subarray(s.dataStart, s.dataStart + s.size)]), [[1, 2, 3, 4], [7, 8, 9, 10]]);
+  }
+});
+
+test('splitChunks：样本不得跨 mdat 载荷或落入箱头和间隔', () => {
+  for (const input of [makeMultiMdatFragment(0, 5), makeMultiMdatFragment(-1), makeMultiMdatFragment(-9), makeMultiMdatFragment(1), makeMultiMdatFragment(0, 4, true)]) {
+    assert.throws(() => splitChunks(input), (e) => e.code === 'NOT_SUPPORTED' && /mdat/.test(e.message));
+  }
+});
+
+test('splitChunks：已有 mdat 也不能引用后续片段的 mdat', () => {
+  for (const boundary of [box('moof'), styp(), box('ftyp')]) {
+    const input = makeMultiMdatFragment();
+    const boxes = [...iterateBoxes(input)];
+    const moof = boxes.find((b) => b.type === 'moof');
+    const trafBox = [...iterateBoxes(input, moof.contentStart, moof.contentEnd)][0];
+    const runs = [...iterateBoxes(input, trafBox.contentStart, trafBox.contentEnd)].filter((b) => b.type === 'trun');
+    const dv = new DataView(input.buffer);
+    dv.setInt32(runs[1].contentStart + 8, dv.getInt32(runs[1].contentStart + 8) + boundary.length);
+    const second = boxes.filter((b) => b.type === 'mdat')[1];
+    const separated = concatAll([input.subarray(0, second.start), boundary, input.subarray(second.start)]);
+    assert.throws(() => splitChunks(separated), (e) => e.code === 'NOT_SUPPORTED' && /mdat/.test(e.message));
+  }
+});
+
 test('splitChunks：largesize styp 和 moof 使用完整 16 字节头定位 chunk 与样本', () => {
   const moofProbe = largeBox('moof', box('mfhd', u32(0)), box('traf',
     tfhd(1, { duration: 1000, size: 4 }), tfdt(0, 0),

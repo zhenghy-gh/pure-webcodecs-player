@@ -126,25 +126,19 @@ export function splitChunks(buf) {
 /** 由 trun 行 + mdat 数据区计算每个样本的具体位置与属性 */
 function materializeSamples(buf, moofBox, traf) {
   const { truns, baseTime, defaults } = traf;
-  // 找紧随 moof 的 mdat
-  let mdatDataStart = -1;
-  let mdatDataEnd = -1;
+  const mdats = [];
   for (const b of iterateBoxes(buf, moofBox.contentEnd)) {
     if (b.type === 'moof' || b.type === 'styp' || b.type === 'ftyp') break;
-    if (b.type === 'mdat') {
-      mdatDataStart = b.contentStart;
-      mdatDataEnd = b.contentEnd;
-      break;
-    }
+    if (b.type === 'mdat') mdats.push(b);
   }
-  if (mdatDataStart < 0) {
+  if (mdats.length === 0) {
     throw notSupported('moof 之后未找到 mdat，无法定位样本数据');
   }
 
   const out = [];
   const moofStart = moofBox.start;
   const dataBase = defaults.baseDataOffset ?? moofStart;
-  let nextDataStart = mdatDataStart;
+  let nextDataStart = mdats[0].contentStart;
   let dtsOffset = baseTime;
   for (const trun of truns) {
     let cursor = trun.hasDataOffset ? dataBase + trun.dataOffset : nextDataStart;
@@ -155,7 +149,15 @@ function materializeSamples(buf, moofBox, traf) {
       const hasRowFlags = trun.hasFlags || (i === 0 && trun.firstSampleFlags !== null);
       const flags = hasRowFlags ? row.flags : (defaults.defaultSampleFlags ?? 0);
       const cts = row.cts || 0;
-      if (cursor < mdatDataStart || cursor + size > mdatDataEnd) {
+      let low = 0;
+      let high = mdats.length;
+      while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        if (mdats[mid].contentStart <= cursor) low = mid + 1;
+        else high = mid;
+      }
+      const mdat = mdats[low - 1];
+      if (!mdat || cursor + size > mdat.contentEnd) {
         throw notSupported('trun 样本范围超出 mdat 载荷边界');
       }
       out.push({
