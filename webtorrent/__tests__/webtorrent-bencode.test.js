@@ -113,6 +113,33 @@ test('parseTorrent 拒绝 info 字典中畸形长度并保留合法原始 infoha
   assert.equal(await computeInfoHash(parsed.infoBytes), createHash('sha1').update(rawInfo).digest('hex'));
 });
 
+test('parseTorrent 从子视图提取顶层 info 而非前置嵌套同名键', async () => {
+  const pieces = Uint8Array.from([0, 0xff, 0x3a, 0x65, ...new Uint8Array(16).fill(7)]);
+  const rawInfo = Uint8Array.from([...enc('d4:name01:a6:lengthi1e12:piece lengthi1e6:pieces20:'), ...pieces, 0x65]);
+  const torrent = Uint8Array.from([...enc('d4:metad4:info3:fooe4:info'), ...rawInfo, 0x65]);
+  const backing = Uint8Array.from([0xff, 0x64, ...torrent, 0xff, 0x65]);
+  const view = backing.subarray(2, backing.length - 2);
+  const parsed = parseTorrent(view);
+  assert.equal(parsed.name, 'a');
+  assert.equal(parsed.size, 1);
+  assert.deepEqual(parsed.pieces, pieces);
+  assert.deepEqual(parsed.infoBytes, rawInfo);
+  assert.equal(await computeInfoHash(parsed.infoBytes), createHash('sha1').update(rawInfo).digest('hex'));
+});
+
+test('parseTorrent 拒绝 info 字典键的畸形长度与截断', () => {
+  const malformed = [
+    enc('d4:infod4e0:name1:aee'),
+    enc('d4:infod0000000000000:ee'),
+    Uint8Array.from([...enc('d4:infod4'), 0xff, ...enc(':name1:aee')]),
+    enc('d4:infod4:name2:a'),
+    enc('d4:infod4name'),
+  ];
+  for (const bytes of malformed) {
+    assert.throws(() => parseTorrent(bytes), (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR' && /bencode/.test(e.message));
+  }
+});
+
 test('bdecode 字节串：0 长度合法（空字节串）', () => {
   const v = bdecode(enc('0:'));
   assert.ok(v instanceof Uint8Array);
