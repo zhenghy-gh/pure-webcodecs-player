@@ -336,6 +336,50 @@ test('splitChunks：trun 显式 flags 覆盖 tfhd 默认 flags', () => {
   assert.equal(chunks[0].tracks[0].samples[0].keyframe, true, '行内显式 I 帧标志优先于默认 inter 标志');
 });
 
+test('splitChunks：缺失 mdat 不得借用下一个片段的数据', () => {
+  const stream = buildMoofStream([
+    traf(3, 0, 0, trun(0, { rows: [{ duration: 1000, size: 4 }] })),
+  ], { withStyp: false });
+  const boxes = [...iterateBoxes(stream)];
+  const firstMoof = stream.subarray(0, boxes[0].size);
+  for (const boundary of [new Uint8Array(), styp(), box('ftyp', u32(0))]) {
+    const input = concatAll([firstMoof, boundary, stream]);
+    assert.throws(() => splitChunks(input), (e) => e.code === 'NOT_SUPPORTED' && /mdat/.test(e.message));
+  }
+});
+
+test('splitChunks：显式偏移也不能借用后续 moof 的 mdat', () => {
+  const first = buildMoofStream([
+    traf(3, 0, 0, trun(0, { dataOffset: 0, rows: [{ duration: 1000, size: 4 }] })),
+  ], { withStyp: false });
+  const firstMoofBox = [...iterateBoxes(first)][0];
+  const firstMoof = first.slice(0, firstMoofBox.size);
+  const next = buildMoofStream([
+    traf(3, 1000, 0, trun(0, { rows: [{ duration: 1000, size: 4 }] })),
+  ], { withStyp: false });
+  const nextMoof = [...iterateBoxes(next)][0];
+  const trafBox = [...iterateBoxes(firstMoof, firstMoofBox.contentStart, firstMoofBox.contentEnd)][0];
+  const trunBox = [...iterateBoxes(firstMoof, trafBox.contentStart, trafBox.contentEnd)].find((b) => b.type === 'trun');
+  new DataView(firstMoof.buffer).setInt32(trunBox.contentStart + 8, firstMoof.length + nextMoof.size + 8);
+  for (const prefix of [new Uint8Array(), styp()]) {
+    assert.throws(() => splitChunks(concatAll([prefix, firstMoof, next])),
+      (e) => e.code === 'NOT_SUPPORTED' && /mdat/.test(e.message));
+  }
+});
+
+test('splitChunks：moof 后的 free 和 emsg 不妨碍查找同片 mdat', () => {
+  const stream = buildMoofStream([
+    traf(3, 0, 0, trun(0, { rows: [{ duration: 1000, size: 4 }] })),
+  ], { withStyp: false });
+  const boxes = [...iterateBoxes(stream)];
+  const input = concatAll([stream.subarray(0, boxes[0].size), box('free'), box('emsg'), stream.subarray(boxes[0].size)]);
+  const sample = splitChunks(input).chunks[0].tracks[0].samples[0];
+  const mdat = [...iterateBoxes(input)].find((b) => b.type === 'mdat');
+  assert.equal(sample.dataStart, mdat.contentStart);
+  assert.equal(sample.size, 4);
+  assert.deepEqual(input.subarray(sample.dataStart, sample.dataStart + sample.size), new Uint8Array(4).fill(0xab));
+});
+
 test('splitChunks：largesize styp 和 moof 使用完整 16 字节头定位 chunk 与样本', () => {
   const moofProbe = largeBox('moof', box('mfhd', u32(0)), box('traf',
     tfhd(1, { duration: 1000, size: 4 }), tfdt(0, 0),

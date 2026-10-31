@@ -130,6 +130,7 @@ function materializeSamples(buf, moofBox, traf) {
   let mdatDataStart = -1;
   let mdatDataEnd = -1;
   for (const b of iterateBoxes(buf, moofBox.contentEnd)) {
+    if (b.type === 'moof' || b.type === 'styp' || b.type === 'ftyp') break;
     if (b.type === 'mdat') {
       mdatDataStart = b.contentStart;
       mdatDataEnd = b.contentEnd;
