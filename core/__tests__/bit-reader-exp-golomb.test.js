@@ -358,6 +358,46 @@ test('BitWriter：writeBits/finish 补齐与读写往返', () => {
   assert.equal(w3.finish().length, 20);
 });
 
+test('BitWriter 编码32前导零的 Exp-Golomb 并跨字节往返', () => {
+  for (const [value, suffix] of [
+    [4294967295, '0'.repeat(32)],
+    [4294967296, '0'.repeat(31) + '1'],
+    [8589934590, '1'.repeat(32)],
+  ]) {
+    const writer = new BitWriter(1);
+    writer.writeBits(5, 3).writeUE(value).writeBits(1, 1);
+    const bytes = writer.finish();
+    assert.deepEqual(bytes, bitsToBytes('101' + '0'.repeat(32) + '1' + suffix + '1'));
+    const reader = new BitReader(bytes);
+    assert.equal(reader.readBits(3), 5);
+    assert.equal(reader.readUE(), value);
+    assert.equal(reader.readBit(), 1);
+    const golomb = new ExpGolombReader(bytes);
+    assert.equal(golomb.readBits(3), 5);
+    assert.equal(golomb.readUEG(), value);
+    assert.equal(golomb.readBits(1), 1);
+  }
+  for (const [value, suffix] of [
+    [2147483648, '0'.repeat(32)],
+    [-2147483648, '0'.repeat(31) + '1'],
+    [4294967295, '1'.repeat(31) + '0'],
+    [-4294967295, '1'.repeat(32)],
+  ]) {
+    const writer = new BitWriter(1);
+    writer.writeBits(5, 3).writeSE(value).writeBits(1, 1);
+    const bytes = writer.finish();
+    assert.deepEqual(bytes, bitsToBytes('101' + '0'.repeat(32) + '1' + suffix + '1'));
+    const reader = new BitReader(bytes);
+    assert.equal(reader.readBits(3), 5);
+    assert.equal(reader.readSE(), value);
+    assert.equal(reader.readBit(), 1);
+    const golomb = new ExpGolombReader(bytes);
+    assert.equal(golomb.readBits(3), 5);
+    assert.equal(golomb.readSEG(), value);
+    assert.equal(golomb.readBits(1), 1);
+  }
+});
+
 test('BitWriter.merge：位级连续拼接（含未对齐尾部，flac 子帧场景回归）', () => {
   const a = new BitWriter(); a.writeBits(0b1010, 4);
   const b = new BitWriter(); b.writeBits(0b1111, 4);

@@ -171,6 +171,12 @@ export class BitWriter {
   /** 写无符号 Exp-Golomb ue(v) */
   writeUE(value) {
     const v = value + 1;
+    if (Number.isSafeInteger(value) && value >= 0xFFFFFFFF && value <= 0x1FFFFFFFE) {
+      this.writeBits(0, 32);
+      this.writeBits(1, 1);
+      this.writeBits(v - 0x100000000, 32);
+      return this;
+    }
     const bitsNeeded = 32 - Math.clz32(v); // 有效位数
     this.writeBits(0, bitsNeeded - 1); // 前导 0
     this.writeBits(v, bitsNeeded); // 终止 1 + 权重
