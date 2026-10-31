@@ -10,7 +10,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { bdecode, bencode, bdecodeRaw } from '../src/index.js';
+import { createHash } from 'node:crypto';
+import { bdecode, bencode, bdecodeRaw, decodeAt, parseTorrent, computeInfoHash } from '../src/index.js';
 import { PlayerError } from '../../core/src/errors.js';
 
 const enc = (s) => new TextEncoder().encode(s);
@@ -79,6 +80,37 @@ test('bdecode 字节串长度仅接受 ASCII 十进制数字', () => {
   assert.deepEqual(bdecode(enc('01:a')), enc('a'));
   assert.deepEqual(bdecode(enc('l1:ae')), [enc('a')]);
   assert.equal(bdecode(enc('d1:ai1ee')).get('a'), 1);
+});
+
+test('decodeAt 非零偏移与 bdecodeRaw 共享长度前缀校验', () => {
+  const input = enc('xx01:a1:b');
+  const [first, next] = decodeAt(input, 2);
+  assert.deepEqual(first, enc('a'));
+  assert.equal(next, 6);
+  assert.deepEqual(decodeAt(input, next), [enc('b'), 9]);
+  assert.deepEqual(bdecodeRaw(enc('01:a')), enc('a'));
+  for (const invalid of ['1e0:a', '0x1:a', '1 :a', '1.0:a', '0000000000000:']) {
+    assert.throws(() => decodeAt(enc(`xx${invalid}`), 2), (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR', invalid);
+    assert.throws(() => bdecodeRaw(enc(invalid)), (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR', invalid);
+  }
+  assert.throws(() => decodeAt(new Uint8Array([0, 0, 0x31, 0xff, 0x3a, 0x61]), 2),
+    (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR');
+});
+
+test('parseTorrent 拒绝 info 字典中畸形长度并保留合法原始 infohash', async () => {
+  const info = (name) => enc(`d6:lengthi1e4:name${name}12:piece lengthi1e6:pieces20:${'x'.repeat(20)}e`);
+  const torrent = (rawInfo) => Uint8Array.from([...enc('d4:info'), ...rawInfo, 0x65]);
+  for (const bad of ['1e0:a', '0x1:a', '1 :a', '1.0:a']) {
+    assert.throws(() => parseTorrent(torrent(info(bad))),
+      (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR' && /bencode/.test(e.message), bad);
+  }
+  const rawInfo = info('01:a');
+  const parsed = parseTorrent(torrent(rawInfo));
+  assert.equal(parsed.name, 'a');
+  assert.equal(parsed.size, 1);
+  assert.equal(parsed.pieceLength, 1);
+  assert.deepEqual(parsed.infoBytes, rawInfo);
+  assert.equal(await computeInfoHash(parsed.infoBytes), createHash('sha1').update(rawInfo).digest('hex'));
 });
 
 test('bdecode 字节串：0 长度合法（空字节串）', () => {
