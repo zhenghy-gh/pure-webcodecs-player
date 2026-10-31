@@ -81,6 +81,7 @@ export function splitChunks(buf) {
   };
 
   for (const b of iterateBoxes(buf)) {
+    if (b.type === 'moof' && current && !current.styp && sawMoofInCurrent) finalize();
     if (b.type === 'styp' || b.type === 'ftyp') {
       finalize();
       current = {

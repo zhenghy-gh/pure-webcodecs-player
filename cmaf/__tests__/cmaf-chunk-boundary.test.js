@@ -106,6 +106,54 @@ test('splitChunks：无 styp 的完整文件（ftyp+moov+moof+mdat）容错归�
   assert.equal(chunks[0].byteLength, buf.length);
 });
 
+test('splitChunks：连续裸 fragment 按 moof 分组', () => {
+  const frag0 = makeFrag(0);
+  const frames1 = makeFrames(3003, 1);
+  frames1[0].data.fill(2);
+  const frag1 = fmp4.buildFragment({ trackId: 1, samples: frames1 });
+  const bare0 = frag0.subarray(new DataView(frag0.buffer, frag0.byteOffset, frag0.byteLength).getUint32(0));
+  const bare1 = frag1.subarray(new DataView(frag1.buffer, frag1.byteOffset, frag1.byteLength).getUint32(0));
+  const free = new Uint8Array([0, 0, 0, 8, 0x66, 0x72, 0x65, 0x65]);
+  for (const prefix of [new Uint8Array(), makeInit()]) {
+    const buf = concatAll([prefix, bare0, free, bare1]);
+    const { chunks, initRange } = splitChunks(buf);
+    assert.equal(initRange, null);
+    assert.equal(chunks.length, 2);
+    assert.deepEqual(chunks.map((c) => c.index), [0, 1]);
+    assert.deepEqual(chunks.map((c) => c.startOffset), [0, prefix.length + bare0.length + free.length]);
+    assert.deepEqual(chunks.map((c) => c.byteLength), [prefix.length + bare0.length + free.length, bare1.length]);
+    assert.deepEqual(chunks.map((c) => c.tracks[0].baseTime), [0, 3003]);
+    for (const [index, chunk] of chunks.entries()) {
+      assert.equal(chunk.styp, false);
+      assert.equal(chunk.tracks.length, 1);
+      const sample = chunk.tracks[0].samples[0];
+      assert.deepEqual(buf.subarray(sample.dataStart, sample.dataStart + sample.size), new Uint8Array(16).fill(index + 1));
+    }
+  }
+});
+
+test('splitChunks：三个连续裸 fragment 依次收尾', () => {
+  const parts = [0, 3003, 6006].map((time) => {
+    const frag = makeFrag(time);
+    return frag.subarray(new DataView(frag.buffer, frag.byteOffset, frag.byteLength).getUint32(0));
+  });
+  const { chunks } = splitChunks(concatAll(parts));
+  assert.deepEqual(chunks.map((c) => c.index), [0, 1, 2]);
+  assert.deepEqual(chunks.map((c) => c.startOffset), [0, parts[0].length, parts[0].length + parts[1].length]);
+  assert.deepEqual(chunks.map((c) => c.byteLength), parts.map((part) => part.length));
+  assert.deepEqual(chunks.map((c) => c.tracks[0].baseTime), [0, 3003, 6006]);
+});
+
+test('splitChunks：显式 styp 中多个 moof 保持单块', () => {
+  const frag0 = makeFrag(0);
+  const frag1 = makeFrag(3003);
+  const bare1 = frag1.subarray(new DataView(frag1.buffer, frag1.byteOffset, frag1.byteLength).getUint32(0));
+  const { chunks } = splitChunks(concatAll([frag0, bare1]));
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0].styp, true);
+  assert.deepEqual(chunks[0].tracks.map((track) => track.baseTime), [0, 3003]);
+});
+
 test('splitChunks：initRange 与 frag 交替流中 init 定位精确', () => {
   const init = makeInit();
   const frag0 = makeFrag(0);
