@@ -94,3 +94,14 @@ test('logBytes：默认16字节边界精确保留省略号语义', () => {
   assert.equal(logBytes(bytes.subarray(0, 16)), `hex[16B] ${first16}`);
   assert.equal(logBytes(bytes), `hex[17B] ${first16}…`);
 });
+
+test('logBytes：调用方不能突破16字节硬上限', () => {
+  const bytes = Uint8Array.from({ length: 20 }, (_, index) => index + 1);
+  const first16 = '0102030405060708090a0b0c0d0e0f10';
+  assert.equal(logBytes(bytes, 17), `hex[20B] ${first16}…`);
+  assert.equal(logBytes(bytes, Infinity), `hex[20B] ${first16}…`);
+  assert.equal(logBytes(bytes, 2), 'hex[20B] 0102…');
+  assert.equal(logBytes(bytes, 0), 'hex[20B] …');
+  const view = new DataView(bytes.buffer, 2, 18);
+  assert.equal(logBytes(view, 20), 'hex[18B] 030405060708090a0b0c0d0e0f101112…');
+});

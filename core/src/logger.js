@@ -30,7 +30,7 @@ export function logBytes(bytes, max = 16) {
   const u8 = ArrayBuffer.isView(bytes)
     ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     : new Uint8Array(bytes);
-  const n = Math.min(max, u8.byteLength);
+  const n = Math.min(max, 16, u8.byteLength);
   let s = '';
   for (let i = 0; i < n; i++) s += u8[i].toString(16).padStart(2, '0');
   return `hex[${u8.byteLength}B] ${s}${u8.byteLength > n ? '…' : ''}`;
