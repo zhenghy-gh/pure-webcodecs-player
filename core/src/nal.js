@@ -118,7 +118,12 @@ export function annexbToAvcc(annexb, lengthSize = 4) {
   }
   const units = scanAnnexBNalUnits(annexb);
   let total = 0;
-  for (const u of units) total += lengthSize + u.size;
+  for (const u of units) {
+    if (u.size >= 2 ** (8 * lengthSize)) {
+      throw parseError(`nal unit too large for ${lengthSize}-byte length: ${u.size}`);
+    }
+    total += lengthSize + u.size;
+  }
 
   const out = new Uint8Array(total);
   let pos = 0;

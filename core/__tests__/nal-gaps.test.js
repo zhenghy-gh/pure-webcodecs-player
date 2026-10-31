@@ -39,6 +39,25 @@ test('annexbToAvcc：lengthSize 越界 → PARSE_ERROR', () => {
   }
 });
 
+test('annexbToAvcc：拒绝无法容纳在长度字段的 NAL', () => {
+  for (const lengthSize of [1, 2]) {
+    const maxSize = (2 ** (8 * lengthSize)) - 1;
+    const legal = new Uint8Array(3 + maxSize).fill(0x65);
+    legal.set([0, 0, 1]);
+    const encoded = annexbToAvcc(legal, lengthSize);
+    assert.equal(splitAvcc(encoded, lengthSize)[0].length, maxSize);
+    assert.deepEqual(splitAvcc(encoded, lengthSize)[0], legal.subarray(3));
+
+    const tooLarge = new Uint8Array(3 + maxSize + 1).fill(0x65);
+    tooLarge.set([0, 0, 1]);
+    assert.throws(() => annexbToAvcc(tooLarge, lengthSize), (e) => e.code === 'PARSE_ERROR');
+  }
+  const later = new Uint8Array(3 + 1 + 3 + 256).fill(0x65);
+  later.set([0, 0, 1], 0);
+  later.set([0, 0, 1], 4);
+  assert.throws(() => annexbToAvcc(later, 1), (e) => e.code === 'PARSE_ERROR');
+});
+
 test('splitAvcc：lengthSize 越界 → PARSE_ERROR', () => {
   for (const bad of [0, 5]) {
     assert.throws(
