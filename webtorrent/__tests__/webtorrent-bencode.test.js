@@ -197,6 +197,20 @@ test('createSource Blob：语义相同的不同 info 编码保留各自哈希', 
   }
 });
 
+test('createSource Blob：关闭唤醒挂起读取且重复关闭安全', async () => {
+  const input = new Blob([enc(`d4:infod6:lengthi1e4:name1:a12:piece lengthi1e6:pieces20:${'x'.repeat(20)}ee`)]);
+  const { source } = await createSource(input);
+  try {
+    const pending = assert.rejects(source.read(0, 1), (e) => e instanceof PlayerError && e.code === 'ABORTED');
+    await source.close();
+    await pending;
+    await source.close();
+    await assert.rejects(source.read(0, 1), (e) => e instanceof PlayerError && e.code === 'STATE_ERROR');
+  } finally {
+    await source.close();
+  }
+});
+
 test('createSource 离线路径传播畸形 info 长度解析错误', async () => {
   const input = enc(`d4:infod6:lengthi1e4:name1e0:a12:piece lengthi1e6:pieces20:${'x'.repeat(20)}ee`);
   await assert.rejects(() => createSource(input), (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR');
