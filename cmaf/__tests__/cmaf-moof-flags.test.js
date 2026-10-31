@@ -331,6 +331,32 @@ test('splitChunks：零尺寸样本可位于载荷末尾或空 mdat', () => {
   }
 });
 
+test('splitChunks：载荷末端外的零尺寸或末端处非零尺寸被拒绝', () => {
+  for (const [delta, size] of [[1, 0], [0, 1]]) {
+    const moof = box('moof', box('traf', tfhd(7, { size: 9 }), tfdt(0, 0),
+      trun(0, { dataOffset: 0, rows: [{ size }] })));
+    const trafBox = [...iterateBoxes(moof, 8, moof.length)][0];
+    const trunBox = [...iterateBoxes(moof, trafBox.contentStart, trafBox.contentEnd)].find((b) => b.type === 'trun');
+    new DataView(moof.buffer).setInt32(trunBox.contentStart + 8, moof.length + 8 + 4 + delta);
+    const input = concatAll([styp(), moof, box('mdat', new Uint8Array(4)), box('free')]);
+    assert.throws(() => splitChunks(input), (e) => e.code === 'NOT_SUPPORTED' && /mdat/.test(e.message));
+  }
+});
+
+test('splitChunks：零尺寸 run 后无偏移 run 从相同位置续接', () => {
+  const runs = [
+    trun(0, { dataOffset: 0, rows: [{ size: 2 }, { size: 0 }] }),
+    trun(0, { rows: [{ size: 4 }] }),
+  ];
+  const stream = buildMoofStream([box('traf', tfhd(7, { size: 9 }), tfdt(0, 0), ...runs)], { mdatBytes: 6 });
+  const mdat = [...iterateBoxes(stream)].find((b) => b.type === 'mdat');
+  stream.set([1, 2], mdat.contentStart);
+  const samples = splitChunks(stream).chunks[0].tracks[0].samples;
+  assert.deepEqual(samples.map((s) => s.size), [2, 0, 4]);
+  assert.deepEqual(samples.map((s) => s.dataStart), [mdat.contentStart, mdat.contentStart + 2, mdat.contentStart + 2]);
+  assert.deepEqual([...stream.subarray(samples[2].dataStart, samples[2].dataStart + samples[2].size)], [0xab, 0xab, 0xab, 0xab]);
+});
+
 test('splitChunks：缺少 sample_size 字段时仍回退 tfhd 默认', () => {
   const stream = buildMoofStream([
     traf(7, 0, 0, trun(0, { dataOffset: 0, rows: [{}, {}] }), { size: 4 }),
