@@ -33,6 +33,22 @@ test('BitReader 基本读取与回溯', () => {
   assert.equal(r.byteAligned, true);
 });
 
+test('BitReader 正确读取31位和32位有符号边界', () => {
+  for (const [bits, expected] of [
+    ['1'.repeat(31), -1],
+    ['1' + '0'.repeat(30), -(2 ** 30)],
+    ['0' + '1'.repeat(30), (2 ** 30) - 1],
+    ['1'.repeat(32), -1],
+    ['1' + '0'.repeat(31), -(2 ** 31)],
+    ['0' + '1'.repeat(31), (2 ** 31) - 1],
+  ]) {
+    const reader = new BitReader(bitsToBytes('101' + bits + '1'));
+    assert.equal(reader.readBits(3), 5);
+    assert.equal(reader.readSignedBits(bits.length), expected);
+    assert.equal(reader.readBit(), 1);
+  }
+});
+
 test('exp-Golomb ue/se 已知序列', () => {
   // '1'→ue=0；'010'→ue=1；'011'→ue=2；'00100'→ue=3；'00101'→ue=4
   const data = bitsToBytes('1 010 011 00100 00101');
