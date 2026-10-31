@@ -65,6 +65,22 @@ test('bdecode 字节串：缺冒号 / 长度前缀超 12 位 / 长度越界', ()
   assert.throws(() => bdecode(enc('5:')), PlayerError); // 声明 5 字节实际 0 字节
 });
 
+test('bdecode 字节串长度仅接受 ASCII 十进制数字', () => {
+  for (const input of ['1e0:a', '1E0:a', '0x1:a', '0X1:a', '1 :a', '1\t:a', '1\n:a', '1\r:a', '1.0:a', 'l1e0:ae', 'd0x1:ai1ee', 'd1:a1e0:ae', '0000000000000:']) {
+    assert.throws(() => bdecode(enc(input)), (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR', input);
+  }
+  assert.throws(() => bdecode(new Uint8Array([0x31, 0xff, 0x3a, 0x61])),
+    (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR');
+  assert.deepEqual(bdecode(enc('000000000000:')), new Uint8Array());
+  assert.deepEqual(bdecode(enc('3:a b')), enc('a b'));
+  assert.deepEqual(bdecode(enc('1:a \t\n\r')), enc('a'));
+  assert.deepEqual(bdecode(enc('0:')), new Uint8Array());
+  assert.deepEqual(bdecode(enc('1:a')), enc('a'));
+  assert.deepEqual(bdecode(enc('01:a')), enc('a'));
+  assert.deepEqual(bdecode(enc('l1:ae')), [enc('a')]);
+  assert.equal(bdecode(enc('d1:ai1ee')).get('a'), 1);
+});
+
 test('bdecode 字节串：0 长度合法（空字节串）', () => {
   const v = bdecode(enc('0:'));
   assert.ok(v instanceof Uint8Array);

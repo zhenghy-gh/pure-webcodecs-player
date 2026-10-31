@@ -64,6 +64,11 @@ export function decodeAt(bytes, pos, depth = 0) {
   if (c >= 0x30 && c <= 0x39 /* 0-9 */) {
     const colon = bytes.indexOf(0x3a /* : */, pos);
     if (colon < 0 || colon - pos > 12) throw new PlayerError('PARSE_ERROR', '字节串缺少冒号');
+    for (let i = pos; i < colon; i++) {
+      if (bytes[i] < 0x30 || bytes[i] > 0x39) {
+        throw new PlayerError('PARSE_ERROR', '非法字节串长度格式');
+      }
+    }
     const len = Number(new TextDecoder().decode(bytes.subarray(pos, colon)));
     if (!Number.isInteger(len) || len < 0) throw new PlayerError('PARSE_ERROR', `非法字节串长度: ${len}`);
     const start = colon + 1;
