@@ -95,7 +95,7 @@ function trun(version, { dataOffset = null, rows = [] }) {
   const head = [u32(rows.length)];
   if (dataOffset != null) { f |= 0x000001; head.push(u32(dataOffset)); }
   // flag 位是 box 级语义：任一行声明某字段，则所有行都要写该字段
-  // （缺省行写 0，由解析侧回落 tfhd 默认）
+  // （缺省行写入显式 0）
   for (const r of rows) {
     if (r.duration != null || rows.some((x) => x.duration != null)) f |= 0x000100;
     if (r.size != null || rows.some((x) => x.size != null)) f |= 0x000200;
@@ -234,6 +234,7 @@ test('parseTrun：仅 data-offset 标志 → 行字段全零回落', () => {
   const r = parseTrun(b, 8, b.length);
   assert.equal(r.sampleCount, 2);
   assert.equal(r.dataOffset, 140);
+  assert.equal(r.hasSize, false);
   assert.deepEqual(r.rows, [
     { duration: 0, size: 0, flags: 0, cts: 0 },
     { duration: 0, size: 0, flags: 0, cts: 0 },
@@ -247,6 +248,7 @@ test('parseTrun：无 data-offset 标志 → dataOffset=0 且不读偏移字节'
   assert.equal(r.dataOffset, 0);
   assert.deepEqual(r.rows.map((x) => x.duration), [3003, 3003]);
   assert.deepEqual(r.rows.map((x) => x.size), [16, 17]);
+  assert.equal(r.hasSize, true);
 });
 
 test('parseTrun：v0 + composition offset 为无符号读取（与 v1 有符号区分）', () => {
@@ -304,6 +306,39 @@ test('splitChunks：trun 显式 duration 覆盖 tfhd 默认，缺省行回落默
   assert.deepEqual(samples.map((s) => s.size), [20, 21]);
   // dtsOffset 累计：baseTime + 前序 duration 之和
   assert.deepEqual(samples.map((s) => s.dtsOffset), [9009, 12012]);
+});
+
+test('splitChunks：显式零 sample_size 不回退 tfhd 且不移动后续样本', () => {
+  const stream = buildMoofStream([
+    traf(7, 0, 0, trun(0, { dataOffset: 0, rows: [{ size: 0 }, { size: 4 }] }), { size: 9 }),
+  ]);
+  const mdat = [...iterateBoxes(stream)].find((b) => b.type === 'mdat');
+  const samples = splitChunks(stream).chunks[0].tracks[0].samples;
+  assert.deepEqual(samples.map((s) => s.size), [0, 4]);
+  assert.deepEqual(samples.map((s) => s.dataStart), [mdat.contentStart, mdat.contentStart]);
+  assert.deepEqual([...stream.subarray(samples[1].dataStart, samples[1].dataStart + samples[1].size)], [0xab, 0xab, 0xab, 0xab]);
+});
+
+test('splitChunks：零尺寸样本可位于载荷末尾或空 mdat', () => {
+  for (const [sizes, mdatBytes] of [[[4, 0], 4], [[0], 0]]) {
+    const stream = buildMoofStream([
+      traf(7, 0, 0, trun(0, { dataOffset: 0, rows: sizes.map((size) => ({ size })) }), { size: 9 }),
+    ], { mdatBytes });
+    const mdat = [...iterateBoxes(stream)].find((b) => b.type === 'mdat');
+    const samples = splitChunks(stream).chunks[0].tracks[0].samples;
+    assert.deepEqual(samples.map((s) => s.size), sizes);
+    assert.equal(samples.at(-1).dataStart, mdat.contentEnd);
+  }
+});
+
+test('splitChunks：缺少 sample_size 字段时仍回退 tfhd 默认', () => {
+  const stream = buildMoofStream([
+    traf(7, 0, 0, trun(0, { dataOffset: 0, rows: [{}, {}] }), { size: 4 }),
+  ]);
+  const mdat = [...iterateBoxes(stream)].find((b) => b.type === 'mdat');
+  const samples = splitChunks(stream).chunks[0].tracks[0].samples;
+  assert.deepEqual(samples.map((s) => s.size), [4, 4]);
+  assert.deepEqual(samples.map((s) => s.dataStart), [mdat.contentStart, mdat.contentStart + 4]);
 });
 
 test('splitChunks：tfhd 无 default flags → flags 回落 0（isKeyframeFlag(0)=true 语义）', () => {

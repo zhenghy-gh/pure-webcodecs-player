@@ -145,7 +145,7 @@ function materializeSamples(buf, moofBox, traf) {
     for (let i = 0; i < trun.rows.length; i++) {
       const row = trun.rows[i];
       const duration = row.duration || defaults.defaultSampleDuration || 0;
-      const size = row.size || defaults.defaultSampleSize || 0;
+      const size = trun.hasSize ? row.size : (defaults.defaultSampleSize ?? 0);
       const hasRowFlags = trun.hasFlags || (i === 0 && trun.firstSampleFlags !== null);
       const flags = hasRowFlags ? row.flags : (defaults.defaultSampleFlags ?? 0);
       const cts = row.cts || 0;

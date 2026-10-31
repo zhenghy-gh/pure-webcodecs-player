@@ -244,7 +244,8 @@ function assertSupportedVersion(type, version) {
 
 /**
  * 解析 trun（样本表）。
- * @returns {{sampleCount:number,dataOffset:number,
+ * @returns {{sampleCount:number,dataOffset:number,hasDataOffset:boolean,hasSize:boolean,
+ *            hasFlags:boolean,firstSampleFlags:number|null,
  *            rows:Array<{duration:number,size:number,flags:number,cts:number}>}}
  */
 export function parseTrun(buf, contentStart, contentEnd) {
@@ -313,7 +314,7 @@ export function parseTrun(buf, contentStart, contentEnd) {
     }
     rows.push(row);
   }
-  return { sampleCount, dataOffset, hasDataOffset, hasFlags, firstSampleFlags, rows };
+  return { sampleCount, dataOffset, hasDataOffset, hasSize, hasFlags, firstSampleFlags, rows };
 }
 
 /** 解析 tfdt → baseMediaDecodeTime */
