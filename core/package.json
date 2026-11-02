@@ -8,7 +8,7 @@
     ".": "./src/index.js"
   },
   "scripts": {
-    "test": "node --test __tests__/"
+    "test": "node --test __tests__/*.test.js"
   },
   "license": "MIT"
 }

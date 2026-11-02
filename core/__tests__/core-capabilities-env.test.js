@@ -114,6 +114,12 @@ test('hasCryptoSubtle：具备 crypto.subtle.importKey 为 true，访问抛错�
   await withGlobals({ crypto: {} }, () =>
     assert.equal(hasCryptoSubtle(), false, '无 subtle 计 false'),
   );
+  await withGlobals({ crypto: { subtle: {} } }, () =>
+    assert.equal(hasCryptoSubtle(), false, '无 importKey 计 false'),
+  );
+  await withGlobals({ crypto: { subtle: { importKey: true } } }, () =>
+    assert.equal(hasCryptoSubtle(), false, 'importKey 非函数计 false'),
+  );
   const desc = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
   try {
     Object.defineProperty(globalThis, 'crypto', {
