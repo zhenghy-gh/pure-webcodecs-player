@@ -211,6 +211,26 @@ test('createSource Blob：关闭唤醒挂起读取且重复关闭安全', async 
   }
 });
 
+test('createSource Blob：部分前缀可读且关闭唤醒所有等待者', { timeout: 2000 }, async () => {
+  const input = new Blob([enc(`d4:infod6:lengthi4e4:name1:a12:piece lengthi2e6:pieces40:${'x'.repeat(40)}ee`)]);
+  const { source, meta } = await createSource(input);
+  try {
+    assert.equal(meta.assembler.writePiece(0, Uint8Array.of(1, 2)), true);
+    assert.deepEqual(await source.read(0, 2), Uint8Array.of(1, 2));
+    let settled = 0;
+    const reads = [source.read(1, 2), source.read(2, 2)];
+    const checks = reads.map((read) => assert.rejects(read, (e) => e instanceof PlayerError && e.code === 'ABORTED'));
+    for (const read of reads) read.then(() => { settled++; }, () => { settled++; });
+    await Promise.resolve();
+    assert.equal(settled, 0);
+    await source.close();
+    await Promise.all(checks);
+    assert.equal(settled, 2);
+  } finally {
+    await source.close();
+  }
+});
+
 test('createSource 离线路径传播畸形 info 长度解析错误', async () => {
   const input = enc(`d4:infod6:lengthi1e4:name1e0:a12:piece lengthi1e6:pieces20:${'x'.repeat(20)}ee`);
   await assert.rejects(() => createSource(input), (e) => e instanceof PlayerError && e.code === 'PARSE_ERROR');
