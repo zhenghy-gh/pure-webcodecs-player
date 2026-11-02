@@ -97,23 +97,37 @@ test('hasWebGPU：仅查 navigator.gpu 存在性', async () => {
   await withGlobals({ navigator: { gpu: {} } }, () => assert.equal(hasWebGPU(), true));
 });
 
+test('hasCryptoSubtle：crypto 全局属性不存在时为 false 且保持缺失', () => {
+  const desc = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  try {
+    assert.equal(delete globalThis.crypto, true);
+    assert.equal(hasCryptoSubtle(), false);
+  } finally {
+    if (desc) Object.defineProperty(globalThis, 'crypto', desc);
+    else delete globalThis.crypto;
+  }
+  assert.deepEqual(Object.getOwnPropertyDescriptor(globalThis, 'crypto'), desc);
+});
+
 test('hasCryptoSubtle：具备 crypto.subtle.importKey 为 true，访问抛错吞为 false', async () => {
   assert.equal(hasCryptoSubtle(), true, 'Node≥22 具备 WebCrypto');
   await withGlobals({ crypto: {} }, () =>
     assert.equal(hasCryptoSubtle(), false, '无 subtle 计 false'),
   );
   const desc = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
-  Object.defineProperty(globalThis, 'crypto', {
-    configurable: true,
-    get() {
-      throw new Error('crypto accessor 抛错');
-    },
-  });
   try {
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      get() {
+        throw new Error('crypto accessor 抛错');
+      },
+    });
     assert.equal(hasCryptoSubtle(), false, '访问异常一律吞掉计 false');
   } finally {
-    Object.defineProperty(globalThis, 'crypto', desc);
+    if (desc) Object.defineProperty(globalThis, 'crypto', desc);
+    else delete globalThis.crypto;
   }
+  assert.deepEqual(Object.getOwnPropertyDescriptor(globalThis, 'crypto'), desc);
 });
 
 test('mseIsTypeSupportedSafe：环境无 MediaSource 时安全返回 false', () => {
