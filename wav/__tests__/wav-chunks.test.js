@@ -159,6 +159,25 @@ describe('超大/截断子块容错', () => {
     assert.equal(h.durationUs, Math.round((4 / (8000 * 2)) * 1e6));
   });
 
+  test('sourceSize 将 data 截断窗口长度扩展至完整源长度并在 EOF 裁切', () => {
+    const bytes = assemble([
+      { id: 'fmt ', body: fmtBody({ channels: 1, sampleRate: 8000, bits: 16 }) },
+      { id: 'data', body: dataBody(4), size: 20 },
+    ]);
+    const dataOffset = bytes.length - 4;
+
+    const complete = parseWavHeader(bytes, { sourceSize: dataOffset + 20 });
+    assert.equal(complete.dataChunk.offset, dataOffset);
+    assert.equal(complete.dataChunk.size, 20);
+    assert.equal(complete.totalDataBytes, 20);
+    assert.equal(complete.durationUs, 1250);
+
+    const eof = parseWavHeader(bytes, { sourceSize: dataOffset + 12 });
+    assert.equal(eof.dataChunk.size, 12);
+    assert.equal(eof.totalDataBytes, 12);
+    assert.equal(eof.durationUs, 750);
+  });
+
   test('损坏的 LIST/INFO 子块不会阻止 data 继续解析', () => {
     const info = Uint8Array.from([
       0x49, 0x4e, 0x46, 0x4f,
