@@ -17,6 +17,24 @@ import { PlayerError } from '../../core/src/errors.js';
 const enc = (s) => new TextEncoder().encode(s);
 const dec = (u8) => new TextDecoder().decode(u8);
 
+test('computeInfoHash：WebCrypto 缺失或全局访问抛错时返回 null', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  try {
+    assert.equal(delete globalThis.crypto, true);
+    assert.equal(await computeInfoHash(enc('raw info')), null);
+
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      get() { throw new Error('crypto unavailable'); },
+    });
+    assert.equal(await computeInfoHash(enc('raw info')), null);
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'crypto', descriptor);
+    else delete globalThis.crypto;
+  }
+  assert.deepEqual(Object.getOwnPropertyDescriptor(globalThis, 'crypto'), descriptor);
+});
+
 // ── bdecode 输入与整体结构 ────────────────────────────────
 
 test('bdecode：非 Uint8Array 输入直接拒绝', () => {

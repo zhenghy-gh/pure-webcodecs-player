@@ -494,3 +494,4 @@
 | 449 | Blob等语义不同编码infohash补测 | 手工构造01:a和1:a两个解码语义相同但原始字节不同的info，Blob离线createSource分别匹配独立SHA-1并验证文件元数据，每次关闭source；前导零是既有兼容而非规范。最初误断言不存在的meta.size，改为selected.length后通过。focused 62/62、全仓3344/3344、check 16/16、lint、双§2.4审计和diff-check通过。 | 本波 |
 | 450 | Blob离线source关闭传播补测 | 无piece时对有效范围读预注册拒绝断言，close唤醒为ABORTED，重复close安全，关闭后有效读报STATE_ERROR；仅补测试。focused 63/63、全仓3345/3345、check 16/16、lint、双§2.4审计及diff-check通过。零长/越界读取在包装层提前短路，关闭后语义待裁决，未固定。 | 本波 |
 | 451 | Blob部分前缀与多等待者关闭补测 | 离线首片写入并验证前缀读取，两个不同有效范围等待者关闭前未完成、close后均以ABORTED结束；仅补测试。focused 64/64、全仓3346/3346、check 16/16、lint、双§2.4审计及diff-check通过；零长/负长度/越界窗口语义仍待裁决。 | 本波 |
+| 452 | computeInfoHash无WebCrypto降级回归补测 | 删除globalThis.crypto并模拟crypto getter抛错，均验证返回null；finally恢复并逐字段比较原属性descriptor。focused 65/65、全仓3347/3347、check 16/16、lint、双§2.4审计及diff-check通过。digest reject已有source-edge覆盖；生产注释不准确及快照/重复info行为不在本波修改。 | 本波 |
