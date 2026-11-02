@@ -497,3 +497,4 @@
 | 452 | computeInfoHash无WebCrypto降级回归补测 | 删除globalThis.crypto并模拟crypto getter抛错，均验证返回null；finally恢复并逐字段比较原属性descriptor。focused 65/65、全仓3347/3347、check 16/16、lint、双§2.4审计及diff-check通过。digest reject已有source-edge覆盖；生产注释不准确及快照/重复info行为不在本波修改。 | 本波 |
 | 453 | Core WebCrypto能力缺失与descriptor恢复补测 | hasCryptoSubtle新增删除crypto全局属性后返回false，并在缺失及throwing accessor两条路径finally恢复后比较完整descriptor；仅测试改动。focused 23/23、全仓3348/3348、check 16/16、lint、双§2.4审计及diff-check通过。CONTRACTS对subtle/importKey措辞差异待架构确认，本次未改文档或实现。 | 本波 |
 | 454 | 修复Core测试入口并补Crypto能力分支 | Node 22复现core npm test把__tests__/当模块路径失败，脚本改为显式*.test.js glob，包级测试570/570。补hasCryptoSubtle在subtle缺importKey及importKey非函数时为false；focused23/23、全仓3348/3348、check16/16、lint、双§2.4审计及diff-check通过。CONTRACTS文字差异未改。 | 本波 |
+| 455 | 补强嵌套Crypto getter异常断言 | 为subtle/importKey getter异常增加命中标记，避免未实际访问时假通过；每条withGlobals注入后比较crypto完整原descriptor。定向23/23、Core包570/570、全仓3348/3348、check16/16、lint、双§2.4审计及diff-check通过。 | 本波 |
