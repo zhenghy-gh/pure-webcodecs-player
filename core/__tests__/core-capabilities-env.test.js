@@ -110,17 +110,21 @@ test('hasCryptoSubtle：crypto 全局属性不存在时为 false 且保持缺失
 });
 
 test('hasCryptoSubtle：具备 crypto.subtle.importKey 为 true，访问抛错吞为 false', async () => {
+  const withCrypto = async (crypto, fn) => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+    await withGlobals({ crypto }, fn);
+    assert.deepEqual(Object.getOwnPropertyDescriptor(globalThis, 'crypto'), descriptor);
+  };
   assert.equal(hasCryptoSubtle(), true, 'Node≥22 具备 WebCrypto');
-  await withGlobals({ crypto: {} }, () =>
+  await withCrypto({}, () =>
     assert.equal(hasCryptoSubtle(), false, '无 subtle 计 false'),
   );
-  await withGlobals({ crypto: { subtle: {} } }, () =>
+  await withCrypto({ subtle: {} }, () =>
     assert.equal(hasCryptoSubtle(), false, '无 importKey 计 false'),
   );
-  await withGlobals({ crypto: { subtle: { importKey: true } } }, () =>
+  await withCrypto({ subtle: { importKey: true } }, () =>
     assert.equal(hasCryptoSubtle(), false, 'importKey 非函数计 false'),
   );
-  const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
   let importKeyAccessed = false;
   const throwingSubtle = {};
   Object.defineProperty(throwingSubtle, 'importKey', {
@@ -130,11 +134,10 @@ test('hasCryptoSubtle：具备 crypto.subtle.importKey 为 true，访问抛错�
       throw new Error('importKey accessor 抛错');
     },
   });
-  await withGlobals({ crypto: { subtle: throwingSubtle } }, () =>
+  await withCrypto({ subtle: throwingSubtle }, () =>
     assert.equal(hasCryptoSubtle(), false, 'importKey getter 异常计 false'),
   );
   assert.equal(importKeyAccessed, true);
-  assert.deepEqual(Object.getOwnPropertyDescriptor(globalThis, 'crypto'), cryptoDescriptor);
 
   let subtleAccessed = false;
   const throwingCrypto = {};
@@ -145,11 +148,10 @@ test('hasCryptoSubtle：具备 crypto.subtle.importKey 为 true，访问抛错�
       throw new Error('subtle accessor 抛错');
     },
   });
-  await withGlobals({ crypto: throwingCrypto }, () =>
+  await withCrypto(throwingCrypto, () =>
     assert.equal(hasCryptoSubtle(), false, 'subtle getter 异常计 false'),
   );
   assert.equal(subtleAccessed, true);
-  assert.deepEqual(Object.getOwnPropertyDescriptor(globalThis, 'crypto'), cryptoDescriptor);
   const desc = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
   try {
     Object.defineProperty(globalThis, 'crypto', {
