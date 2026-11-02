@@ -166,6 +166,11 @@ describe('超大/截断子块容错', () => {
     ]);
     const dataOffset = bytes.length - 4;
 
+    const inconsistent = parseWavHeader(bytes, { sourceSize: dataOffset + 3 });
+    assert.equal(inconsistent.dataChunk.size, 4);
+    assert.equal(inconsistent.totalDataBytes, 4);
+    assert.equal(inconsistent.durationUs, 250);
+
     const complete = parseWavHeader(bytes, { sourceSize: dataOffset + 20 });
     assert.equal(complete.dataChunk.offset, dataOffset);
     assert.equal(complete.dataChunk.size, 20);
